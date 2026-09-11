@@ -22,10 +22,12 @@ import {
   ArrowSquareOut,
   ArrowCounterClockwise,
   Sidebar,
+  Plus,
 } from "@phosphor-icons/react";
 import { useCompanyChat } from "@/hooks/use-company-chat";
 import { ChatMessageItem } from "@/components/chat-message";
 import { EvidenceDrawer } from "@/components/evidence-drawer";
+import { AddCompanyDialog, type IndexedCompanyPayload } from "@/components/add-company-dialog";
 import { apiClient } from "@/lib/api-client";
 
 // ============================================================================
@@ -105,6 +107,7 @@ export default function Home() {
   const [companies, setCompanies] = useState<CompanyTarget[]>(DEFAULT_COMPANIES);
   const [selectedCompany, setSelectedCompany] = useState<CompanyTarget>(DEFAULT_COMPANIES[0]);
   const [query, setQuery] = useState("");
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -157,6 +160,18 @@ export default function Home() {
 
   const handleSelectCompany = (company: CompanyTarget) => {
     setSelectedCompany(company);
+    clearMessages();
+    setQuery("");
+  };
+
+  const handleCompanyIndexed = (newCompany: IndexedCompanyPayload) => {
+    setCompanies((prev) => {
+      const exists = prev.some(
+        (c) => c.domain.toLowerCase() === newCompany.domain.toLowerCase()
+      );
+      return exists ? prev : [newCompany, ...prev];
+    });
+    setSelectedCompany(newCompany);
     clearMessages();
     setQuery("");
   };
@@ -229,6 +244,15 @@ export default function Home() {
               </button>
             )}
 
+            <button
+              type="button"
+              onClick={() => setIsAddDialogOpen(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800 text-xs text-zinc-200 transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5 text-zinc-400" />
+              <span>Index Company</span>
+            </button>
+
             <div className="hidden sm:inline-flex items-center gap-2 px-2.5 py-1 rounded-full border border-zinc-800 bg-zinc-900/60 text-xs text-zinc-400">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <span>pgvector active</span>
@@ -255,12 +279,22 @@ export default function Home() {
             <span className="text-xs font-medium uppercase tracking-wider text-zinc-500 font-mono">
               Target Company Scope
             </span>
-            <span className="text-xs text-zinc-500">
-              Active: <span className="text-zinc-200 font-mono">{selectedCompany.domain}</span>
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-zinc-500">
+                Active: <span className="text-zinc-200 font-mono">{selectedCompany.domain}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsAddDialogOpen(true)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-dashed border-zinc-700 hover:border-zinc-500 bg-zinc-900/60 hover:bg-zinc-800 text-xs text-zinc-300 transition-colors"
+              >
+                <Plus className="w-3 h-3 text-zinc-400" />
+                <span>+ Index URL</span>
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
             {companies.map((company) => {
               const isSelected = selectedCompany.id === company.id;
               return (
@@ -296,6 +330,19 @@ export default function Home() {
                 </button>
               );
             })}
+
+            {/* Add Company Action Tile */}
+            <button
+              type="button"
+              onClick={() => setIsAddDialogOpen(true)}
+              className="group flex flex-col items-center justify-center p-3 rounded-xl border border-dashed border-zinc-800 hover:border-zinc-600 bg-zinc-950/40 hover:bg-zinc-900/40 text-zinc-400 hover:text-zinc-200 transition-all text-center min-h-[96px]"
+            >
+              <div className="w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-1 group-hover:scale-105 transition-transform text-zinc-300">
+                <Plus className="w-3.5 h-3.5" />
+              </div>
+              <span className="text-xs font-medium text-zinc-300">Add Company</span>
+              <span className="text-[10px] font-mono text-zinc-500">Index URL</span>
+            </button>
           </div>
         </div>
 
@@ -474,6 +521,13 @@ export default function Home() {
         onClose={closeDrawer}
         evidence={activeEvidence}
         selectedEvidence={selectedEvidence}
+      />
+
+      {/* Add Company Dialog */}
+      <AddCompanyDialog
+        isOpen={isAddDialogOpen}
+        onClose={() => setIsAddDialogOpen(false)}
+        onCompanyIndexed={handleCompanyIndexed}
       />
 
       {/* Footer */}

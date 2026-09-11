@@ -104,7 +104,16 @@ class ApiClient {
       return res.json();
     },
 
-    create: async (url: string): Promise<{ companyId: string; version: number }> => {
+    create: async (
+      url: string
+    ): Promise<{
+      success?: boolean;
+      companyId: string;
+      version: number;
+      domain?: string;
+      status?: string;
+      snapshotId?: string;
+    }> => {
       const res = await fetch(`${this.baseUrl}/api/companies`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

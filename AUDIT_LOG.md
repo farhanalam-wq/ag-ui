@@ -226,6 +226,12 @@ This document serves as the chronological, living audit trail for all architectu
    - **Centralised API Client (`apps/web/lib/api-client.ts`)**: Encapsulates all REST and SSE streaming endpoints (`companies.list`, `companies.get`, `companies.create`, `chat.stream`, `health`); eliminates ad-hoc network calls across the frontend.
    - Verified live end-to-end streaming chat and citation retrieval against indexed companies.
 
+3. **Universal Company Ingestion Form & Real-Time Pipeline Tracker**:
+   - Built [`AddCompanyDialog`](file:///c:/Users/Farhan_Alam/Workspace/ag-ui/apps/web/components/add-company-dialog.tsx) accessible via top navbar and company scope switcher.
+   - Submits URL to `POST /api/companies` using `apiClient.companies.create(url)`.
+   - Real-time pipeline step tracker displaying progression: `QUEUED` $\rightarrow$ `CRAWLING` $\rightarrow$ `PARSING` $\rightarrow$ `INDEXING` $\rightarrow$ `READY`.
+   - Auto-registers the newly indexed company, dynamically appends it to the switcher, switches the active context, and enables instant streaming queries.
+
 ### Planned Deliverables:
 1. **Dynamic Brand Theming Engine**:
    - Injects company brand tokens into CSS custom properties (`--brand-primary`, `--brand-secondary`, `--brand-style`, `--brand-radius`).
