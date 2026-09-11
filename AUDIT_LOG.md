@@ -201,3 +201,59 @@ This document serves as the chronological, living audit trail for all architectu
    - Verified GenUI visual component triggered with `type: "products"` and 7 structured product items.
    - Verified full session persistence in PostgreSQL with `visualSpec: true` and 7 evidence citations.
    - Strictly enforced zero emojis across all outputs, logs, and prompt guidelines.
+
+---
+
+## Milestone 8: Brand-Adaptive Next.js 15 Frontend & Full GenUI Component Suite (Phase 5)
+**Status**: In Progress / Pending Execution  
+**Target Package**: `apps/web`
+
+### Planned Deliverables:
+1. **Dynamic Brand Theming Engine**:
+   - Injects company brand tokens into CSS custom properties (`--brand-primary`, `--brand-secondary`, `--brand-style`, `--brand-radius`).
+   - Seamless live theme adaptation across companies (e.g. Stripe, Red Hat, Anthropic, Resend).
+2. **Real-Time Streaming Chat Canvas**:
+   - Client-side SSE stream reader consuming `POST /api/companies/:id/chat`.
+   - Real-time token typing display with stage badges (`retrieving`, `synthesizing`).
+   - **Collapsible Evidence Drawer**: Interactive citation sidebar citing document titles, exact URLs, chunk excerpts, and relevance percentages.
+3. **Comprehensive Generative UI Component Suite**:
+   - **3D CardStack / ProductList**: Tactile, swipeable card stack (Framer Motion) with media previews, tags, descriptions, and action links.
+   - **PricingTable**: Responsive tier cards with recommended plan highlight, billing toggles, and feature checklists.
+   - **StatsGrid**: Commercial metrics cards with values, trend indicators, and labels.
+   - **InteractiveMap**: OpenStreetMap view with custom company pins and "Get Directions" distance calculation.
+   - **Timeline**: Milestone roadmap component with chronological points and status badges.
+   - **ComparisonTable**: Side-by-side feature comparison matrix.
+   - **Interactive Action Forms**:
+     - `ContactForm`: Lead capture / inquiry submission with instant validation.
+     - `MeetingScheduler`: Demo / call booking widget with date/time selection.
+4. **Dual Consumption Models**:
+   - **Full-Screen Immersive Canvas (`/`)**: Comprehensive intelligence workspace with company switcher, document preview drawer, and multi-turn chat.
+   - **Embeddable Floating Widget (`/embed` + `public/widget.js`)**: Isolated zero-collision iframe widget with expandable launcher orb for third-party websites.
+
+---
+
+## Milestone 9: Real-Time Web Search Fallback & Deep Crawling (Phase 6)
+**Status**: Planned  
+**Target Packages**: `packages/crawler`, `packages/database`, `apps/api`
+
+### Planned Deliverables:
+1. **Live Search Engine Integration**:
+   - Internet & news search fallback (SearXNG / web search API) when documentation chunks lack real-time context.
+2. **Deep Enterprise Crawling**:
+   - Configurable crawl depth controls (20, 50, 100 pages) for large multi-product corporate domains.
+
+---
+
+## Milestone 10: Real-Time Voice AI & LiveKit Audio Stream (Phase 7)
+**Status**: Planned  
+**Target Packages**: `packages/voice`, `apps/api`, `apps/web`
+
+### Planned Deliverables:
+1. **LiveKit WebRTC Audio Channel**:
+   - Bi-directional audio tracks with low latency (<500ms).
+2. **Fast Speech-to-Text (STT) & Text-to-Speech (TTS)**:
+   - Real-time streaming transcription and synchronized voice synthesis.
+3. **Voice Activity Detection (VAD) & Ultra-Fast Barge-In**:
+   - Silero VAD turn detection with <300ms interruption handling.
+4. **Floating Voice Dock**:
+   - Interactive audio frequency visualizer, microphone controls, and live subtitle streamer.
