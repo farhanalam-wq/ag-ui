@@ -50,3 +50,25 @@ This document serves as the chronological, living audit trail for all architectu
   - Database connectivity verified: PostgreSQL + `pgvector` (`v0.8.6`) active on `localhost:5432`.
   - Redis connectivity verified: Memurai active on `127.0.0.1:6379`.
 
+---
+
+## Milestone 2: Environment Configuration & Credential Harmonization
+**Date**: 2026-09-11  
+**Status**: Completed ✅  
+
+### Changes & Cherry-Picked Integrations:
+1. **Runtime Variable Harmonization**:
+   - Updated `packages/shared/src/env.ts` to support `RUNTIME_ENV` (with fallback to `NODE_ENV`).
+2. **LiveKit Realtime Voice Integration**:
+   - Integrated internal voice agent WebRTC connection endpoints (`LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `NEXT_PUBLIC_LIVEKIT_URL`).
+3. **AI Models & Adapters**:
+   - Configured active API keys for **OpenAI** (`OPENAI_API_KEY`), **Google Gemini** (`GOOGLE_API_KEY`), and **Sarvam AI** (`SARVAM_API_KEY`).
+4. **Media & Visual Assets**:
+   - Configured Pixabay API (`NEXT_PUBLIC_PIXABAY_API_KEY`) and internal media host (`MEDIA_BASE_URL`).
+5. **Auth & OAuth**:
+   - Retained Google OAuth client credentials and redirect URIs (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SECRET_KEY`).
+6. **Deliberately Excluded**:
+   - `MONGODB_URL` & `MONGODB_DB_NAME`: Excluded in adherence to architectural single-source-of-truth mandate (PostgreSQL + pgvector).
+   - Third-party notification channels (`WHATSAPP_ACCESS_TOKEN`, `SENDER_EMAIL`) parked for post-MVP.
+
+

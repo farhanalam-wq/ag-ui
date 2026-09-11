@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const BaseEnvSchema = z.object({
+  RUNTIME_ENV: z.enum(["development", "test", "production"]).default("development"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   DATABASE_URL: z.string().default("postgresql://postgres:password@localhost:5432/ag_ui"),
   REDIS_URL: z.string().default("redis://127.0.0.1:6379"),
