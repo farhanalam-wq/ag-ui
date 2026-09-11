@@ -16,6 +16,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@ag-ui/contracts": "workspace:*",
+        "@ag-ui/crawler": "workspace:*",
         "@ag-ui/database": "workspace:*",
         "@ag-ui/queues": "workspace:*",
         "@ag-ui/shared": "workspace:*",
@@ -119,6 +120,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@ag-ui/contracts": "workspace:*",
+        "@ag-ui/crawler": "workspace:*",
         "@ag-ui/database": "workspace:*",
         "@ag-ui/queues": "workspace:*",
         "@ag-ui/shared": "workspace:*",

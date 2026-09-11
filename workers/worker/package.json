@@ -13,6 +13,7 @@
     "bullmq": "^5.41.6",
     "ioredis": "^5.5.0",
     "@ag-ui/contracts": "workspace:*",
+    "@ag-ui/crawler": "workspace:*",
     "@ag-ui/database": "workspace:*",
     "@ag-ui/queues": "workspace:*",
     "@ag-ui/shared": "workspace:*"

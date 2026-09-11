@@ -119,3 +119,32 @@ This document serves as the chronological, living audit trail for all architectu
   - All 5 test suites passed: SSRF protection, Storage Provider, LLMs.txt parsing, Content cleaning, and Brand token extraction.
 - Turborepo Build:
   - All 8 packages compiled successfully with zero errors.
+
+---
+
+## Milestone 5: End-to-End Ingestion Pipeline (API, Queue, Worker & Database Persistence)
+**Date**: 2026-09-11  
+**Status**: Completed  
+
+### Deliverables:
+1. **Worker Package Integration (`workers/worker`)**:
+   - Added `@ag-ui/crawler` workspace dependency.
+   - Implemented `crawlWorker` processor handling `QUEUE_NAMES.CRAWL`.
+   - Automated state transitions: updates snapshot to `CRAWLING` -> executes `CompanyCrawler.crawl()` -> updates snapshot to `READY` (or `FAILED`).
+   - Database writes via Drizzle ORM:
+     - Upserts extracted brand tokens into `brands` table (`tokens`, `logoUrl`).
+     - Bulk inserts crawled pages and markdown into `documents` table (`url`, `title`, `category`, `content`).
+2. **Elysia API Companies Routes (`apps/api`)**:
+   - `POST /api/companies`: Validates URL format and executes SSRF safe validation; provisions `companies` and `company_snapshots` (status `QUEUED`); pushes job to BullMQ `crawlQueue`; returns `201 Created`.
+   - `GET /api/companies`: Lists all companies with their latest snapshot status and brand metadata.
+   - `GET /api/companies/:id`: Fetches company metadata, snapshot history, and brand tokens.
+   - `GET /api/companies/:id/documents`: Lists all ingested documents and previews for the latest snapshot.
+3. **Database & ORM Enhancements (`packages/database`)**:
+   - Exported all `drizzle-orm` operators (`eq`, `desc`, `and`, `or`, `sql`) from package root for seamless consumer consumption.
+4. **End-to-End Verification**:
+   - Monorepo `bun run build`: All 8 packages compiled with zero errors in 2.6s.
+   - Live API submission tested against `https://resend.com` (`maxPages: 2`).
+   - Snapshot transitioned `QUEUED` -> `READY` in < 2 seconds.
+   - Ingested 2 documents (`/llms-full.txt` docs + product page) and brand tokens into PostgreSQL.
+   - Verified via `GET /api/companies/:id` and `GET /api/companies/:id/documents`.
+
