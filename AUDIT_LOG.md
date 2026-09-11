@@ -205,8 +205,18 @@ This document serves as the chronological, living audit trail for all architectu
 ---
 
 ## Milestone 8: Brand-Adaptive Next.js 15 Frontend & Full GenUI Component Suite (Phase 5)
-**Status**: In Progress / Pending Execution  
+**Status**: In Progress  
 **Target Package**: `apps/web`
+
+### Completed Deliverables:
+1. **Static Web UI & PromptInput Component Layout**:
+   - Implemented `@ai-elements/prompt-input` conforming component specification in `apps/web/components/ai-elements/prompt-input.tsx`.
+   - **Hidden Irrelevant Options**: File upload dropzone, image attachments, audio recorder, and model selector hidden in favor of clean enterprise Q&A interface.
+   - **Exposed Relevant Options**: Mode badge (`Hybrid pgvector`), company scope badge (`Target: domain`), dynamic placeholder, and Enter-to-submit keybinding.
+   - **Company Selector**: Seamlessly toggles scope between indexed companies (`resend.com`, `anthropic.com`, `redhat.com`, `stripe.com`) with real-time brand color adaptation.
+   - **Suggested Query Chips**: Clicking any chip instantly populates the PromptInput textarea.
+   - **Zero Emojis Enforced**: Strictly Lucide icons and clean typography throughout.
+   - **Production Build Validated**: `next build` static export tested and passing (4/4 pages).
 
 ### Planned Deliverables:
 1. **Dynamic Brand Theming Engine**:
