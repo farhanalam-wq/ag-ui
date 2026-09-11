@@ -71,4 +71,21 @@ This document serves as the chronological, living audit trail for all architectu
    - `MONGODB_URL` & `MONGODB_DB_NAME`: Excluded in adherence to architectural single-source-of-truth mandate (PostgreSQL + pgvector).
    - Third-party notification channels (`WHATSAPP_ACCESS_TOKEN`, `SENDER_EMAIL`) parked for post-MVP.
 
+---
 
+## Milestone 3: Database Schema & Vector Index Deployment
+**Date**: 2026-09-11  
+**Status**: Completed  
+
+### Deliverables & Verification:
+- Pushed complete relational model to PostgreSQL (`ag_ui`) via Drizzle ORM:
+  - `companies`: Primary domain entity with unique domains and URLs.
+  - `company_snapshots`: Versioned snapshots for immutable crawling provenance with cascade deletes.
+  - `brands`: Brand tokens and logo storage linked to companies.
+  - `documents`: Normalized crawled content categorized by page type (`about`, `pricing`, `product`, etc.).
+  - `chunks`: Segmented text chunks with native `vector(1536)` embeddings.
+  - `facts`: Structured key-value subject-predicate-value facts with confidence scores and source provenance.
+  - `conversations` & `messages`: Thread history and assistant messages storing citations (`evidence`) and visual specs (`visual_spec`).
+- Vector Indexing:
+  - Implemented and verified `chunks_embedding_idx` using `hnsw` with `vector_cosine_ops`.
+- Verified live in database: All 8 relations confirmed via `psql \dt` and `\d chunks`.

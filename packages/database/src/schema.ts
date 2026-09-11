@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, vector, integer } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, vector, integer, index } from "drizzle-orm/pg-core";
 
 export const companies = pgTable("companies", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -11,7 +11,7 @@ export const companies = pgTable("companies", {
 export const companySnapshots = pgTable("company_snapshots", {
   id: uuid("id").defaultRandom().primaryKey(),
   companyId: uuid("company_id")
-    .references(() => companies.id)
+    .references(() => companies.id, { onDelete: "cascade" })
     .notNull(),
   version: integer("version").notNull(),
   status: text("status").notNull(), // 'QUEUED' | 'CRAWLING' | 'PROCESSING' | 'READY' | 'FAILED'
@@ -22,7 +22,7 @@ export const companySnapshots = pgTable("company_snapshots", {
 export const brands = pgTable("brands", {
   id: uuid("id").defaultRandom().primaryKey(),
   companyId: uuid("company_id")
-    .references(() => companies.id)
+    .references(() => companies.id, { onDelete: "cascade" })
     .notNull(),
   logoUrl: text("logo_url"),
   tokens: jsonb("tokens").notNull(),
@@ -32,7 +32,7 @@ export const brands = pgTable("brands", {
 export const documents = pgTable("documents", {
   id: uuid("id").defaultRandom().primaryKey(),
   snapshotId: uuid("snapshot_id")
-    .references(() => companySnapshots.id)
+    .references(() => companySnapshots.id, { onDelete: "cascade" })
     .notNull(),
   url: text("url").notNull(),
   title: text("title").notNull(),
@@ -41,24 +41,56 @@ export const documents = pgTable("documents", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const chunks = pgTable("chunks", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  documentId: uuid("document_id")
-    .references(() => documents.id)
-    .notNull(),
-  content: text("content").notNull(),
-  chunkIndex: integer("chunk_index").notNull(),
-  embedding: vector("embedding", { dimensions: 1536 }),
-});
+export const chunks = pgTable(
+  "chunks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    documentId: uuid("document_id")
+      .references(() => documents.id, { onDelete: "cascade" })
+      .notNull(),
+    content: text("content").notNull(),
+    chunkIndex: integer("chunk_index").notNull(),
+    embedding: vector("embedding", { dimensions: 1536 }),
+  },
+  (table) => [
+    index("chunks_embedding_idx").using(
+      "hnsw",
+      table.embedding.op("vector_cosine_ops")
+    ),
+  ]
+);
 
 export const facts = pgTable("facts", {
   id: uuid("id").defaultRandom().primaryKey(),
   snapshotId: uuid("snapshot_id")
-    .references(() => companySnapshots.id)
+    .references(() => companySnapshots.id, { onDelete: "cascade" })
     .notNull(),
-  documentId: uuid("document_id").references(() => documents.id),
+  documentId: uuid("document_id").references(() => documents.id, {
+    onDelete: "set null",
+  }),
   subject: text("subject").notNull(),
   predicate: text("predicate").notNull(),
   value: text("value").notNull(),
   confidence: integer("confidence").default(100),
+});
+
+export const conversations = pgTable("conversations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  companyId: uuid("company_id")
+    .references(() => companies.id, { onDelete: "cascade" })
+    .notNull(),
+  title: text("title").default("New Conversation").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const messages = pgTable("messages", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  conversationId: uuid("conversation_id")
+    .references(() => conversations.id, { onDelete: "cascade" })
+    .notNull(),
+  role: text("role").notNull(), // 'user' | 'assistant'
+  content: text("content").notNull(),
+  evidence: jsonb("evidence"),
+  visualSpec: jsonb("visual_spec"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
