@@ -29,6 +29,9 @@
     "@ag-ui/queues#build": {
       "outputs": []
     },
+    "@ag-ui/crawler#build": {
+      "outputs": []
+    },
     "dev": {
       "cache": false,
       "persistent": true

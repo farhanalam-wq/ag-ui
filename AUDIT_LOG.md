@@ -89,3 +89,33 @@ This document serves as the chronological, living audit trail for all architectu
 - Vector Indexing:
   - Implemented and verified `chunks_embedding_idx` using `hnsw` with `vector_cosine_ops`.
 - Verified live in database: All 8 relations confirmed via `psql \dt` and `\d chunks`.
+
+---
+
+## Milestone 4: Ingestion & Crawler Engine Deployment (@ag-ui/crawler)
+**Date**: 2026-09-11  
+**Status**: Completed  
+
+### Deliverables & Verification:
+- Storage Layer (`packages/shared/src/storage.ts`):
+  - Created provider-agnostic `StorageProvider` interface (`upload`, `get`, `getUrl`, `delete`).
+  - Implemented `LocalStorageProvider` for local development serving assets from `./storage/`.
+- SSRF Security Protection (`packages/crawler/src/ssrf.ts`):
+  - DNS resolution validation and private/loopback/cloud metadata IP blocking (`127.0.0.1`, `10.0.0.0/8`, `192.168.0.0/16`, `169.254.169.254`).
+- LLMs.txt Prioritization (`packages/crawler/src/llms-txt.ts`):
+  - Probing and direct ingestion of `/llms-full.txt` and markdown URL extraction from `/llms.txt`.
+- Discovery Engine (`packages/crawler/src/discovery.ts`):
+  - `robots.txt` and `sitemap.xml` parser with route priority scoring (`/pricing`, `/about`, `/products`).
+- Dual-Tier Fetcher (`packages/crawler/src/fetcher.ts`):
+  - Tier 1 HTTP fetch via Cheerio with client-side SPA shell detection.
+  - Tier 2 Playwright headless browser fallback.
+- Content Extractor (`packages/crawler/src/extractor.ts`):
+  - Mozilla Readability + Cheerio boilerplate stripping (nav, footers, cookie banners) and category inference.
+- Brand Extractor (`packages/crawler/src/brand.ts`):
+  - Favicon, OpenGraph logo, primary/secondary colors, and typography token extraction into `BrandTokens`.
+- Full Crawler Orchestrator (`packages/crawler/src/index.ts`):
+  - `CompanyCrawler` coordinating SSRF -> LLMs.txt -> Sitemap -> Priority Crawl Loop -> Brand Extraction.
+- Automated Test Suite (`packages/crawler/test-crawler.ts`):
+  - All 5 test suites passed: SSRF protection, Storage Provider, LLMs.txt parsing, Content cleaning, and Brand token extraction.
+- Turborepo Build:
+  - All 8 packages compiled successfully with zero errors.
