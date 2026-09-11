@@ -34,3 +34,5 @@ Thumbs.db
 # Docker volumes / scratch
 scratch/
 pgdata/
+REFERENCE.md
+UPGRADE_REFERENCE.md
