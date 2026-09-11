@@ -1,0 +1,242 @@
+"use client";
+
+import React, { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import {
+  User,
+  Sparkle,
+  CircleNotch,
+  MagnifyingGlass,
+  Copy,
+  Check,
+  Stack,
+  ArrowSquareOut,
+  WarningCircle,
+  Eye,
+} from "@phosphor-icons/react";
+import type { ChatMessage as ChatMessageType, EvidenceItem } from "@/hooks/use-company-chat";
+
+interface ChatMessageProps {
+  message: ChatMessageType;
+  companyName: string;
+  brandColor?: string;
+  onOpenEvidence: (item?: EvidenceItem) => void;
+}
+
+export function ChatMessageItem({
+  message,
+  companyName,
+  brandColor = "#3b82f6",
+  onOpenEvidence,
+}: ChatMessageProps) {
+  const [copied, setCopied] = useState(false);
+  const isUser = message.role === "user";
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(message.content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (isUser) {
+    return (
+      <div className="flex justify-end w-full">
+        <div className="flex items-start gap-3 max-w-2xl">
+          <div className="rounded-2xl rounded-tr-sm bg-zinc-900 border border-zinc-800 px-4 py-3 text-sm text-zinc-100 shadow-md">
+            <p className="leading-relaxed whitespace-pre-wrap">{message.content}</p>
+          </div>
+          <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-zinc-800 text-zinc-400 shrink-0 mt-0.5">
+            <User className="w-4 h-4" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const isRetrieving = message.stage === "retrieving";
+  const isSynthesizing = message.stage === "synthesizing";
+  const isError = message.stage === "error";
+
+  return (
+    <div className="flex justify-start w-full">
+      <div className="flex items-start gap-3 max-w-3xl w-full">
+        {/* Company Avatar */}
+        <div
+          className="flex items-center justify-center w-8 h-8 rounded-xl font-bold text-xs shrink-0 mt-1 shadow-inner border border-zinc-700/60 transition-colors"
+          style={{
+            backgroundColor: `${brandColor}20`,
+            color: brandColor,
+          }}
+        >
+          {companyName.slice(0, 2).toUpperCase()}
+        </div>
+
+        {/* Message Container */}
+        <div className="flex-1 min-w-0 space-y-3">
+          {/* Status Stage Indicator Banner */}
+          {(isRetrieving || (isSynthesizing && !message.content)) && (
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-zinc-800 bg-zinc-900/80 text-xs text-zinc-300 animate-pulse">
+              {isRetrieving ? (
+                <>
+                  <MagnifyingGlass className="w-3.5 h-3.5 text-zinc-400 animate-spin" />
+                  <span>{message.stageMessage || "Searching pgvector knowledge base..."}</span>
+                </>
+              ) : (
+                <>
+                  <CircleNotch className="w-3.5 h-3.5 text-zinc-400 animate-spin" />
+                  <span>{message.stageMessage || "Synthesizing answer..."}</span>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Error Banner */}
+          {isError && (
+            <div className="flex items-center gap-2 p-3 rounded-lg border border-red-900/50 bg-red-950/30 text-xs text-red-300">
+              <WarningCircle className="w-4 h-4 text-red-400 shrink-0" />
+              <span>{message.stageMessage || "Failed to generate response."}</span>
+            </div>
+          )}
+
+          {/* Assistant Answer Body */}
+          {message.content && (
+            <div className="rounded-2xl rounded-tl-sm border border-zinc-800/80 bg-zinc-900/40 p-5 text-zinc-100 shadow-xl backdrop-blur-sm space-y-3">
+              <div className="prose prose-invert prose-zinc max-w-none text-sm leading-relaxed space-y-2">
+                <ReactMarkdown
+                  components={{
+                    h1: ({ children }) => (
+                      <h1 className="text-lg font-bold text-zinc-100 mt-4 mb-2">{children}</h1>
+                    ),
+                    h2: ({ children }) => (
+                      <h2 className="text-base font-semibold text-zinc-100 mt-3 mb-1.5">
+                        {children}
+                      </h2>
+                    ),
+                    h3: ({ children }) => (
+                      <h3 className="text-sm font-semibold text-zinc-200 mt-2 mb-1">{children}</h3>
+                    ),
+                    p: ({ children }) => (
+                      <p className="text-sm text-zinc-300 leading-relaxed my-1.5">{children}</p>
+                    ),
+                    ul: ({ children }) => (
+                      <ul className="list-disc list-inside space-y-1 my-2 text-zinc-300 text-sm">
+                        {children}
+                      </ul>
+                    ),
+                    ol: ({ children }) => (
+                      <ol className="list-decimal list-inside space-y-1 my-2 text-zinc-300 text-sm">
+                        {children}
+                      </ol>
+                    ),
+                    li: ({ children }) => <li className="text-zinc-300">{children}</li>,
+                    strong: ({ children }) => (
+                      <strong className="font-semibold text-zinc-100">{children}</strong>
+                    ),
+                    code: ({ children, className }) => {
+                      const isBlock = Boolean(className);
+                      return isBlock ? (
+                        <pre className="p-3 my-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs font-mono text-zinc-200 overflow-x-auto">
+                          <code>{children}</code>
+                        </pre>
+                      ) : (
+                        <code className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-200 text-xs font-mono border border-zinc-700/60">
+                          {children}
+                        </code>
+                      );
+                    },
+                  }}
+                >
+                  {message.content}
+                </ReactMarkdown>
+
+                {/* Streaming blinking cursor */}
+                {isSynthesizing && (
+                  <span className="inline-block w-1.5 h-4 ml-0.5 bg-brand-primary animate-pulse align-middle" />
+                )}
+              </div>
+
+              {/* GenUI Visual Spec Preview Banner */}
+              {message.visualSpec && (
+                <div className="mt-4 pt-3 border-t border-zinc-800/80">
+                  <div className="flex items-center justify-between p-3 rounded-xl border border-zinc-800 bg-zinc-950/70 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="p-1 rounded bg-zinc-800 text-zinc-300 font-mono">
+                        <Sparkle className="w-3.5 h-3.5" />
+                      </span>
+                      <div>
+                        <span className="font-semibold text-zinc-200 uppercase font-mono text-[11px]">
+                          Interactive Component: {message.visualSpec.type}
+                        </span>
+                        <p className="text-[11px] text-zinc-500 font-mono">
+                          Ready for Brand-Adaptive Generative UI Rendering
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded border border-zinc-800 bg-zinc-900 text-zinc-400">
+                      GenUI Active
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Citations Footer */}
+              {message.evidence && message.evidence.length > 0 && (
+                <div className="mt-4 pt-3 border-t border-zinc-800/60 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] font-mono text-zinc-500 mr-1 flex items-center gap-1">
+                      <Stack className="w-3 h-3 text-zinc-500" />
+                      Sources:
+                    </span>
+                    {message.evidence.slice(0, 4).map((ev, idx) => (
+                      <button
+                        key={ev.id || idx}
+                        type="button"
+                        onClick={() => onOpenEvidence(ev)}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono border border-zinc-800 bg-zinc-900/60 hover:border-zinc-700 hover:bg-zinc-800 text-zinc-300 transition-colors"
+                      >
+                        <span>[{idx + 1}]</span>
+                        <span className="max-w-[120px] truncate">{ev.title || "Doc"}</span>
+                      </button>
+                    ))}
+                    {message.evidence.length > 4 && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenEvidence()}
+                        className="text-[11px] font-mono text-zinc-400 hover:text-zinc-200 underline ml-1"
+                      >
+                        +{message.evidence.length - 4} more
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onOpenEvidence()}
+                      className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors px-2 py-1 rounded hover:bg-zinc-800"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Inspect Evidence ({message.evidence.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCopy}
+                      className="p-1.5 rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+                      title="Copy response"
+                    >
+                      {copied ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

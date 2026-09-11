@@ -218,15 +218,18 @@ This document serves as the chronological, living audit trail for all architectu
    - **Zero Emojis Enforced & Phosphor Icons**: Strictly `@phosphor-icons/react` icons and crisp typography throughout (zero Lucide icons or emojis).
    - **Production Build Validated**: `next build` static export tested and passing (4/4 pages).
 
+2. **Real-Time Streaming Chat Canvas & Evidence Drawer**:
+   - Built type-safe `useCompanyChat` hook consuming native Elysia SSE stream generator from `POST /api/companies/:id/chat`.
+   - Real-time token typing with stage indicators (`retrieving` pgvector search, `synthesizing` OpenAI completion).
+   - Built `ChatMessageItem` rendering clean Markdown (headings, code blocks, lists) and GenUI component triggers.
+   - Built `EvidenceDrawer` with collapsible slide-out panel, displaying document titles, relevance match percentages, source links, and copyable text snippets.
+   - Verified live end-to-end streaming chat and citation retrieval against indexed companies.
+
 ### Planned Deliverables:
 1. **Dynamic Brand Theming Engine**:
    - Injects company brand tokens into CSS custom properties (`--brand-primary`, `--brand-secondary`, `--brand-style`, `--brand-radius`).
    - Seamless live theme adaptation across companies (e.g. Stripe, Red Hat, Anthropic, Resend).
-2. **Real-Time Streaming Chat Canvas**:
-   - Client-side SSE stream reader consuming `POST /api/companies/:id/chat`.
-   - Real-time token typing display with stage badges (`retrieving`, `synthesizing`).
-   - **Collapsible Evidence Drawer**: Interactive citation sidebar citing document titles, exact URLs, chunk excerpts, and relevance percentages.
-3. **Comprehensive Generative UI Component Suite**:
+2. **Comprehensive Generative UI Component Suite**:
    - **3D CardStack / ProductList**: Tactile, swipeable card stack (Framer Motion) with media previews, tags, descriptions, and action links.
    - **PricingTable**: Responsive tier cards with recommended plan highlight, billing toggles, and feature checklists.
    - **StatsGrid**: Commercial metrics cards with values, trend indicators, and labels.
