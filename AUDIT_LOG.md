@@ -223,6 +223,7 @@ This document serves as the chronological, living audit trail for all architectu
    - Real-time token typing with stage indicators (`retrieving` pgvector search, `synthesizing` OpenAI completion).
    - Built `ChatMessageItem` rendering clean Markdown (headings, code blocks, lists) and GenUI component triggers.
    - Built `EvidenceDrawer` with collapsible slide-out panel, displaying document titles, relevance match percentages, source links, and copyable text snippets.
+   - **Centralised API Client (`apps/web/lib/api-client.ts`)**: Encapsulates all REST and SSE streaming endpoints (`companies.list`, `companies.get`, `companies.create`, `chat.stream`, `health`); eliminates ad-hoc network calls across the frontend.
    - Verified live end-to-end streaming chat and citation retrieval against indexed companies.
 
 ### Planned Deliverables:

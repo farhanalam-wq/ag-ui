@@ -26,6 +26,7 @@ import {
 import { useCompanyChat } from "@/hooks/use-company-chat";
 import { ChatMessageItem } from "@/components/chat-message";
 import { EvidenceDrawer } from "@/components/evidence-drawer";
+import { apiClient } from "@/lib/api-client";
 
 // ============================================================================
 // Fallback / Initial Companies Data
@@ -119,14 +120,11 @@ export default function Home() {
     closeDrawer,
   } = useCompanyChat();
 
-  // Dynamically resolve real companies from backend API
+  // Dynamically resolve real companies from backend API via centralised apiClient
   useEffect(() => {
     async function fetchApiCompanies() {
       try {
-        const res = await fetch("http://localhost:3001/api/companies");
-        if (!res.ok) return;
-        const data = await res.json();
-        const apiList: any[] = data.companies || [];
+        const apiList = await apiClient.companies.list();
 
         if (apiList.length > 0) {
           const merged = DEFAULT_COMPANIES.map((def) => {
@@ -138,7 +136,10 @@ export default function Home() {
             return match ? { ...def, id: match.id, name: match.name } : def;
           });
           setCompanies(merged);
-          setSelectedCompany(merged[0]);
+          setSelectedCompany((prev) => {
+            const matchedCurrent = merged.find((m) => m.domain === prev.domain);
+            return matchedCurrent || merged[0];
+          });
         }
       } catch {
         // Fallback to DEFAULT_COMPANIES

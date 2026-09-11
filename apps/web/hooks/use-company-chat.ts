@@ -2,6 +2,8 @@
 
 import { useState, useCallback, useRef } from "react";
 
+import { apiClient } from "@/lib/api-client";
+
 export interface EvidenceItem {
   id: string;
   title: string;
@@ -79,140 +81,89 @@ export function useCompanyChat() {
       abortControllerRef.current = controller;
 
       try {
-        const res = await fetch(`http://localhost:3001/api/companies/${companyId}/chat`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
+        await apiClient.chat.stream(
+          companyId,
+          {
             message: text.trim(),
             conversationId: activeConversationId || undefined,
-          }),
-          signal: controller.signal,
-        });
-
-        if (!res.ok) {
-          const errText = await res.text();
-          throw new Error(`Chat API error (${res.status}): ${errText}`);
-        }
-
-        const reader = res.body?.getReader();
-        if (!reader) {
-          throw new Error("No readable stream received from chat API");
-        }
-
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const blocks = buffer.split("\n\n");
-          buffer = blocks.pop() || "";
-
-          for (const block of blocks) {
-            const trimmed = block.trim();
-            if (!trimmed) continue;
-
-            let eventType = "message";
-            let eventDataString = "";
-
-            const lines = trimmed.split("\n");
-            for (const line of lines) {
-              if (line.startsWith("event:")) {
-                eventType = line.replace("event:", "").trim();
-              } else if (line.startsWith("data:")) {
-                eventDataString = line.replace("data:", "").trim();
-              }
-            }
-
-            if (!eventDataString) continue;
-
-            try {
-              let parsed = JSON.parse(eventDataString);
-              let payload = parsed;
-
-              // If Elysia enveloped generator yield: { event: string, data: any }
-              if (parsed && typeof parsed === "object" && "event" in parsed && "data" in parsed) {
-                eventType = parsed.event;
-                payload = parsed.data;
-              }
-
-              if (eventType === "status") {
-                setCurrentStage(payload.stage);
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMessageId
-                      ? { ...m, stage: payload.stage, stageMessage: payload.message }
-                      : m
-                  )
-                );
-              } else if (eventType === "brand") {
-                setActiveBrand(payload);
-                if (payload.tokens?.colors?.primary) {
-                  document.documentElement.style.setProperty(
-                    "--brand-primary",
-                    payload.tokens.colors.primary
-                  );
-                }
-              } else if (eventType === "evidence") {
-                const evidenceList = Array.isArray(payload) ? payload : [];
-                setActiveEvidence(evidenceList);
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMessageId ? { ...m, evidence: evidenceList } : m
-                  )
-                );
-              } else if (eventType === "delta") {
-                const deltaText = payload.text || "";
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMessageId
-                      ? {
-                          ...m,
-                          content: m.content + deltaText,
-                          stage: "synthesizing",
-                        }
-                      : m
-                  )
-                );
-              } else if (eventType === "visual") {
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMessageId ? { ...m, visualSpec: payload } : m
-                  )
-                );
-              } else if (eventType === "done") {
-                setCurrentStage("done");
-                if (payload?.conversationId) {
-                  setActiveConversationId(payload.conversationId);
-                }
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMessageId ? { ...m, stage: "done" } : m
-                  )
-                );
-              } else if (eventType === "error") {
-                setCurrentStage("error");
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMessageId
-                      ? {
-                          ...m,
-                          stage: "error",
-                          stageMessage: payload?.message || "An error occurred",
-                        }
-                      : m
-                  )
+          },
+          {
+            onStatus: (data) => {
+              setCurrentStage(data.stage);
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMessageId
+                    ? { ...m, stage: data.stage, stageMessage: data.message }
+                    : m
+                )
+              );
+            },
+            onBrand: (data) => {
+              setActiveBrand(data);
+              if (data.tokens?.colors?.primary) {
+                document.documentElement.style.setProperty(
+                  "--brand-primary",
+                  data.tokens.colors.primary
                 );
               }
-            } catch {
-              // Ignore non-JSON or partial frames
-            }
-          }
-        }
+            },
+            onEvidence: (evidenceList) => {
+              setActiveEvidence(evidenceList);
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMessageId ? { ...m, evidence: evidenceList } : m
+                )
+              );
+            },
+            onDelta: (data) => {
+              const deltaText = data.text || "";
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMessageId
+                    ? {
+                        ...m,
+                        content: m.content + deltaText,
+                        stage: "synthesizing",
+                      }
+                    : m
+                )
+              );
+            },
+            onVisual: (data) => {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMessageId ? { ...m, visualSpec: data } : m
+                )
+              );
+            },
+            onDone: (data) => {
+              setCurrentStage("done");
+              if (data?.conversationId) {
+                setActiveConversationId(data.conversationId);
+              }
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMessageId ? { ...m, stage: "done" } : m
+                )
+              );
+            },
+            onError: (errData) => {
+              setCurrentStage("error");
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMessageId
+                    ? {
+                        ...m,
+                        stage: "error",
+                        stageMessage: errData?.message || "An error occurred",
+                      }
+                    : m
+                )
+              );
+            },
+          },
+          controller.signal
+        );
       } catch (err: any) {
         if (err.name === "AbortError") return;
         setCurrentStage("error");
