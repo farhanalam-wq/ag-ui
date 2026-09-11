@@ -168,6 +168,36 @@ This document serves as the chronological, living audit trail for all architectu
 7. **End-to-End Verification**:
    - All 8 packages compiled cleanly with Turborepo (`8 successful, 8 total`).
    - Crawled and processed `https://resend.com` into 17 chunks and 2 facts per snapshot.
-   - Executed live vector cosine similarity search with pgvector: query `"How do I send emails using React Email components?"` achieved 60.52% cosine similarity matching exact React Email code blocks.
+---
 
+## Milestone 7: Hybrid Retrieval & Streaming SSE Chat Endpoint with Brand-Adaptive GenUI Triggering
+**Date**: 2026-09-11  
+**Status**: Completed  
 
+### Deliverables:
+1. **Interactive Map Schema Expansion (`packages/contracts/src/visual-spec.ts`)**:
+   - Extended `VisualSpecSchema` union with the `map` component type.
+   - Defined `MapMarkerSchema` with `label`, `address`, `lat`, and `lng`.
+2. **Hybrid Context Retrieval Engine (`packages/database/src/retrieval.ts`)**:
+   - Implemented `retrieveCompanyContext(companyId, query)` combining:
+     - Deterministic SQL facts query from `facts` table.
+     - Semantic vector search using OpenAI `text-embedding-3-small` (1536-dim) and pgvector cosine similarity (`1 - (chunks.embedding <=> queryEmbedding)`).
+     - Brand token resolution from `brands` table (`primaryColor`, `fontFamily`, `style`).
+     - Evidence citation compiler and structured prompt builder.
+3. **OpenAI Multi-Tool Generator & GenUI Parser (`packages/shared/src/llm.ts`)**:
+   - Implemented `streamChatCompletionGenerator` yielding real-time text `delta`, parsed `visual` specs, and `done` events.
+   - Built index-aware multi-tool accumulator (`toolCallsByIndex`) to independently assemble concurrent tool calls without corrupted JSON concatenations.
+   - Emits structured `VisualSpec` objects (`pricing`, `stats`, `products`, `timeline`, `comparison`, `map`).
+4. **Native Elysia SSE Streaming Routes (`apps/api/src/routes/chat.ts`)**:
+   - `POST /api/companies/:id/chat`: Streaming SSE endpoint emitting events (`status`, `brand`, `evidence`, `delta`, `visual`, `done`).
+   - `GET /api/companies/:id/conversations`: Lists all historical conversation threads for a company.
+   - `GET /api/conversations/:id/messages`: Returns all multi-turn messages and persisted visual specs for a session.
+5. **PostgreSQL Multi-Turn & GenUI Persistence**:
+   - Automatic conversation and message row creation in `conversations` and `messages` tables.
+   - Stores user questions and assistant answers alongside evidence citations and JSON `visualSpec`.
+6. **End-to-End Live Verification**:
+   - Tested live query `"What are the core developer products and features provided by Resend?"` against `http://localhost:3001/api/companies/:id/chat`.
+   - Verified real-time delta tokens streamed live directly from OpenAI `gpt-4o-mini`.
+   - Verified GenUI visual component triggered with `type: "products"` and 7 structured product items.
+   - Verified full session persistence in PostgreSQL with `visualSpec: true` and 7 evidence citations.
+   - Strictly enforced zero emojis across all outputs, logs, and prompt guidelines.

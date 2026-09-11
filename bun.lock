@@ -109,6 +109,7 @@
       "name": "@ag-ui/shared",
       "version": "0.0.1",
       "dependencies": {
+        "@ag-ui/contracts": "workspace:*",
         "zod": "^3.24.2",
       },
       "devDependencies": {

@@ -3,6 +3,7 @@ import { cors } from "@elysiajs/cors";
 import { swagger } from "@elysiajs/swagger";
 import { logger } from "@ag-ui/shared";
 import { companiesRoutes } from "./routes/companies";
+import { chatRoutes } from "./routes/chat";
 
 const PORT = parseInt(process.env.PORT || "3001", 10);
 
@@ -30,6 +31,7 @@ export const app = new Elysia()
     documentation: "/swagger",
   }))
   .use(companiesRoutes)
+  .use(chatRoutes)
   .listen(PORT);
 
 logger.info(`ag-ui Elysia API running at http://localhost:${PORT}`);

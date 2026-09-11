@@ -32,6 +32,13 @@ export const ComparisonRowSchema = z.object({
   values: z.array(z.union([z.string(), z.boolean()])),
 });
 
+export const MapMarkerSchema = z.object({
+  label: z.string(),
+  address: z.string(),
+  lat: z.number(),
+  lng: z.number(),
+});
+
 export const VisualSpecSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("stats"),
@@ -63,6 +70,15 @@ export const VisualSpecSchema = z.discriminatedUnion("type", [
     props: z.object({
       headers: z.array(z.string()),
       rows: z.array(ComparisonRowSchema),
+    }),
+  }),
+  z.object({
+    type: z.literal("map"),
+    props: z.object({
+      title: z.string().optional(),
+      center: z.object({ lat: z.number(), lng: z.number() }),
+      zoom: z.number().optional(),
+      markers: z.array(MapMarkerSchema),
     }),
   }),
 ]);
