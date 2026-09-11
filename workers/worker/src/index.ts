@@ -2,7 +2,7 @@ import { Worker } from "bullmq";
 import { QUEUE_NAMES, redisConnection } from "@ag-ui/queues";
 import { logger } from "@ag-ui/shared";
 
-logger.info("⚙️  Initializing ag-ui background workers on Bun...");
+logger.info("Initializing ag-ui background workers on Bun...");
 
 const crawlWorker = new Worker(
   QUEUE_NAMES.CRAWL,
@@ -21,4 +21,4 @@ crawlWorker.on("failed", (job, err) => {
   logger.error(`[CRAWL WORKER] Job ${job?.id} failed:`, err);
 });
 
-logger.info("  Background workers listening to queues on Redis (localhost:6379)");
+logger.info("Background workers listening to queues on Redis (localhost:6379)");
