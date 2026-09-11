@@ -215,7 +215,7 @@ This document serves as the chronological, living audit trail for all architectu
    - **Exposed Relevant Options**: Mode badge (`Hybrid pgvector`), company scope badge (`Target: domain`), dynamic placeholder, and Enter-to-submit keybinding.
    - **Company Selector**: Seamlessly toggles scope between indexed companies (`resend.com`, `anthropic.com`, `redhat.com`, `stripe.com`) with real-time brand color adaptation.
    - **Suggested Query Chips**: Clicking any chip instantly populates the PromptInput textarea.
-   - **Zero Emojis Enforced**: Strictly Lucide icons and clean typography throughout.
+   - **Zero Emojis Enforced & Phosphor Icons**: Strictly `@phosphor-icons/react` icons and crisp typography throughout (zero Lucide icons or emojis).
    - **Production Build Validated**: `next build` static export tested and passing (4/4 pages).
 
 ### Planned Deliverables:

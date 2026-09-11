@@ -13,7 +13,7 @@ import React, {
   type HTMLAttributes,
 } from "react";
 import { cn } from "@/lib/utils";
-import { ArrowUp, Loader2, Sparkles } from "lucide-react";
+import { ArrowUp, CircleNotch, Sparkle } from "@phosphor-icons/react";
 
 
 // Context
@@ -271,11 +271,11 @@ export function PromptInputAction({
 // PromptInputBadge / Filter Tool
 
 export function PromptInputBadge({
-  icon: Icon = Sparkles,
+  icon: Icon = Sparkle,
   label,
   className,
 }: {
-  icon?: React.ComponentType<{ className?: string }>;
+  icon?: React.ComponentType<{ className?: string; size?: number | string; weight?: any }>;
   label: string;
   className?: string;
 }) {
@@ -322,11 +322,11 @@ export function PromptInputSubmit({
       {...props}
     >
       {isSubmitting ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
+        <CircleNotch className="h-4 w-4 animate-spin" />
       ) : children ? (
         children
       ) : (
-        <ArrowUp className="h-4 w-4 stroke-[2.5]" />
+        <ArrowUp className="h-4 w-4" weight="bold" />
       )}
     </button>
   );

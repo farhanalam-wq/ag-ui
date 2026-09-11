@@ -11,20 +11,16 @@ import {
   PromptInputSubmit,
 } from "@/components/ai-elements/prompt-input";
 import {
-  Building2,
-  Layers,
-  Sparkles,
+  Buildings,
+  Stack,
+  Sparkle,
   ArrowRight,
   ShieldCheck,
-  Search,
-  Zap,
-  Globe,
-  DollarSign,
-  MapPin,
-  Code2,
-  ExternalLink,
-  CheckCircle2,
-} from "lucide-react";
+  MagnifyingGlass,
+  Lightning,
+  Code,
+  ArrowSquareOut,
+} from "@phosphor-icons/react";
 
 
 // Demo Indexed Companies Data
@@ -164,7 +160,7 @@ export default function Home() {
               className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors border border-zinc-800 rounded-lg px-2.5 py-1"
             >
               <span>API :3001</span>
-              <ExternalLink className="w-3 h-3" />
+              <ArrowSquareOut className="w-3 h-3" />
             </a>
           </div>
         </div>
@@ -175,7 +171,7 @@ export default function Home() {
         {/* Hero Section */}
         <div className="text-center max-w-2xl mx-auto mb-8 space-y-3">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-zinc-800 bg-zinc-900/80 text-xs font-medium text-zinc-400 mb-2">
-            <Layers className="w-3.5 h-3.5 text-zinc-400" />
+            <Stack className="w-3.5 h-3.5 text-zinc-400" />
             <span>Hybrid Retrieval &bull; Fact Extraction &bull; Generative UI</span>
           </div>
 
@@ -256,12 +252,12 @@ export default function Home() {
               {/* Left Tools & Badges (Irrelevant upload/media options hidden) */}
               <PromptInputTools>
                 <PromptInputBadge
-                  icon={Building2}
+                  icon={Buildings}
                   label={selectedCompany.domain}
                   className="bg-zinc-900/90 border-zinc-800 text-zinc-300"
                 />
                 <PromptInputBadge
-                  icon={Layers}
+                  icon={Stack}
                   label="Hybrid pgvector"
                   className="hidden sm:inline-flex bg-zinc-900/50 border-zinc-800/80 text-zinc-400"
                 />
@@ -283,7 +279,7 @@ export default function Home() {
           {/* Suggested Prompt Chips */}
           <div className="space-y-2 pt-1">
             <div className="flex items-center gap-1.5 text-xs text-zinc-500 font-mono">
-              <Sparkles className="w-3.5 h-3.5 text-zinc-500" />
+              <Sparkle className="w-3.5 h-3.5 text-zinc-500" />
               <span>Suggested Inquiries for {selectedCompany.name}:</span>
             </div>
 
@@ -315,7 +311,7 @@ export default function Home() {
             <div className="p-4 rounded-xl border border-zinc-800/70 bg-zinc-900/30 space-y-2">
               <div className="flex items-center gap-2.5 text-zinc-200 font-medium text-sm">
                 <div className="p-1.5 rounded-lg bg-zinc-800 border border-zinc-700/60 text-zinc-300">
-                  <Search className="w-4 h-4" />
+                  <MagnifyingGlass className="w-4 h-4" />
                 </div>
                 <span>Hybrid Vector & Fact Retrieval</span>
               </div>
@@ -327,7 +323,7 @@ export default function Home() {
             <div className="p-4 rounded-xl border border-zinc-800/70 bg-zinc-900/30 space-y-2">
               <div className="flex items-center gap-2.5 text-zinc-200 font-medium text-sm">
                 <div className="p-1.5 rounded-lg bg-zinc-800 border border-zinc-700/60 text-zinc-300">
-                  <Code2 className="w-4 h-4" />
+                  <Code className="w-4 h-4" />
                 </div>
                 <span>Brand-Adaptive Generative UI</span>
               </div>
@@ -339,7 +335,7 @@ export default function Home() {
             <div className="p-4 rounded-xl border border-zinc-800/70 bg-zinc-900/30 space-y-2">
               <div className="flex items-center gap-2.5 text-zinc-200 font-medium text-sm">
                 <div className="p-1.5 rounded-lg bg-zinc-800 border border-zinc-700/60 text-zinc-300">
-                  <Zap className="w-4 h-4" />
+                  <Lightning className="w-4 h-4" />
                 </div>
                 <span>Real-Time SSE Streaming</span>
               </div>
