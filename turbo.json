@@ -1,0 +1,41 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "tui",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [
+        ".next/**",
+        "!.next/cache/**",
+        "!.next/dev/**",
+        "dist/**"
+      ]
+    },
+    "@ag-ui/api#build": {
+      "outputs": []
+    },
+    "@ag-ui/worker#build": {
+      "outputs": []
+    },
+    "@ag-ui/contracts#build": {
+      "outputs": []
+    },
+    "@ag-ui/shared#build": {
+      "outputs": []
+    },
+    "@ag-ui/database#build": {
+      "outputs": []
+    },
+    "@ag-ui/queues#build": {
+      "outputs": []
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {},
+    "clean": {
+      "cache": false
+    }
+  }
+}

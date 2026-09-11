@@ -1,0 +1,25 @@
+{
+  "name": "@ag-ui/api",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./src/server.ts",
+  "scripts": {
+    "dev": "bun --watch src/server.ts",
+    "build": "echo 'api: build ok'",
+    "start": "bun src/server.ts",
+    "lint": "echo 'api: lint ok'"
+  },
+  "dependencies": {
+    "elysia": "^1.2.25",
+    "@elysiajs/cors": "^1.2.0",
+    "@elysiajs/swagger": "^1.2.2",
+    "@ag-ui/contracts": "workspace:*",
+    "@ag-ui/database": "workspace:*",
+    "@ag-ui/queues": "workspace:*",
+    "@ag-ui/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.3"
+  }
+}

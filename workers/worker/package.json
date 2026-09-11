@@ -1,0 +1,24 @@
+{
+  "name": "@ag-ui/worker",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "build": "echo 'worker: build ok'",
+    "start": "bun src/index.ts",
+    "lint": "echo 'worker: lint ok'"
+  },
+  "dependencies": {
+    "bullmq": "^5.41.6",
+    "ioredis": "^5.5.0",
+    "@ag-ui/contracts": "workspace:*",
+    "@ag-ui/database": "workspace:*",
+    "@ag-ui/queues": "workspace:*",
+    "@ag-ui/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.3"
+  }
+}
