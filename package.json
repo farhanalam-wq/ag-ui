@@ -11,7 +11,9 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "clean": "turbo run clean",
-    "crawl": "bun packages/crawler/cli.ts"
+    "crawl": "bun packages/crawler/cli.ts",
+    "chat": "bun cli.ts",
+    "cli": "bun cli.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.4.2",
