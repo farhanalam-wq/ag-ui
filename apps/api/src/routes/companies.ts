@@ -5,8 +5,11 @@ import {
   companySnapshots,
   brands,
   documents,
+  chunks,
+  facts,
   eq,
   desc,
+  inArray,
 } from "@ag-ui/database";
 import { crawlQueue } from "@ag-ui/queues";
 import { validateSafeUrl, SSRFError } from "@ag-ui/crawler";
@@ -281,6 +284,132 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
       detail: {
         summary: "Get documents for company snapshot",
         description: "Returns all crawled documents and metadata for the latest snapshot.",
+      },
+    }
+  )
+
+  // 5. Get vector chunks for a company's latest snapshot
+  .get(
+    "/:id/chunks",
+    async ({ params, set }) => {
+      const [company] = await db
+        .select()
+        .from(companies)
+        .where(eq(companies.id, params.id))
+        .limit(1);
+
+      if (!company) {
+        set.status = 404;
+        return { error: "Company not found" };
+      }
+
+      const [latestSnapshot] = await db
+        .select()
+        .from(companySnapshots)
+        .where(eq(companySnapshots.companyId, company.id))
+        .orderBy(desc(companySnapshots.version))
+        .limit(1);
+
+      if (!latestSnapshot) {
+        return { chunks: [] };
+      }
+
+      const docs = await db
+        .select({ id: documents.id })
+        .from(documents)
+        .where(eq(documents.snapshotId, latestSnapshot.id));
+
+      if (docs.length === 0) {
+        return { companyId: company.id, snapshotId: latestSnapshot.id, chunks: [] };
+      }
+
+      const docIds = docs.map((d) => d.id);
+      const chunkRecords = await db
+        .select({
+          id: chunks.id,
+          documentId: chunks.documentId,
+          chunkIndex: chunks.chunkIndex,
+          content: chunks.content,
+        })
+        .from(chunks)
+        .where(inArray(chunks.documentId, docIds));
+
+      return {
+        companyId: company.id,
+        snapshotId: latestSnapshot.id,
+        snapshotStatus: latestSnapshot.status,
+        totalChunks: chunkRecords.length,
+        chunks: chunkRecords.map((c) => ({
+          id: c.id,
+          documentId: c.documentId,
+          chunkIndex: c.chunkIndex,
+          characterCount: c.content.length,
+          preview: c.content.slice(0, 160).replace(/\n/g, " "),
+        })),
+      };
+    },
+    {
+      params: t.Object({
+        id: t.String(),
+      }),
+      detail: {
+        summary: "Get chunks for company",
+        description: "Returns vector chunks created from the company's latest snapshot.",
+      },
+    }
+  )
+
+  // 6. Get deterministic facts for a company's latest snapshot
+  .get(
+    "/:id/facts",
+    async ({ params, set }) => {
+      const [company] = await db
+        .select()
+        .from(companies)
+        .where(eq(companies.id, params.id))
+        .limit(1);
+
+      if (!company) {
+        set.status = 404;
+        return { error: "Company not found" };
+      }
+
+      const [latestSnapshot] = await db
+        .select()
+        .from(companySnapshots)
+        .where(eq(companySnapshots.companyId, company.id))
+        .orderBy(desc(companySnapshots.version))
+        .limit(1);
+
+      if (!latestSnapshot) {
+        return { facts: [] };
+      }
+
+      const factRecords = await db
+        .select()
+        .from(facts)
+        .where(eq(facts.snapshotId, latestSnapshot.id));
+
+      return {
+        companyId: company.id,
+        snapshotId: latestSnapshot.id,
+        totalFacts: factRecords.length,
+        facts: factRecords.map((f) => ({
+          id: f.id,
+          subject: f.subject,
+          predicate: f.predicate,
+          value: f.value,
+          confidence: f.confidence,
+        })),
+      };
+    },
+    {
+      params: t.Object({
+        id: t.String(),
+      }),
+      detail: {
+        summary: "Get extracted facts for company",
+        description: "Returns all structured facts extracted from the company's latest snapshot.",
       },
     }
   );

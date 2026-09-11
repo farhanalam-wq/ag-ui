@@ -3,11 +3,26 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 import { Worker } from "bullmq";
 import { QUEUE_NAMES, redisConnection } from "@ag-ui/queues";
-import { db, companySnapshots, brands, documents, eq } from "@ag-ui/database";
+import {
+  db,
+  companies,
+  companySnapshots,
+  brands,
+  documents,
+  chunks,
+  facts,
+  eq,
+} from "@ag-ui/database";
 import { CompanyCrawler } from "@ag-ui/crawler";
-import { logger } from "@ag-ui/shared";
+import {
+  logger,
+  chunkMarkdown,
+  generateEmbeddings,
+  extractCompanyFacts,
+} from "@ag-ui/shared";
 
 logger.info("Initializing ag-ui background crawl worker on Bun...");
+logger.info(`[CRAWL WORKER] OPENAI_API_KEY configured: ${!!process.env.OPENAI_API_KEY}`);
 
 interface CrawlJobData {
   companyId: string;
@@ -62,6 +77,15 @@ export const crawlWorker = new Worker<CrawlJobData>(
       }
 
       // 4. Insert extracted documents
+      let insertedDocs: {
+        id: string;
+        snapshotId: string;
+        url: string;
+        title: string;
+        category: string;
+        content: string;
+      }[] = [];
+
       if (crawlResult.documents.length > 0) {
         const docRows = crawlResult.documents.map((doc) => ({
           snapshotId,
@@ -71,10 +95,85 @@ export const crawlWorker = new Worker<CrawlJobData>(
           content: doc.content,
         }));
 
-        await db.insert(documents).values(docRows);
+        insertedDocs = await db.insert(documents).values(docRows).returning();
       }
 
-      // 5. Mark snapshot as READY
+      // 5. Transition snapshot to PROCESSING for chunking & embeddings
+      await db
+        .update(companySnapshots)
+        .set({ status: "PROCESSING" })
+        .where(eq(companySnapshots.id, snapshotId));
+
+      logger.info(`[CRAWL WORKER] Snapshot ${snapshotId} status: PROCESSING`);
+
+      // 6. Semantic chunking & 1536-dim embedding generation
+      const allChunksToProcess: {
+        documentId: string;
+        content: string;
+        chunkIndex: number;
+      }[] = [];
+
+      for (const doc of insertedDocs) {
+        const docChunks = chunkMarkdown(doc.content, {
+          docTitle: doc.title,
+          url: doc.url,
+        });
+
+        for (const c of docChunks) {
+          allChunksToProcess.push({
+            documentId: doc.id,
+            content: c.content,
+            chunkIndex: c.chunkIndex,
+          });
+        }
+      }
+
+      if (allChunksToProcess.length > 0) {
+        logger.info(`[CRAWL WORKER] Generating embeddings for ${allChunksToProcess.length} chunks...`);
+        const embeddings = await generateEmbeddings(
+          allChunksToProcess.map((c) => c.content)
+        );
+
+        const chunkRows = allChunksToProcess.map((c, idx) => ({
+          documentId: c.documentId,
+          content: c.content,
+          chunkIndex: c.chunkIndex,
+          embedding: embeddings[idx],
+        }));
+
+        // Batch inserts of 50 rows
+        for (let i = 0; i < chunkRows.length; i += 50) {
+          await db.insert(chunks).values(chunkRows.slice(i, i + 50));
+        }
+
+        logger.info(`[CRAWL WORKER] Successfully saved ${chunkRows.length} vector chunks with pgvector HNSW embeddings`);
+      }
+
+      // 7. Deterministic fact extraction
+      const [companyRecord] = await db
+        .select()
+        .from(companies)
+        .where(eq(companies.id, companyId))
+        .limit(1);
+
+      const companyName = companyRecord?.name || "COMPANY";
+      const domain = companyRecord?.domain || url;
+
+      const extractedFacts = extractCompanyFacts(companyName, domain, insertedDocs);
+      if (extractedFacts.length > 0) {
+        const factRows = extractedFacts.map((f) => ({
+          snapshotId,
+          subject: f.subject,
+          predicate: f.predicate,
+          value: f.value,
+          confidence: f.confidence,
+        }));
+
+        await db.insert(facts).values(factRows);
+        logger.info(`[CRAWL WORKER] Successfully saved ${factRows.length} deterministic facts to PostgreSQL`);
+      }
+
+      // 8. Mark snapshot as READY
       await db
         .update(companySnapshots)
         .set({
@@ -89,6 +188,8 @@ export const crawlWorker = new Worker<CrawlJobData>(
         status: "READY",
         pagesCrawled: crawlResult.pagesCrawled,
         documentCount: crawlResult.documents.length,
+        chunkCount: allChunksToProcess.length,
+        factsCount: extractedFacts.length,
       };
     } catch (err: any) {
       logger.error(`[CRAWL WORKER] Job ${job.id} failed for ${url}:`, err.message);

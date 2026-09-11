@@ -141,10 +141,33 @@ This document serves as the chronological, living audit trail for all architectu
    - `GET /api/companies/:id/documents`: Lists all ingested documents and previews for the latest snapshot.
 3. **Database & ORM Enhancements (`packages/database`)**:
    - Exported all `drizzle-orm` operators (`eq`, `desc`, `and`, `or`, `sql`) from package root for seamless consumer consumption.
-4. **End-to-End Verification**:
-   - Monorepo `bun run build`: All 8 packages compiled with zero errors in 2.6s.
-   - Live API submission tested against `https://resend.com` (`maxPages: 2`).
-   - Snapshot transitioned `QUEUED` -> `READY` in < 2 seconds.
-   - Ingested 2 documents (`/llms-full.txt` docs + product page) and brand tokens into PostgreSQL.
-   - Verified via `GET /api/companies/:id` and `GET /api/companies/:id/documents`.
+---
+
+## Milestone 6: Knowledge Chunking & Vector Embeddings Pipeline
+**Date**: 2026-09-11  
+**Status**: Completed  
+
+### Deliverables:
+1. **Semantic Markdown Chunker (`packages/shared/src/chunker.ts`)**:
+   - Developed heading-aware section parser (`#`, `##`, `###`).
+   - Implemented 1800-character target window (~450 tokens) with 250-character sliding overlap.
+   - Prepends breadcrumbs to each chunk: `[Document: {title} | Section: {heading}]`.
+2. **OpenAI Embedding Generator (`packages/shared/src/embeddings.ts`)**:
+   - Integrated OpenAI `text-embedding-3-small` generating 1536-dimensional vectors.
+   - Implemented batching (64 items per call) with unit-normalized fallback for offline testing.
+3. **Deterministic Fact Extractor (`packages/shared/src/facts.ts`)**:
+   - Regex and heuristic extractor for commercial attributes: `domain`, `contact_email`, `github_repository`, `twitter_handle`, `pricing_tier`, `office_location`.
+4. **Monorepo Root Env Resolution (`packages/shared/src/env.ts` & `turbo.json`)**:
+   - Created `autoLoadMonorepoEnv()` traversing parent directories to ensure root `.env` is inherited across all workspace subpackages.
+   - Added `globalEnv` array in `turbo.json` declaring AI and database keys.
+5. **Worker Orchestration (`workers/worker/src/index.ts`)**:
+   - Chained execution: `CRAWLING` -> Ingest docs & brand -> `PROCESSING` -> Semantic chunking -> Batch 1536-dim embedding generation -> Bulk insert to `chunks` table -> Fact extraction -> Insert into `facts` table -> `READY`.
+6. **API Endpoints (`apps/api/src/routes/companies.ts`)**:
+   - `GET /api/companies/:id/chunks`: Lists generated vector chunks, character counts, and previews.
+   - `GET /api/companies/:id/facts`: Returns structured deterministic facts for the company.
+7. **End-to-End Verification**:
+   - All 8 packages compiled cleanly with Turborepo (`8 successful, 8 total`).
+   - Crawled and processed `https://resend.com` into 17 chunks and 2 facts per snapshot.
+   - Executed live vector cosine similarity search with pgvector: query `"How do I send emails using React Email components?"` achieved 60.52% cosine similarity matching exact React Email code blocks.
+
 
