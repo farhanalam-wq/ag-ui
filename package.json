@@ -10,7 +10,8 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
-    "clean": "turbo run clean"
+    "clean": "turbo run clean",
+    "crawl": "bun packages/crawler/cli.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.4.2",

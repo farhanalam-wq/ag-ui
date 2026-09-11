@@ -39,6 +39,8 @@ async function fetchViaHttp(urlStr: string, timeoutMs = 8000): Promise<{ html: s
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "Accept-Language": "en-US,en;q=0.9",
     },
+    // @ts-ignore - Bun native fetch TLS configuration
+    tls: { rejectUnauthorized: false },
     signal: AbortSignal.timeout(timeoutMs),
   });
 

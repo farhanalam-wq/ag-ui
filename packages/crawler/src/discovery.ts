@@ -97,6 +97,8 @@ export async function discoverFromRobotsTxt(baseUrl: URL): Promise<string[]> {
     await validateSafeUrl(robotsUrl.toString());
     const res = await fetch(robotsUrl.toString(), {
       headers: { "User-Agent": "ag-ui-crawler/1.0" },
+      // @ts-ignore - Bun native fetch TLS configuration
+      tls: { rejectUnauthorized: false },
       signal: AbortSignal.timeout(5000),
     });
 
@@ -127,6 +129,8 @@ export async function discoverFromSitemap(sitemapUrlStr: string, baseUrl: URL, m
     await validateSafeUrl(sitemapUrlStr);
     const res = await fetch(sitemapUrlStr, {
       headers: { "User-Agent": "ag-ui-crawler/1.0" },
+      // @ts-ignore - Bun native fetch TLS configuration
+      tls: { rejectUnauthorized: false },
       signal: AbortSignal.timeout(8000),
     });
 

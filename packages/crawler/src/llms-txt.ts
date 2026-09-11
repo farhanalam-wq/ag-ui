@@ -52,6 +52,8 @@ export async function probeLlmsTxt(baseUrl: URL): Promise<LlmsTxtResult> {
         "User-Agent": "Mozilla/5.0 (compatible; ag-ui-bot/1.0)",
         Accept: "text/plain, text/markdown, */*",
       },
+      // @ts-ignore - Bun native fetch TLS configuration
+      tls: { rejectUnauthorized: false },
       signal: AbortSignal.timeout(6000),
     });
 
@@ -80,6 +82,8 @@ export async function probeLlmsTxt(baseUrl: URL): Promise<LlmsTxtResult> {
         "User-Agent": "Mozilla/5.0 (compatible; ag-ui-bot/1.0)",
         Accept: "text/plain, text/markdown, */*",
       },
+      // @ts-ignore - Bun native fetch TLS configuration
+      tls: { rejectUnauthorized: false },
       signal: AbortSignal.timeout(6000),
     });
 
