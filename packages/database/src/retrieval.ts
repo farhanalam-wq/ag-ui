@@ -96,26 +96,29 @@ export async function retrieveCompanyContext(
     const [queryEmbedding] = await generateEmbeddings([query]);
     const vectorStr = `[${queryEmbedding.join(",")}]`;
 
-    const rawRows = await db.execute(sql`
-      SELECT 
-        c.id,
-        d.title as document_title,
-        d.url as document_url,
-        c.content,
-        1 - (c.embedding <=> ${vectorStr}::vector) AS similarity
-      FROM chunks c
-      JOIN documents d ON c.document_id = d.id
-      WHERE d.snapshot_id = ${latestSnapshot.id}::uuid
-      ORDER BY c.embedding <=> ${vectorStr}::vector
-      LIMIT ${limit};
-    `);
+    const similaritySql = sql<number>`1 - (${chunks.embedding} <=> ${vectorStr}::vector)`;
+    const distanceSql = sql`${chunks.embedding} <=> ${vectorStr}::vector`;
 
-    chunkMatches = rawRows.map((r: any) => ({
+    const rawRows = await db
+      .select({
+        id: chunks.id,
+        documentTitle: documents.title,
+        documentUrl: documents.url,
+        content: chunks.content,
+        similarity: similaritySql,
+      })
+      .from(chunks)
+      .innerJoin(documents, eq(chunks.documentId, documents.id))
+      .where(eq(documents.snapshotId, latestSnapshot.id))
+      .orderBy(distanceSql)
+      .limit(limit);
+
+    chunkMatches = rawRows.map((r) => ({
       id: r.id,
-      documentTitle: r.document_title,
-      documentUrl: r.document_url,
+      documentTitle: r.documentTitle,
+      documentUrl: r.documentUrl,
       content: r.content,
-      similarity: parseFloat(r.similarity),
+      similarity: typeof r.similarity === "number" ? r.similarity : parseFloat(r.similarity as any),
     }));
   } catch (err: any) {
     logger.warn(`[RETRIEVAL] Vector similarity search failed: ${err.message}`);
