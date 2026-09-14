@@ -38,3 +38,4 @@ logger.info(`ag-ui Elysia API running at http://localhost:${PORT}`);
 logger.info(`Swagger docs available at http://localhost:${PORT}/swagger`);
 
 export type App = typeof app;
+// Reload trigger: 2026-09-14T18:20

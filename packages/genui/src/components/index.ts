@@ -9,3 +9,5 @@ export * from "./service-grid";
 export * from "./competitor-grid";
 export * from "./geo-card";
 export * from "./executive-brief";
+export * from "./global-network-map";
+export * from "./route-map";

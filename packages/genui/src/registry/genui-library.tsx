@@ -13,6 +13,8 @@ import { ServiceGrid as ServiceGridComponent } from "../components/service-grid"
 import { CompetitorGrid as CompetitorGridComponent } from "../components/competitor-grid";
 import { GeoCard as GeoCardComponent } from "../components/geo-card";
 import { ExecutiveBrief as ExecutiveBriefComponent } from "../components/executive-brief";
+import { GlobalNetworkMap as GlobalNetworkMapComponent } from "../components/global-network-map";
+import { RouteMap as RouteMapComponent } from "../components/route-map";
 
 // 1. Schema for TechGrid
 export const TechGridSchema = z.object({
@@ -136,17 +138,27 @@ export const CompetitorGridSchema = z.object({
   title: z.string().optional().describe("Section title"),
 });
 
-// 10. Schema for GeoCard
+// 10. Schema for GeoCard (supports string GPS or {lat, lng} object coordinates)
 export const TransitOptionSchema = z.object({
   mode: z.enum(["air", "train", "transit", "road", "walk"]).describe("Transit mode"),
   description: z.string().describe("Route or direction description"),
   duration: z.string().optional().describe("Estimated travel time or distance"),
 });
 
+export const CoordinatesSchema = z.union([
+  z.string(),
+  z.object({
+    lat: z.union([z.number(), z.string()]).optional(),
+    lng: z.union([z.number(), z.string()]).optional(),
+    latitude: z.union([z.number(), z.string()]).optional(),
+    longitude: z.union([z.number(), z.string()]).optional(),
+  }),
+]);
+
 export const GeoCardSchema = z.object({
   locationName: z.string().describe("Office, campus, or facility name"),
   address: z.string().describe("Physical postal address"),
-  coordinates: z.string().optional().describe("GPS coordinates"),
+  coordinates: CoordinatesSchema.optional().describe("GPS coordinates as string or {lat, lng} object"),
   transitOptions: z.array(TransitOptionSchema).optional().describe("Commute or transit directions"),
   workingHours: z.string().optional().describe("Operating hours"),
   timezone: z.string().optional().describe("Local timezone"),
@@ -171,6 +183,54 @@ export const ExecutiveBriefSchema = z.object({
   details: z.array(BriefDetailSchema).optional().describe("Structured subtopic breakdowns"),
   keyFacts: z.array(BriefKeyFactSchema).optional().describe("Key facts or metric indicators"),
   sourceContext: z.string().optional().describe("Context reference or document origin"),
+});
+
+// 12. Schema for GlobalNetworkMap (Screenshot 2: Global office hubs across the world)
+export const GlobalHubSchema = z.object({
+  city: z.string().describe("City name"),
+  country: z.string().describe("Country name"),
+  isHq: z.boolean().optional().describe("Whether this hub is global headquarters"),
+  address: z.string().optional().describe("Local street address"),
+  lat: z.number().optional().describe("Latitude"),
+  lng: z.number().optional().describe("Longitude"),
+  region: z.string().optional().describe("Operating region title"),
+});
+
+export const GlobalNetworkMapSchema = z.object({
+  title: z.string().optional().describe("Network title, e.g. GLOBAL NETWORK"),
+  hubs: z.array(GlobalHubSchema).optional().describe("List of global office hub nodes"),
+  stats: z.object({
+    totalHubs: z.number().optional().describe("Total hub count"),
+    reachCount: z.number().optional().describe("Total country reach count"),
+  }).optional().describe("Summary metrics"),
+  companyName: z.string().optional().describe("Company name"),
+});
+
+// 13. Schema for RouteMap (Screenshot 3: Turn-by-turn route navigation from A to B)
+export const RoutePointSchema = z.union([
+  z.string(),
+  z.object({
+    name: z.string().describe("Location name"),
+    address: z.string().optional().describe("Address"),
+    lat: z.number().optional().describe("Latitude"),
+    lng: z.number().optional().describe("Longitude"),
+  }),
+]);
+
+export const RouteStepSchema = z.object({
+  instruction: z.string().describe("Navigation step"),
+  distance: z.string().optional().describe("Step distance"),
+});
+
+export const RouteMapSchema = z.object({
+  origin: RoutePointSchema.describe("Starting location point or name"),
+  destination: RoutePointSchema.describe("Destination location point or name"),
+  mode: z.enum(["drive", "transit", "walk", "train", "air"]).optional().describe("Transit mode"),
+  distance: z.string().optional().describe("Total journey distance, e.g. 7.8 km"),
+  duration: z.string().optional().describe("Total travel time, e.g. 20 mins"),
+  steps: z.array(RouteStepSchema).optional().describe("Turn-by-turn navigation steps"),
+  brandIcon: z.string().optional().describe("Brand or transit icon name"),
+  companyName: z.string().optional().describe("Company name"),
 });
 
 // OpenUI Component Definitions
@@ -240,7 +300,7 @@ export const OpenUICompetitorGrid = defineComponent({
 export const OpenUIGeoCard = defineComponent({
   name: "GeoCard",
   props: GeoCardSchema,
-  description: "Location, campus, and transit guidance card with multimodal commute options (air, train, transit, road) and operating hours.",
+  description: "Location, campus, and transit guidance card with multimodal commute options and support for string or {lat, lng} coordinates.",
   component: ({ props }) => <GeoCardComponent {...(props as any)} />,
 });
 
@@ -249,6 +309,20 @@ export const OpenUIExecutiveBrief = defineComponent({
   props: ExecutiveBriefSchema,
   description: "Universal executive brief for general, arbitrary, or synthesized queries with a key takeaway callout, structured details, and fact metrics.",
   component: ({ props }) => <ExecutiveBriefComponent {...(props as any)} />,
+});
+
+export const OpenUIGlobalNetworkMap = defineComponent({
+  name: "GlobalNetworkMap",
+  props: GlobalNetworkMapSchema,
+  description: "Interactive world map displaying global office hubs, animated radar ping on HQ, node statistics, and country filter badges.",
+  component: ({ props }) => <GlobalNetworkMapComponent {...(props as any)} />,
+});
+
+export const OpenUIRouteMap = defineComponent({
+  name: "RouteMap",
+  props: RouteMapSchema,
+  description: "Turn-by-turn transit route navigation map connecting origin and destination with distance/time pills, OpenStreetMap backdrop, and polyline route.",
+  component: ({ props }) => <RouteMapComponent {...(props as any)} />,
 });
 
 export const genuiComponentGroups = [
@@ -263,6 +337,8 @@ export const genuiComponentGroups = [
       "TechGrid",
       "CompetitorGrid",
       "GeoCard",
+      "GlobalNetworkMap",
+      "RouteMap",
       "MetricGrid",
       "ExecutiveBrief",
       "GraphicBanner",
@@ -274,7 +350,9 @@ export const genuiComponentGroups = [
       "- PricingGrid: Tiered pricing plans in a horizontal layout with prices, features, and highlighted tiers.",
       "- TechGrid: Displays verified brand SVG logos for all listed technologies and tools.",
       "- CompetitorGrid: Side-by-side peer landscape with brand SVGs and strategic differentiators.",
-      "- GeoCard: Office locations, addresses, and multimodal transit/commute routes (air, train, car, transit).",
+      "- GeoCard: Office location dossier with addresses, multimodal transit, and OpenStreetMap preview.",
+      "- GlobalNetworkMap: World map showing global office network, HQ radar pulse, hub counts, and country tags.",
+      "- RouteMap: Turn-by-turn route navigation between origin and destination with distance/time HUD and roadmap.",
       "- MetricGrid: High-impact KPI statistics, deltas, and trends.",
       "- ExecutiveBrief: Universal intelligent card for any query with bold takeaway, facts, and breakdown.",
       "- GraphicBanner: Luminous procedural grid banner for visual topic header accents.",
@@ -302,5 +380,7 @@ export const genuiLibrary = createLibrary({
     OpenUICompetitorGrid,
     OpenUIGeoCard,
     OpenUIExecutiveBrief,
+    OpenUIGlobalNetworkMap,
+    OpenUIRouteMap,
   ],
 });

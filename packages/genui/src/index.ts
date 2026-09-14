@@ -15,5 +15,7 @@ export * from "./components/service-grid";
 export * from "./components/competitor-grid";
 export * from "./components/geo-card";
 export * from "./components/executive-brief";
+export * from "./components/global-network-map";
+export * from "./components/route-map";
 
 export * from "./registry/genui-library";

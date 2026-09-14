@@ -36,21 +36,25 @@ Select the component that SPECIFICALLY targets the user's inquiry:
 5. **Full Product Catalog / Suite (e.g. "List all their products")** -> Use **ProductGrid** with featured hero card and compact sibling cards.
 6. **Pricing / Subscription Tiers (e.g. "How much does it cost?", "Pricing plans")** -> Use **PricingGrid** in a single horizontal row.
 7. **Competitors / Market Landscape (e.g. "Who are their competitors?", "How do they compare?")** -> Use **CompetitorGrid** with verified brand SVGs.
-8. **Location / Office / Directions / Transit (e.g. "Where is their office?", "How do I visit?")** -> Use **GeoCard** with transit options.
-9. **Tech Stack / SDKs / Languages (e.g. "What SDKs are supported?")** -> Use **TechGrid** with verified brand SVG logos.
-10. **KPIs / Metrics / Performance (e.g. "What is their latency or uptime?")** -> Use **MetricGrid** with KPI numbers and trends.
+8. **Global Office Network / Worldwide Presence / International Hubs (e.g. "What are their office locations across the world?", "Global presence", "Where are all their offices?")** -> Use **GlobalNetworkMap** displaying the world map with animated HQ radar ping, regional hub nodes, hub statistics, and country filter badges.
+9. **Commute / Directions / Route from A to B (e.g. "How do I go from Kolkata airport to Kolkata HQ office?", "Directions to the office from the airport", "How to get there")** -> Use **RouteMap** with turn-by-turn route, distance & travel time HUD badges, OpenStreetMap polyline, and waypoint cards.
+10. **Specific Single Campus / Office Address / Visiting Hours (e.g. "Where is their Kolkata office located?", "What is their address and hours?")** -> Use **GeoCard** with address, coordinates ({lat, lng} or string), and transit modes.
+11. **Tech Stack / SDKs / Languages (e.g. "What SDKs are supported?")** -> Use **TechGrid** with verified brand SVG logos.
+12. **KPIs / Metrics / Performance (e.g. "What is their latency or uptime?")** -> Use **MetricGrid** with KPI numbers and trends.
 
 ---
 
 ### Available Component Catalog:
 - **Stack(children, direction, gap, align, justify, wrap)**: Flex layout container. Direction: "column" | "row". Gap: "s" | "m" | "l".
+- **GlobalNetworkMap(title, hubs, stats, companyName)**: Interactive world map displaying global office hubs, animated radar ping on HQ, node statistics, and country filter badges. hubs: array of objects with city, country, isHq (boolean), address, lat (number), lng (number), region. stats: object with totalHubs (number), reachCount (number).
+- **RouteMap(origin, destination, mode, distance, duration, steps, brandIcon, companyName)**: Turn-by-turn route navigation map connecting origin and destination with distance/time pills, OpenStreetMap polyline, and waypoint card. origin & destination: string or object with {name, address, lat, lng}. mode: "drive" | "transit" | "walk" | "train" | "air". steps: array of objects with instruction, distance.
+- **GeoCard(locationName, address, coordinates, transitOptions, workingHours, timezone, notes)**: Geographic & transit card. coordinates: can be an object {lat: number, lng: number} or string. transitOptions: array of objects with mode ("air" | "train" | "transit" | "road" | "walk"), description, duration.
 - **ExecutiveBrief(topic, takeaway, details, keyFacts, sourceContext)**: Universal intelligent card for specific product questions, technical concepts, certifications, and syntheses. details: array of objects with title, content, category. keyFacts: array of objects with label, value.
 - **ProductGrid(products, title)**: Product showcase with hero card. products: array of objects with title, subtitle, description, tags, featured.
 - **OverviewCard(companyName, synopsis, logoUrl, founded, headquarters, teamSize, keyPillars, tags)**: High-impact company dossier with brand logo, synopsis, and core pillars array. (USE ONLY FOR GENERAL OVERVIEW QUESTIONS).
 - **ServiceGrid(services, title)**: Visual service catalog. services: array of objects with title, synopsis, capabilities (array of strings), category, icon, bannerUrl.
 - **PricingGrid(plans, title)**: SaaS pricing plans in a horizontal comparison row. plans: array of objects with name, price, period, description, features, recommended.
 - **CompetitorGrid(competitors, title)**: Peer landscape. competitors: array of objects with name, differentiation, strengths (array), positioning.
-- **GeoCard(locationName, address, coordinates, transitOptions, workingHours, timezone, notes)**: Geographic & transit card. transitOptions: array of objects with mode ("air" | "train" | "transit" | "road" | "walk"), description, duration.
 - **TechGrid(items, title, columns, variant)**: Brand SVG logos. items: array of tech strings or objects.
 - **MetricGrid(metrics, title, columns)**: KPI statistics. metrics: array of objects with label, value, change, trend, subtitle.
 - **GraphicBanner(title, category, accentColor, aspectRatio)**: Luminous procedural grid banner.
@@ -108,6 +112,28 @@ tiers = PricingGrid([tierHobby, tierPro, tierEnterprise], "Pricing Tiers")
 tierHobby = {"name": "Free", "price": "$0", "period": "month", "description": "For evaluation", "features": ["5,000 API calls", "Community Support"]}
 tierPro = {"name": "Pro", "price": "$20", "period": "month", "description": "For production teams", "features": ["Unlimited API calls", "Priority Routing"], "recommended": true}
 tierEnterprise = {"name": "Enterprise", "price": "Custom", "description": "Dedicated throughput", "features": ["Custom SLAs", "Dedicated VPC"]}
+\`\`\`
+
+#### Example F: Global Office Network / Worldwide Locations:
+\`\`\`openui
+root = Stack([networkMap], "column", "m")
+networkMap = GlobalNetworkMap("GLOBAL NETWORK", [hKolkata, hLondon, hWarsaw, hSingapore, hSanJose], {"totalHubs": 7, "reachCount": 6}, "INT")
+hKolkata = {"city": "Kolkata", "country": "India", "isHq": true, "address": "Ecospace Business Park, New Town", "lat": 22.5855, "lng": 88.4735, "region": "Global Headquarters"}
+hLondon = {"city": "London", "country": "United Kingdom", "isHq": false, "address": "Canary Wharf", "lat": 51.5054, "lng": -0.0235, "region": "EMEA Hub"}
+hWarsaw = {"city": "Warsaw", "country": "Poland", "isHq": false, "address": "Warsaw Financial Center", "lat": 52.2297, "lng": 21.0122, "region": "Central Europe"}
+hSingapore = {"city": "Singapore", "country": "Singapore", "isHq": false, "address": "Marina Bay Financial Centre", "lat": 1.2804, "lng": 103.8536, "region": "APAC Hub"}
+hSanJose = {"city": "San Jose", "country": "United States", "isHq": false, "address": "Silicon Valley", "lat": 37.3382, "lng": -121.8863, "region": "North America"}
+\`\`\`
+
+#### Example G: Route & Directions (e.g. Airport to HQ):
+\`\`\`openui
+root = Stack([route], "column", "m")
+route = RouteMap(pOrigin, pDest, "drive", "7.8 km", "20 mins", [s1, s2, s3], "car", "INT")
+pOrigin = {"name": "CCU Airport", "address": "Netaji Subhash Chandra Bose International Airport", "lat": 22.6547, "lng": 88.4467}
+pDest = {"name": "Global HQ", "address": "Ecospace Business Park, New Town, Kolkata", "lat": 22.5855, "lng": 88.4735}
+s1 = {"instruction": "Head south on VIP Road / Major Arterial Road toward Rajarhat", "distance": "3.5 km"}
+s2 = {"instruction": "Merge onto Major Arterial Road (South-Bound) past Chinar Park", "distance": "2.8 km"}
+s3 = {"instruction": "Turn left into Ecospace Business Park, Block 4B Gate 1", "distance": "1.5 km"}
 \`\`\`
 `;
 }

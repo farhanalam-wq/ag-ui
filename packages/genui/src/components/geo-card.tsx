@@ -16,10 +16,19 @@ export interface TransitOption {
   duration?: string;
 }
 
+export type CoordinateData =
+  | string
+  | {
+      lat?: number | string;
+      lng?: number | string;
+      latitude?: number | string;
+      longitude?: number | string;
+    };
+
 export interface GeoCardProps {
   locationName: string;
   address: string;
-  coordinates?: string;
+  coordinates?: CoordinateData;
   transitOptions?: TransitOption[];
   workingHours?: string;
   timezone?: string;
@@ -53,6 +62,36 @@ export function GeoCard({
   className = "",
 }: GeoCardProps) {
   if (!locationName && !address) return null;
+
+  // Safely parse and format coordinates regardless of whether LLM passed string or object
+  const { formattedGps, numericLat, numericLng } = React.useMemo(() => {
+    if (!coordinates) return { formattedGps: null, numericLat: null, numericLng: null };
+    if (typeof coordinates === "string") {
+      const match = coordinates.match(/([-+]?\d+(?:\.\d+)?)[,\s]+([-+]?\d+(?:\.\d+)?)/);
+      if (match) {
+        return {
+          formattedGps: coordinates,
+          numericLat: parseFloat(match[1]),
+          numericLng: parseFloat(match[2]),
+        };
+      }
+      return { formattedGps: coordinates, numericLat: null, numericLng: null };
+    }
+    if (typeof coordinates === "object") {
+      const lat = coordinates.lat ?? coordinates.latitude;
+      const lng = coordinates.lng ?? coordinates.longitude;
+      if (lat != null && lng != null) {
+        const nLat = typeof lat === "number" ? lat : parseFloat(lat);
+        const nLng = typeof lng === "number" ? lng : parseFloat(lng);
+        return {
+          formattedGps: `${nLat.toFixed(4)}° N, ${nLng.toFixed(4)}° E`,
+          numericLat: nLat,
+          numericLng: nLng,
+        };
+      }
+    }
+    return { formattedGps: null, numericLat: null, numericLng: null };
+  }, [coordinates]);
 
   return (
     <div
@@ -90,6 +129,20 @@ export function GeoCard({
           )}
         </div>
       </div>
+
+      {/* Interactive OpenStreetMap preview if coordinates exist */}
+      {numericLat != null && numericLng != null && (
+        <div className="relative w-full h-44 rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-950">
+          <iframe
+            title={locationName}
+            className="w-full h-full border-0 pointer-events-none opacity-90 dark:invert-[0.92] dark:hue-rotate-180"
+            src={`https://www.openstreetmap.org/export/embed.html?bbox=${numericLng - 0.015}%2C${numericLat - 0.01}%2C${numericLng + 0.015}%2C${numericLat + 0.01}&layer=mapnik&marker=${numericLat}%2C${numericLng}`}
+          />
+          <div className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded bg-zinc-900/80 backdrop-blur-md text-[10px] font-mono text-zinc-300 border border-white/10">
+            OpenStreetMap
+          </div>
+        </div>
+      )}
 
       {/* Transit & Commute Pathways */}
       {Array.isArray(transitOptions) && transitOptions.length > 0 && (
@@ -135,12 +188,12 @@ export function GeoCard({
       )}
 
       {/* Coordinates / Footnote */}
-      {(notes || coordinates) && (
+      {(notes || formattedGps) && (
         <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
           {notes && <p className="leading-relaxed">{notes}</p>}
-          {coordinates && (
+          {formattedGps && (
             <span className="font-mono text-[10px] shrink-0 bg-zinc-100 dark:bg-zinc-800/50 px-2 py-0.5 rounded border border-zinc-200 dark:border-zinc-700/40">
-              GPS: {coordinates}
+              GPS: {formattedGps}
             </span>
           )}
         </div>
