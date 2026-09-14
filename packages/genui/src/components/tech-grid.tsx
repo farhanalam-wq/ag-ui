@@ -23,23 +23,29 @@ export function TechGrid({
   variant = "cards",
   className = "",
 }: TechGridProps) {
-  if (!items || items.length === 0) return null;
+  if (!items || !Array.isArray(items) || items.length === 0) return null;
 
-  const normalizedItems: TechItem[] = items.map((item) => {
-    if (typeof item === "string") {
-      const resolved = resolveIcon(item);
+  const normalizedItems: TechItem[] = items
+    .filter(Boolean)
+    .map((item) => {
+      if (typeof item === "string") {
+        const resolved = resolveIcon(item);
+        return {
+          name: resolved.displayName,
+          category: resolved.category,
+        };
+      }
+      const rawName = typeof item?.name === "string" ? item.name : "";
+      const resolved = resolveIcon(rawName);
       return {
-        name: resolved.displayName,
-        category: resolved.category,
+        name: rawName || resolved.displayName,
+        category: typeof item?.category === "string" ? item.category : resolved.category,
+        description: typeof item?.description === "string" ? item.description : undefined,
       };
-    }
-    const resolved = resolveIcon(item.name);
-    return {
-      name: item.name || resolved.displayName,
-      category: item.category || resolved.category,
-      description: item.description,
-    };
-  });
+    })
+    .filter((item) => Boolean(item.name));
+
+  if (normalizedItems.length === 0) return null;
 
   const gridColsClass =
     columns === 2
@@ -49,7 +55,7 @@ export function TechGrid({
       : "grid-cols-1 sm:grid-cols-2 md:grid-cols-3";
 
   return (
-    <div className={`w-full space-y-3 ${className}`}>
+    <div className={`w-full min-w-0 space-y-3 ${className}`}>
       {title && (
         <div className="flex items-center justify-between pb-1 border-b border-zinc-200 dark:border-zinc-800/80">
           <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 font-mono">
@@ -63,26 +69,26 @@ export function TechGrid({
 
       {variant === "compact" ? (
         /* Compact Tile Row */
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 w-full min-w-0">
           {normalizedItems.map((tech, idx) => (
             <div
               key={idx}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800/80 bg-zinc-50/80 dark:bg-zinc-900/50 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all text-xs text-zinc-800 dark:text-zinc-200 shadow-sm"
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800/80 bg-zinc-50/80 dark:bg-zinc-900/50 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all text-xs text-zinc-800 dark:text-zinc-200 shadow-sm min-w-0"
             >
               <TechIcon name={tech.name} size={16} />
-              <span className="font-medium text-xs">{tech.name}</span>
+              <span className="font-medium text-xs truncate">{tech.name}</span>
             </div>
           ))}
         </div>
       ) : (
         /* Rich Interactive Tech Cards */
-        <div className={`grid ${gridColsClass} gap-2.5`}>
+        <div className={`grid ${gridColsClass} gap-2.5 w-full min-w-0`}>
           {normalizedItems.map((tech, idx) => {
             const resolved = resolveIcon(tech.name);
             return (
               <div
                 key={idx}
-                className="group relative flex items-start gap-3 p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800/80 bg-white/60 dark:bg-zinc-900/40 hover:bg-zinc-50 dark:hover:bg-zinc-900/80 hover:border-zinc-300 dark:hover:border-zinc-700/80 transition-all duration-200 hover:shadow-md backdrop-blur-sm"
+                className="group relative flex items-start gap-3 p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800/80 bg-white/60 dark:bg-zinc-900/40 hover:bg-zinc-50 dark:hover:bg-zinc-900/80 hover:border-zinc-300 dark:hover:border-zinc-700/80 transition-all duration-200 hover:shadow-md backdrop-blur-sm min-w-0 overflow-hidden"
               >
                 <div className="flex items-center justify-center p-2 rounded-lg bg-zinc-100 dark:bg-zinc-800/70 border border-zinc-200/80 dark:border-zinc-700/50 shrink-0 group-hover:scale-105 transition-transform">
                   <TechIcon name={tech.name} size={22} />
