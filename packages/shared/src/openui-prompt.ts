@@ -40,7 +40,7 @@ root = Stack([title, component])
 - **TagBlock(tagsArray)**: Inline pills for capabilities/features (e.g. TagBlock(["SMTP", "TLS 1.3", "REST API"])). Automatically displays verified brand SVG logos when technology names are detected!
 - **TechGrid(items, title, columns, variant)**: BESPOKE TECH VISUALIZER. Renders verified brand SVG logos (0ms instant resolution) for programming languages, frameworks, databases, and cloud tools. items: array of tech names or objects.
 - **ProductGrid(products, title)**: BESPOKE PRODUCT SHOWCASE with high hierarchy. Features a prominent hero solution card with accent glow and secondary sibling cards. products: array of objects with title, subtitle, description, tags, featured.
-- **PricingGrid(plans, title)**: BESPOKE PRICING TIERS with large price typography, feature checklists, and highlighted recommended tiers. Strictly informational with no action buttons. plans: array of objects with name, price, period, description, features, recommended.
+- **PricingGrid(plans, title)**: BESPOKE PRICING TIERS arranged side-by-side in a single horizontal comparison row. plans: array of objects with name, price, period, description, features, recommended. Set recommended: true ONLY if the retrieved crawled documentation explicitly designates that tier as "Most Popular" or "Recommended". Do NOT guess or hallucinate recommendations.
 - **MetricGrid(metrics, title, columns)**: BESPOKE KPI DASHBOARD with large value numbers, trend/delta badges, and category icons. metrics: array of objects with label, value, change, trend, subtitle.
 - **Table(columns)**: Column-oriented structured table. Child columns: Col(headerText, valuesArray).
 - **BarChart(labels, seriesArray, type)**: Analytical bar visualizer. Types: "grouped" | "stacked". Series: Series("Name", [values]).
@@ -55,9 +55,9 @@ root = Stack([title, component])
 \`\`\`openui
 root = Stack([tiers], "column", "m")
 tiers = PricingGrid([tierFree, tierPro, tierEnterprise], "${company} Pricing Plans")
-tierFree = {"name": "Hobby", "price": "$0", "period": "month", "description": "For side projects and prototyping", "features": ["3,000 Emails / mo", "Shared IP Pool", "Community Discord Support", "1 Verified Domain"]}
-tierPro = {"name": "Pro Developer", "price": "$20", "period": "month", "description": "High deliverability for production apps", "features": ["50,000 Emails / mo", "Dedicated IP Option", "Priority Deliverability", "Unlimited Domains", "Webhooks & Logs"], "recommended": true}
-tierEnterprise = {"name": "Enterprise", "price": "Custom", "description": "Custom SLAs and dedicated infrastructure", "features": ["Unlimited Volume", "Dedicated IP Pools", "99.99% Uptime SLA", "24/7 Slack & Phone Support"]}
+tierFree = {"name": "Hobby", "price": "$0", "period": "month", "description": "For side projects and prototyping", "features": ["3,000 Emails / mo", "Shared IP Pool", "Community Support", "1 Verified Domain"]}
+tierPro = {"name": "Pro Developer", "price": "$20", "period": "month", "description": "High deliverability for production apps", "features": ["50,000 Emails / mo", "Dedicated IP Option", "Priority Deliverability", "Unlimited Domains", "Webhooks & Logs"]}
+tierEnterprise = {"name": "Enterprise", "price": "Custom", "description": "Custom SLAs and dedicated infrastructure", "features": ["Unlimited Volume", "Dedicated IP Pools", "99.99% Uptime SLA", "24/7 Support"]}
 \`\`\`
 
 #### 2. Products Showcase with Featured Hero Hierarchy:

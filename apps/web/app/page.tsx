@@ -312,7 +312,7 @@ export default function Home() {
           </header>
 
           {/* Main Chat Canvas */}
-          <main className="flex-1 flex flex-col items-center justify-between p-4 sm:p-6 w-full max-w-4xl mx-auto">
+          <main className={`flex-1 flex flex-col items-center justify-between p-4 sm:p-6 w-full ${viewMode === "visual" ? "max-w-5xl" : "max-w-4xl"} mx-auto transition-all`}>
             {/* When Empty: Hero & Suggested Inquiries */}
             {!isConversationActive && (
               <div className="w-full flex-1 flex flex-col justify-center items-center my-8 space-y-6">
