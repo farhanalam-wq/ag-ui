@@ -44,6 +44,7 @@ import {
   BreadcrumbPage,
 } from "@/components/ui/breadcrumb";
 import { AppSidebar } from "@/components/sidebar/app-sidebar";
+import { ModeToggle } from "@/components/mode-toggle";
 import type { CompanyItem } from "@/components/sidebar/company-switcher";
 
 // ============================================================================
@@ -198,7 +199,7 @@ export default function Home() {
     <SidebarProvider defaultOpen={true}>
       {/* Dynamic Brand Primary CSS Injection */}
       <div
-        className="flex min-h-screen w-full bg-zinc-950 text-zinc-100 antialiased selection:bg-zinc-800 selection:text-zinc-100"
+        className="flex min-h-screen w-full bg-background text-foreground antialiased selection:bg-zinc-200 dark:selection:bg-zinc-800 selection:text-zinc-900 dark:selection:text-zinc-100 transition-colors duration-200"
         style={
           {
             "--brand-primary": selectedCompany.brandColor,
@@ -208,10 +209,10 @@ export default function Home() {
         {/* Background ambient brand glow */}
         <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
           <div
-            className="absolute -top-40 left-1/2 -translate-x-1/2 w-[720px] h-[360px] opacity-15 blur-[140px] transition-colors duration-700"
+            className="absolute -top-40 left-1/2 -translate-x-1/2 w-[720px] h-[360px] opacity-10 dark:opacity-15 blur-[140px] transition-colors duration-700"
             style={{ backgroundColor: selectedCompany.brandColor }}
           />
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.1),rgba(255,255,255,0))]" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.08),rgba(255,255,255,0))] dark:bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.1),rgba(255,255,255,0))]" />
         </div>
 
         {/* Collapsible Enterprise App Sidebar */}
@@ -224,34 +225,34 @@ export default function Home() {
         />
 
         {/* Main Content Area via SidebarInset */}
-        <SidebarInset className="flex flex-col bg-zinc-950 min-h-screen">
-          {/* Top Sticky Header with SidebarTrigger & Breadcrumbs */}
-          <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between border-b border-zinc-900/90 bg-zinc-950/80 px-4 backdrop-blur-md">
+        <SidebarInset className="flex flex-col bg-background min-h-screen transition-colors duration-200">
+          {/* Top Sticky Header with SidebarTrigger, Breadcrumbs, Status Controls & Theme Toggle */}
+          <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur-md transition-colors duration-200">
             <div className="flex items-center gap-2">
-              <SidebarTrigger className="-ml-1 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900" />
-              <Separator orientation="vertical" className="mr-2 h-4 bg-zinc-800" />
+              <SidebarTrigger className="-ml-1 text-muted-foreground hover:text-foreground hover:bg-accent" />
+              <Separator orientation="vertical" className="mr-2 h-4 bg-border" />
               <Breadcrumb>
                 <BreadcrumbList className="text-xs">
                   <BreadcrumbItem className="hidden md:block">
                     <BreadcrumbLink
                       href="#"
-                      className="text-zinc-500 hover:text-zinc-300 transition-colors"
+                      className="text-muted-foreground hover:text-foreground transition-colors"
                     >
                       Companies
                     </BreadcrumbLink>
                   </BreadcrumbItem>
-                  <BreadcrumbSeparator className="hidden md:block text-zinc-600" />
+                  <BreadcrumbSeparator className="hidden md:block text-muted-foreground/50" />
                   <BreadcrumbItem>
                     <BreadcrumbLink
                       href="#"
-                      className="text-zinc-300 font-medium hover:text-zinc-100 transition-colors"
+                      className="text-foreground/90 font-medium hover:text-foreground transition-colors"
                     >
                       {selectedCompany.name}
                     </BreadcrumbLink>
                   </BreadcrumbItem>
-                  <BreadcrumbSeparator className="text-zinc-600" />
+                  <BreadcrumbSeparator className="text-muted-foreground/50" />
                   <BreadcrumbItem>
-                    <BreadcrumbPage className="text-zinc-400 font-mono">
+                    <BreadcrumbPage className="text-muted-foreground font-mono">
                       Intelligence Chat
                     </BreadcrumbPage>
                   </BreadcrumbItem>
@@ -259,13 +260,13 @@ export default function Home() {
               </Breadcrumb>
             </div>
 
-            {/* Right Header Status Badges & Controls */}
-            <div className="flex items-center gap-2 sm:gap-3">
+            {/* Right Header Status Badges, Controls & Mode Toggle */}
+            <div className="flex items-center gap-2 sm:gap-2.5">
               {isConversationActive && (
                 <button
                   type="button"
                   onClick={handleNewChat}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zinc-800 bg-zinc-900/70 hover:bg-zinc-800 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border bg-accent/60 hover:bg-accent text-xs text-muted-foreground hover:text-foreground transition-colors"
                   title="Reset conversation"
                 >
                   <ArrowCounterClockwise className="size-3.5" />
@@ -277,14 +278,14 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => openDrawerWithEvidence()}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zinc-800 bg-zinc-900/70 hover:bg-zinc-800 text-xs text-zinc-300 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border bg-accent/60 hover:bg-accent text-xs text-foreground transition-colors"
                 >
                   <SidebarIcon className="size-3.5 text-brand-primary" />
                   <span>Sources ({activeEvidence.length})</span>
                 </button>
               )}
 
-              <div className="hidden md:inline-flex items-center gap-2 px-2.5 py-1 rounded-full border border-zinc-800 bg-zinc-900/60 text-xs text-zinc-400">
+              <div className="hidden md:inline-flex items-center gap-2 px-2.5 py-1 rounded-full border border-border bg-accent/40 text-xs text-muted-foreground">
                 <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
                 <span>pgvector active</span>
               </div>
@@ -292,9 +293,9 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => setIsAddDialogOpen(true)}
-                className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800 text-xs text-zinc-300 hover:text-zinc-100 transition-colors"
+                className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border bg-accent/40 hover:bg-accent text-xs text-foreground transition-colors"
               >
-                <Plus className="size-3.5 text-zinc-400" />
+                <Plus className="size-3.5 text-muted-foreground" />
                 <span>Index URL</span>
               </button>
 
@@ -302,13 +303,16 @@ export default function Home() {
                 href="http://localhost:3001/health"
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors border border-zinc-800 rounded-lg px-2 py-1"
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors border border-border bg-accent/40 hover:bg-accent rounded-lg px-2.5 py-1"
                 title="API Health"
               >
-                <span className="hidden sm:inline">API</span>
-                <span className="font-mono">:3001</span>
+                <span className="hidden sm:inline">API : </span>
+                <span className="font-mono">3001</span>
                 <ArrowSquareOut className="size-3" />
               </a>
+
+              {/* Shadcn Theme Mode Toggle */}
+              <ModeToggle />
             </div>
           </header>
 
@@ -318,24 +322,24 @@ export default function Home() {
             {!isConversationActive && (
               <div className="w-full flex-1 flex flex-col justify-center items-center my-8 space-y-6">
                 <div className="text-center max-w-2xl mx-auto space-y-3">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-zinc-800 bg-zinc-900/80 text-xs font-medium text-zinc-400">
-                    <Stack className="size-3.5 text-zinc-400" />
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-border bg-accent/50 text-xs font-medium text-muted-foreground">
+                    <Stack className="size-3.5 text-muted-foreground" />
                     <span>Hybrid Retrieval &bull; Fact Extraction &bull; Generative UI</span>
                   </div>
 
-                  <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-zinc-100">
+                  <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
                     {selectedCompany.name} Intelligence
                   </h1>
 
-                  <p className="text-sm text-zinc-400 max-w-xl mx-auto leading-relaxed">
+                  <p className="text-sm text-muted-foreground max-w-xl mx-auto leading-relaxed">
                     {selectedCompany.description}
                   </p>
                 </div>
 
                 {/* Suggested Query Chips */}
                 <div className="w-full max-w-2xl space-y-2.5 pt-2">
-                  <div className="flex items-center gap-1.5 text-xs text-zinc-500 font-mono">
-                    <Sparkle className="size-3.5 text-zinc-500" />
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-mono">
+                    <Sparkle className="size-3.5 text-muted-foreground" />
                     <span>Suggested Inquiries for {selectedCompany.name}:</span>
                   </div>
 
@@ -348,34 +352,34 @@ export default function Home() {
                           setQuery(item);
                           handleQuerySubmit(item);
                         }}
-                        className="inline-flex items-center gap-1.5 text-xs rounded-lg border border-zinc-800/80 bg-zinc-900/60 hover:bg-zinc-800/80 hover:border-zinc-700 text-zinc-300 px-3 py-1.5 transition-all text-left group"
+                        className="inline-flex items-center gap-1.5 text-xs rounded-lg border border-border bg-card hover:bg-accent hover:border-border/80 text-card-foreground px-3 py-1.5 transition-all text-left group shadow-sm"
                       >
                         <span>{item}</span>
-                        <ArrowRight className="size-3 text-zinc-500 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
+                        <ArrowRight className="size-3 text-muted-foreground opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
                       </button>
                     ))}
                   </div>
                 </div>
 
                 {/* Architectural highlights */}
-                <div className="w-full max-w-2xl pt-6 border-t border-zinc-900">
+                <div className="w-full max-w-2xl pt-6 border-t border-border">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
-                    <div className="p-3.5 rounded-xl border border-zinc-800/70 bg-zinc-900/30 space-y-1.5">
-                      <div className="flex items-center gap-2 text-zinc-200 font-medium text-xs">
-                        <MagnifyingGlass className="size-3.5 text-zinc-400" />
+                    <div className="p-3.5 rounded-xl border border-border bg-card/60 space-y-1.5 shadow-sm">
+                      <div className="flex items-center gap-2 text-foreground font-medium text-xs">
+                        <MagnifyingGlass className="size-3.5 text-muted-foreground" />
                         <span>Hybrid Vector & Fact Retrieval</span>
                       </div>
-                      <p className="text-[11px] text-zinc-400 leading-relaxed">
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">
                         OpenAI 1536-dim HNSW cosine index combined with deterministic fact extraction.
                       </p>
                     </div>
 
-                    <div className="p-3.5 rounded-xl border border-zinc-800/70 bg-zinc-900/30 space-y-1.5">
-                      <div className="flex items-center gap-2 text-zinc-200 font-medium text-xs">
+                    <div className="p-3.5 rounded-xl border border-border bg-card/60 space-y-1.5 shadow-sm">
+                      <div className="flex items-center gap-2 text-foreground font-medium text-xs">
                         <Code className="size-3.5 text-brand-primary" />
                         <span>Brand-Adaptive Generative UI</span>
                       </div>
-                      <p className="text-[11px] text-zinc-400 leading-relaxed">
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">
                         Automated extraction of brand palettes, dynamically rendering native React cards.
                       </p>
                     </div>
@@ -407,12 +411,12 @@ export default function Home() {
                 onValueChange={setQuery}
                 onSubmit={handleQuerySubmit}
                 isSubmitting={isStreaming}
-                className="w-full border-zinc-800 bg-zinc-950/95 shadow-2xl backdrop-blur-2xl"
+                className="w-full border-border bg-background/95 shadow-2xl backdrop-blur-2xl"
               >
                 <PromptInputBody>
                   <PromptInputTextarea
                     placeholder={`Ask anything about ${selectedCompany.name} (e.g. pricing tiers, API limits, HQ location)...`}
-                    className="text-sm text-zinc-100 placeholder-zinc-500 py-1"
+                    className="text-sm text-foreground placeholder-muted-foreground py-1"
                     minHeight={52}
                   />
                 </PromptInputBody>
@@ -422,21 +426,21 @@ export default function Home() {
                     <PromptInputBadge
                       icon={Buildings}
                       label={selectedCompany.domain}
-                      className="bg-zinc-900/90 border-zinc-800 text-zinc-300"
+                      className="bg-accent/60 border-border text-foreground"
                     />
                     <PromptInputBadge
                       icon={Stack}
                       label="Hybrid pgvector"
-                      className="hidden sm:inline-flex bg-zinc-900/50 border-zinc-800/80 text-zinc-400"
+                      className="hidden sm:inline-flex bg-accent/40 border-border text-muted-foreground"
                     />
                   </PromptInputTools>
 
                   <div className="flex items-center gap-2">
-                    <span className="hidden sm:inline-block text-[11px] text-zinc-500 font-mono">
+                    <span className="hidden sm:inline-block text-[11px] text-muted-foreground font-mono">
                       Return to send
                     </span>
                     <PromptInputSubmit
-                      className="bg-zinc-100 hover:bg-white text-zinc-950"
+                      className="bg-foreground hover:bg-foreground/90 text-background"
                       aria-label="Submit prompt"
                     />
                   </div>
@@ -444,11 +448,6 @@ export default function Home() {
               </PromptInput>
             </div>
           </main>
-
-          {/* Footer */}
-          <footer className="border-t border-zinc-900/80 py-4 text-center text-xs text-zinc-600 font-mono">
-            ag-ui &bull; Multimodal Company Intelligence Platform &bull; Bun Workspace
-          </footer>
         </SidebarInset>
 
         {/* Collapsible Evidence Drawer */}

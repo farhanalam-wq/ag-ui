@@ -74,13 +74,13 @@ export function NavChats({ onNewChat, activeChatId = "chat-1", onSelectChat }: N
         <button
           type="button"
           onClick={onNewChat}
-          className="flex w-full items-center justify-between px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800/80 hover:bg-zinc-800/90 text-xs font-medium text-zinc-200 hover:text-white transition-all shadow-sm group"
+          className="flex w-full items-center justify-between px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/80 hover:bg-zinc-200/80 dark:hover:bg-zinc-800/90 text-xs font-medium text-zinc-800 dark:text-zinc-200 hover:text-zinc-950 dark:hover:text-white transition-all shadow-sm group"
         >
           <div className="flex items-center gap-2">
             <Plus className="size-3.5 text-brand-primary" />
             <span>New Chat</span>
           </div>
-          <span className="text-[10px] font-mono text-zinc-500 group-hover:text-zinc-400 bg-zinc-950 px-1.5 py-0.5 rounded border border-zinc-800">
+          <span className="text-[10px] font-mono text-zinc-500 group-hover:text-zinc-600 dark:group-hover:text-zinc-400 bg-zinc-200/80 dark:bg-zinc-950 px-1.5 py-0.5 rounded border border-zinc-300/80 dark:border-zinc-800">
             Ctrl+K
           </span>
         </button>
@@ -95,10 +95,10 @@ export function NavChats({ onNewChat, activeChatId = "chat-1", onSelectChat }: N
             <SidebarMenuButton
               isActive={chat.id === activeChatId}
               onClick={() => onSelectChat?.(chat)}
-              className="text-xs hover:bg-zinc-900 data-[active=true]:bg-zinc-900/90 data-[active=true]:text-zinc-100 text-zinc-400 justify-between py-1.5"
+              className="text-xs hover:bg-zinc-200/60 dark:hover:bg-zinc-900 data-[active=true]:bg-zinc-200 dark:data-[active=true]:bg-zinc-900/90 data-[active=true]:text-zinc-950 dark:data-[active=true]:text-zinc-100 text-zinc-600 dark:text-zinc-400 justify-between py-1.5"
             >
               <div className="flex items-center gap-2 truncate">
-                <ChatCircleText className="size-3.5 shrink-0 text-zinc-500" />
+                <ChatCircleText className="size-3.5 shrink-0 text-zinc-400 dark:text-zinc-500" />
                 <span className="truncate">{chat.title}</span>
               </div>
             </SidebarMenuButton>
@@ -115,10 +115,10 @@ export function NavChats({ onNewChat, activeChatId = "chat-1", onSelectChat }: N
             <SidebarMenuButton
               isActive={chat.id === activeChatId}
               onClick={() => onSelectChat?.(chat)}
-              className="text-xs hover:bg-zinc-900 data-[active=true]:bg-zinc-900/90 data-[active=true]:text-zinc-100 text-zinc-400 justify-between py-1.5"
+              className="text-xs hover:bg-zinc-200/60 dark:hover:bg-zinc-900 data-[active=true]:bg-zinc-200 dark:data-[active=true]:bg-zinc-900/90 data-[active=true]:text-zinc-950 dark:data-[active=true]:text-zinc-100 text-zinc-600 dark:text-zinc-400 justify-between py-1.5"
             >
               <div className="flex items-center gap-2 truncate">
-                <ChatCircleText className="size-3.5 shrink-0 text-zinc-500" />
+                <ChatCircleText className="size-3.5 shrink-0 text-zinc-400 dark:text-zinc-500" />
                 <span className="truncate">{chat.title}</span>
               </div>
             </SidebarMenuButton>

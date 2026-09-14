@@ -44,11 +44,11 @@ export function NavKnowledge({
           <SidebarMenuButton
             tooltip="Indexed crawled documents"
             onClick={onOpenDocuments}
-            className="text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 transition-colors"
+            className="text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-200/60 dark:hover:bg-zinc-900 transition-colors"
           >
-            <FileText className="size-4 text-zinc-500" />
+            <FileText className="size-4 text-zinc-400 dark:text-zinc-500" />
             <span>Crawled Pages</span>
-            <SidebarMenuBadge className="text-[10px] font-mono bg-zinc-900 border border-zinc-800 text-zinc-400 ml-auto">
+            <SidebarMenuBadge className="text-[10px] font-mono bg-zinc-200/80 dark:bg-zinc-900 border border-zinc-300/80 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 ml-auto">
               {documentCount}
             </SidebarMenuBadge>
           </SidebarMenuButton>
@@ -58,11 +58,11 @@ export function NavKnowledge({
           <SidebarMenuButton
             tooltip="Deterministic extracted company facts"
             onClick={onOpenFacts}
-            className="text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 transition-colors"
+            className="text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-200/60 dark:hover:bg-zinc-900 transition-colors"
           >
-            <Fingerprint className="size-4 text-zinc-500" />
+            <Fingerprint className="size-4 text-zinc-400 dark:text-zinc-500" />
             <span>Structured Facts</span>
-            <SidebarMenuBadge className="text-[10px] font-mono bg-zinc-900 border border-zinc-800 text-zinc-400 ml-auto">
+            <SidebarMenuBadge className="text-[10px] font-mono bg-zinc-200/80 dark:bg-zinc-900 border border-zinc-300/80 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 ml-auto">
               SQL
             </SidebarMenuBadge>
           </SidebarMenuButton>
@@ -72,11 +72,11 @@ export function NavKnowledge({
           <SidebarMenuButton
             tooltip="PostgreSQL pgvector 1536-dim embeddings"
             onClick={onOpenChunks}
-            className="text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 transition-colors"
+            className="text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-200/60 dark:hover:bg-zinc-900 transition-colors"
           >
-            <Stack className="size-4 text-zinc-500" />
+            <Stack className="size-4 text-zinc-400 dark:text-zinc-500" />
             <span>Vector Chunks</span>
-            <SidebarMenuBadge className="text-[10px] font-mono bg-zinc-900 border border-zinc-800 text-zinc-400 ml-auto">
+            <SidebarMenuBadge className="text-[10px] font-mono bg-zinc-200/80 dark:bg-zinc-900 border border-zinc-300/80 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 ml-auto">
               {chunkCount}
             </SidebarMenuBadge>
           </SidebarMenuButton>

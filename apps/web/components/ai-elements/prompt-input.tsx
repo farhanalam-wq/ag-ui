@@ -115,7 +115,7 @@ export function PromptInput({
       <form
         onSubmit={handleFormSubmit}
         className={cn(
-          "group relative flex w-full flex-col overflow-hidden rounded-2xl border border-zinc-800/90 bg-zinc-950/90 p-3.5 text-zinc-100 shadow-2xl backdrop-blur-xl transition-all duration-200 focus-within:border-zinc-600/90 focus-within:ring-2 focus-within:ring-zinc-800/60",
+          "group relative flex w-full flex-col overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800/90 bg-white/95 dark:bg-zinc-950/90 p-3.5 text-zinc-900 dark:text-zinc-100 shadow-2xl backdrop-blur-xl transition-all duration-200 focus-within:border-zinc-400 dark:focus-within:border-zinc-600/90 focus-within:ring-2 focus-within:ring-zinc-300/60 dark:focus-within:ring-zinc-800/60",
           className
         )}
         {...props}
@@ -193,7 +193,7 @@ export function PromptInputTextarea({
       placeholder={placeholder}
       disabled={isSubmitting}
       className={cn(
-        "w-full resize-none bg-transparent px-1.5 text-sm leading-relaxed text-zinc-100 placeholder-zinc-500 focus:outline-none disabled:opacity-50",
+        "w-full resize-none bg-transparent px-1.5 text-sm leading-relaxed text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none disabled:opacity-50",
         className
       )}
       {...props}
@@ -211,7 +211,7 @@ export function PromptInputFooter({
   return (
     <div
       className={cn(
-        "mt-2 flex items-center justify-between gap-2 border-t border-zinc-900/80 pt-2.5",
+        "mt-2 flex items-center justify-between gap-2 border-t border-zinc-200 dark:border-zinc-900/80 pt-2.5",
         className
       )}
       {...props}
@@ -230,7 +230,7 @@ export function PromptInputTools({
 }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("flex flex-wrap items-center gap-2 text-xs text-zinc-400", className)}
+      className={cn("flex flex-wrap items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400", className)}
       {...props}
     />
   );
@@ -256,8 +256,8 @@ export function PromptInputAction({
       className={cn(
         "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
         active
-          ? "border-zinc-700 bg-zinc-800 text-zinc-100"
-          : "border-zinc-800/80 bg-zinc-900/60 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200",
+          ? "border-zinc-300 dark:border-zinc-700 bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
+          : "border-zinc-200 dark:border-zinc-800/80 bg-zinc-100 dark:bg-zinc-900/60 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-700 hover:text-zinc-900 dark:hover:text-zinc-200",
         className
       )}
       {...props}
@@ -282,11 +282,11 @@ export function PromptInputBadge({
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-lg border border-zinc-800/80 bg-zinc-900/60 px-2.5 py-1 text-xs font-medium text-zinc-400 select-none",
+        "inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800/80 bg-zinc-100 dark:bg-zinc-900/60 px-2.5 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-400 select-none",
         className
       )}
     >
-      <Icon className="h-3.5 w-3.5 text-zinc-400" />
+      <Icon className="h-3.5 w-3.5 text-zinc-500 dark:text-zinc-400" />
       <span>{label}</span>
     </div>
   );
@@ -316,7 +316,7 @@ export function PromptInputSubmit({
       disabled={isDisabled}
       aria-label="Submit prompt"
       className={cn(
-        "inline-flex h-8 w-8 items-center justify-center rounded-xl bg-zinc-100 text-zinc-950 transition-all hover:bg-white active:scale-95 disabled:pointer-events-none disabled:opacity-30",
+        "inline-flex h-8 w-8 items-center justify-center rounded-xl bg-zinc-900 dark:bg-zinc-100 text-zinc-100 dark:text-zinc-950 transition-all hover:bg-zinc-800 dark:hover:bg-white active:scale-95 disabled:pointer-events-none disabled:opacity-30",
         className
       )}
       {...props}

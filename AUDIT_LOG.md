@@ -242,6 +242,14 @@ This document serves as the chronological, living audit trail for all architectu
    - Structured `SidebarInset` with minimal sticky header (`SidebarTrigger`, `BreadcrumbList` [Companies > Company > Intelligence Chat], pgvector status, and Sources drawer button).
    - Verified clean production build with `bun run build` passing all 4 static routes.
 
+5. **Sleek Custom Scrollbars & Shadcn Theme Mode Toggle**:
+   - Replaced default Windows native scrollbars with a custom, ultra-thin 5px rounded pill scrollbar across webkit and Firefox.
+   - Enhanced `SidebarContent` with targeted scrollbar classes (`w-1.5`, rounded thumb, transparent track).
+   - Integrated `next-themes` and established full Light & Dark mode tokens in `globals.css` and `tailwind.config.ts`.
+   - Built official shadcn [`ModeToggle`](file:///c:/Users/Farhan_Alam/Workspace/ag-ui/apps/web/components/mode-toggle.tsx) with rotating Sun/Moon animation and Light/Dark/System options.
+   - Positioned `ModeToggle` in the top right header beside the API link.
+   - Adapted all components (`AppSidebar`, `ChatMessageItem`, `PromptInput`, `page.tsx`) for dynamic real-time theme switching.
+
 ### Planned Deliverables:
 1. **Dynamic Brand Theming Engine**:
    - Injects company brand tokens into CSS custom properties (`--brand-primary`, `--brand-secondary`, `--brand-style`, `--brand-radius`).

@@ -25,7 +25,7 @@ export function NavSettings() {
         <SidebarMenuItem>
           <SidebarMenuButton
             tooltip="Explore interactive GenUI components"
-            className="text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 transition-colors"
+            className="text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-200/60 dark:hover:bg-zinc-900 transition-colors"
           >
             <Sparkle className="size-4 text-brand-primary" />
             <span>GenUI Catalog</span>
@@ -36,7 +36,7 @@ export function NavSettings() {
           <SidebarMenuButton
             asChild
             tooltip="Open Elysia API Swagger & Health"
-            className="text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 transition-colors"
+            className="text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-200/60 dark:hover:bg-zinc-900 transition-colors"
           >
             <a
               href="http://localhost:3001/swagger"
@@ -54,7 +54,7 @@ export function NavSettings() {
         <SidebarMenuItem>
           <SidebarMenuButton
             tooltip="System settings and retrieval thresholds"
-            className="text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 transition-colors"
+            className="text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-200/60 dark:hover:bg-zinc-900 transition-colors"
           >
             <Gear className="size-4 text-zinc-500" />
             <span>Settings</span>
