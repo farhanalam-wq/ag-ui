@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@ag-ui/contracts": "workspace:*",
+    "@ag-ui/genui": "workspace:*",
     "@ag-ui/shared": "workspace:*",
     "@openuidev/lang-core": "^0.2.18",
     "@openuidev/react-lang": "^0.2.15",

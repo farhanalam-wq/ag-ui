@@ -34,6 +34,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@ag-ui/contracts": "workspace:*",
+        "@ag-ui/genui": "workspace:*",
         "@ag-ui/shared": "workspace:*",
         "@openuidev/lang-core": "^0.2.18",
         "@openuidev/react-lang": "^0.2.15",
@@ -107,6 +108,26 @@
         "typescript": "^5.7.3",
       },
     },
+    "packages/genui": {
+      "name": "@ag-ui/genui",
+      "version": "0.0.1",
+      "dependencies": {
+        "@phosphor-icons/react": "^2.1.10",
+        "@thesvg/icons": "^3.3.7",
+        "clsx": "^2.1.1",
+        "tailwind-merge": "^3.0.1",
+      },
+      "devDependencies": {
+        "@types/node": "^22.13.4",
+        "@types/react": "^19.0.8",
+        "@types/react-dom": "^19.0.3",
+        "typescript": "^5.7.3",
+      },
+      "peerDependencies": {
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0",
+      },
+    },
     "packages/queues": {
       "name": "@ag-ui/queues",
       "version": "0.0.1",
@@ -160,6 +181,8 @@
     "@ag-ui/crawler": ["@ag-ui/crawler@workspace:packages/crawler"],
 
     "@ag-ui/database": ["@ag-ui/database@workspace:packages/database"],
+
+    "@ag-ui/genui": ["@ag-ui/genui@workspace:packages/genui"],
 
     "@ag-ui/queues": ["@ag-ui/queues@workspace:packages/queues"],
 
@@ -484,6 +507,8 @@
     "@swc/helpers": ["@swc/helpers@0.5.15", "", { "dependencies": { "tslib": "^2.8.0" } }, "sha512-JQ5TuMi45Owi4/BIMAJBoSQoOJu12oOk/gADqlcUL9JEdHB8vyjUSsxqeNXnmXHjYKMi2WcYtezGEEhqUI/E2g=="],
 
     "@tabby_ai/hijri-converter": ["@tabby_ai/hijri-converter@1.0.5", "", {}, "sha512-r5bClKrcIusDoo049dSL8CawnHR6mRdDwhlQuIgZRNty68q0x8k3Lf1BtPAMxRf/GgnHBnIO4ujd3+GQdLWzxQ=="],
+
+    "@thesvg/icons": ["@thesvg/icons@3.3.7", "", {}, "sha512-DCl1F/8rzkeDtAFu9rYWTaEuR4JSJkdafAgIfaVo2P9Zu0cz7yNMyhJJdiafvlw+9veiAh5jmu2X1TIYjYFzfw=="],
 
     "@tokenizer/inflate": ["@tokenizer/inflate@0.4.1", "", { "dependencies": { "debug": "^4.4.3", "token-types": "^6.1.1" } }, "sha512-2mAv+8pkG6GIZiF1kNg1jAjh27IDxEPKwdGul3snfztFerfPGI1LjDezZp3i7BElXompqEtPmoPx6c2wgtWsOA=="],
 
