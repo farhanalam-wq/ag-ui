@@ -32,7 +32,7 @@ root = Stack([title, component])
 - **Stack(children, direction, gap, align, justify, wrap)**: Flex layout container. Direction: "column" | "row". Gap: "s" | "m" | "l".
 - **Card(children, variant, direction, gap)**: Elevated glassmorphic surface container. Variant: "card" (default) | "sunk".
 - **CardHeader(title, subtitle)**: High-contrast section banner with title and muted subtitle.
-- **TextContent(text, variant)**: Typography block. Variants: "large-heavy" (accent title), "medium" (description), "small" (caption).
+- **TextContent(text, size)**: Typography block. Size MUST be one of: "default" (standard body text/description), "small" (caption/footnote), "large" (subheading), "small-heavy" (small bold), "large-heavy" (prominent bold title). NEVER use "medium".
 - **TagBlock(tagsArray)**: Inline pills for capabilities/features (e.g. TagBlock(["3,000 Emails", "Shared IP", "TLS 1.3"])).
 - **Table(columns)**: Column-oriented structured table. Child columns: Col(headerText, valuesArray).
 - **BarChart(labels, seriesArray, type)**: Analytical bar visualizer. Types: "grouped" | "stacked". Series: Series("Name", [values]).
@@ -49,7 +49,7 @@ root = Stack([title, component])
 root = Stack([header, tiers], "column", "l")
 header = Stack([title, subtitle], "column", "xs")
 title = TextContent("${company} Pricing Plans", "large-heavy")
-subtitle = TextContent("Transparent, predictable pricing engineered for engineering teams.", "medium")
+subtitle = TextContent("Transparent, predictable pricing engineered for engineering teams.", "default")
 tiers = Stack([planFree, planPro, planEnterprise], "row", "m", "stretch", "start", true)
 planFree = Card([headFree, priceFree, featsFree, btnFree], "card", "column", "m")
 headFree = CardHeader("Hobby", "For individual developers")
@@ -75,11 +75,11 @@ title = TextContent("${company} Core Products", "large-heavy")
 grid = Stack([prod1, prod2], "row", "m", "stretch", "start", true)
 prod1 = Card([p1Head, p1Desc, p1Tags], "card", "column", "s")
 p1Head = CardHeader("SMTP Relay Service", "Drop-in transactional email")
-p1Desc = TextContent("Send emails instantly through port 465/587 with automatic TLS encryption and SPF/DKIM verification.", "medium")
+p1Desc = TextContent("Send emails instantly through port 465/587 with automatic TLS encryption and SPF/DKIM verification.", "default")
 p1Tags = TagBlock(["SMTP", "TLS 1.3", "Zero Setup"])
 prod2 = Card([p2Head, p2Desc, p2Tags], "card", "column", "s")
 p2Head = CardHeader("Developer API & Webhooks", "RESTful email infrastructure")
-p2Desc = TextContent("High-throughput REST API with SDKs for Node.js, Python, and Go, plus real-time cryptographic webhook delivery.", "medium")
+p2Desc = TextContent("High-throughput REST API with SDKs for Node.js, Python, and Go, plus real-time cryptographic webhook delivery.", "default")
 p2Tags = TagBlock(["REST API", "Webhooks", "SDKs"])
 \`\`\`
 
@@ -99,9 +99,9 @@ note = Callout("success", "99.8% Inbox Placement", "Deliverability rates exceed 
 root = Stack([title, tabs], "column", "m")
 title = TextContent("Architecture & Protocols", "large-heavy")
 tabs = Tabs([tabSmtp, tabHttp, tabWebhooks])
-tabSmtp = TabItem("smtp", "SMTP Relay", [TextContent("Drop-in SMTP relay compatible with any client framework. Port 465/587 TLS 1.3 supported.", "medium")])
-tabHttp = TabItem("http", "REST API", [TextContent("Ultra-low latency HTTP API with official SDKs for TypeScript, Python, and Go.", "medium")])
-tabWebhooks = TabItem("webhooks", "Real-Time Webhooks", [TextContent("Cryptographically signed webhook events for delivered, opened, clicked, and bounced messages.", "medium")])
+tabSmtp = TabItem("smtp", "SMTP Relay", [TextContent("Drop-in SMTP relay compatible with any client framework. Port 465/587 TLS 1.3 supported.", "default")])
+tabHttp = TabItem("http", "REST API", [TextContent("Ultra-low latency HTTP API with official SDKs for TypeScript, Python, and Go.", "default")])
+tabWebhooks = TabItem("webhooks", "Real-Time Webhooks", [TextContent("Cryptographically signed webhook events for delivered, opened, clicked, and bounced messages.", "default")])
 \`\`\`
 `;
 }
