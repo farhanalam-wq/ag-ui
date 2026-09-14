@@ -9,10 +9,14 @@
     "lint": "echo 'genui: lint ok'"
   },
   "dependencies": {
-    "@thesvg/icons": "^3.3.7",
+    "@openuidev/lang-core": "^0.2.18",
+    "@openuidev/react-lang": "^0.2.15",
+    "@openuidev/react-ui": "^0.13.10",
     "@phosphor-icons/react": "^2.1.10",
+    "@thesvg/icons": "^3.3.7",
     "clsx": "^2.1.1",
-    "tailwind-merge": "^3.0.1"
+    "tailwind-merge": "^3.0.1",
+    "zod": "^3.24.2"
   },
   "peerDependencies": {
     "react": "^19.0.0",
