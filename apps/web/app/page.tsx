@@ -21,6 +21,7 @@ import {
   Code,
   ArrowCounterClockwise,
   Sidebar as SidebarIcon,
+  ChatCircleText,
 } from "@phosphor-icons/react";
 import { useCompanyChat } from "@/hooks/use-company-chat";
 import { ChatMessageItem } from "@/components/chat-message";
@@ -112,6 +113,7 @@ export default function Home() {
   const [companies, setCompanies] = useState<CompanyItem[]>(DEFAULT_COMPANIES);
   const [selectedCompany, setSelectedCompany] = useState<CompanyItem>(DEFAULT_COMPANIES[0]);
   const [query, setQuery] = useState("");
+  const [viewMode, setViewMode] = useState<"visual" | "text">("visual");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -274,6 +276,36 @@ export default function Home() {
                 </button>
               )}
 
+              {/* Visual vs Text View Mode Toggle */}
+              <div className="inline-flex items-center p-0.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900/80 text-xs font-medium">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("visual")}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all ${
+                    viewMode === "visual"
+                      ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm font-semibold"
+                      : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
+                  }`}
+                  title="Generative Visual UI mode"
+                >
+                  <Sparkle className={`size-3.5 ${viewMode === "visual" ? "text-brand-primary" : ""}`} />
+                  <span>Visual</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("text")}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all ${
+                    viewMode === "text"
+                      ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm font-semibold"
+                      : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
+                  }`}
+                  title="Plain text chat mode"
+                >
+                  <ChatCircleText className="size-3.5" />
+                  <span>Text</span>
+                </button>
+              </div>
+
               {/* Shadcn Theme Mode Toggle */}
               <ModeToggle />
             </div>
@@ -361,6 +393,7 @@ export default function Home() {
                     companyName={selectedCompany.name}
                     brandColor={selectedCompany.brandColor}
                     onOpenEvidence={openDrawerWithEvidence}
+                    viewMode={viewMode}
                   />
                 ))}
                 <div ref={messagesEndRef} />

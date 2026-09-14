@@ -12,6 +12,7 @@ import {
   Stack,
   WarningCircle,
   Eye,
+  CaretRight,
 } from "@phosphor-icons/react";
 import type { ChatMessage as ChatMessageType, EvidenceItem } from "@/hooks/use-company-chat";
 import { OpenUIRenderer } from "./openui-renderer";
@@ -21,6 +22,22 @@ interface ChatMessageProps {
   companyName: string;
   brandColor?: string;
   onOpenEvidence: (item?: EvidenceItem) => void;
+  viewMode?: "visual" | "text";
+}
+
+function extractOpenUISource(content: string, visualSpec?: any): string | null {
+  if (visualSpec?.openui) {
+    return visualSpec.openui;
+  }
+  const match = /```openui\s*([\s\S]*?)(?:```|$)/.exec(content);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+  return null;
+}
+
+function extractTextWithoutOpenUI(content: string): string {
+  return content.replace(/```openui[\s\S]*?(?:```|$)/g, "").trim();
 }
 
 export function ChatMessageItem({
@@ -28,6 +45,7 @@ export function ChatMessageItem({
   companyName,
   brandColor = "#3b82f6",
   onOpenEvidence,
+  viewMode = "visual",
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
@@ -56,6 +74,10 @@ export function ChatMessageItem({
   const isRetrieving = message.stage === "retrieving";
   const isSynthesizing = message.stage === "synthesizing";
   const isError = message.stage === "error";
+
+  const openuiSource = extractOpenUISource(message.content, message.visualSpec);
+  const textContentWithoutOpenUI = extractTextWithoutOpenUI(message.content);
+  const hasOpenUI = Boolean(openuiSource);
 
   return (
     <div className="flex justify-start w-full">
@@ -101,92 +123,108 @@ export function ChatMessageItem({
           {/* Assistant Answer Body */}
           {message.content && (
             <div className="rounded-2xl rounded-tl-sm border border-zinc-200 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/40 p-5 text-zinc-900 dark:text-zinc-100 shadow-xl backdrop-blur-sm space-y-3">
-              <div className="prose dark:prose-invert prose-zinc max-w-none text-sm leading-relaxed space-y-2">
-                <ReactMarkdown
-                  components={{
-                    h1: ({ children }) => (
-                      <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mt-4 mb-2">{children}</h1>
-                    ),
-                    h2: ({ children }) => (
-                      <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100 mt-3 mb-1.5">
-                        {children}
-                      </h2>
-                    ),
-                    h3: ({ children }) => (
-                      <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mt-2 mb-1">{children}</h3>
-                    ),
-                    p: ({ children }) => (
-                      <p className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed my-1.5">{children}</p>
-                    ),
-                    ul: ({ children }) => (
-                      <ul className="list-disc list-inside space-y-1 my-2 text-zinc-700 dark:text-zinc-300 text-sm">
-                        {children}
-                      </ul>
-                    ),
-                    ol: ({ children }) => (
-                      <ol className="list-decimal list-inside space-y-1 my-2 text-zinc-700 dark:text-zinc-300 text-sm">
-                        {children}
-                      </ol>
-                    ),
-                    li: ({ children }) => <li className="text-zinc-700 dark:text-zinc-300">{children}</li>,
-                    strong: ({ children }) => (
-                      <strong className="font-semibold text-zinc-900 dark:text-zinc-100">{children}</strong>
-                    ),
-                    code: ({ children, className }) => {
-                      const match = /language-(\w+)/.exec(className || "");
-                      const language = match ? match[1] : "";
-                      if (language === "openui" || className === "openui") {
-                        const source = String(children).replace(/\n$/, "");
-                        return <OpenUIRenderer source={source} isStreaming={isSynthesizing} />;
-                      }
+              {viewMode === "visual" && hasOpenUI ? (
+                /* Visual Mode: Render OpenUI Generative UI component instead of textual answers */
+                <div className="space-y-3">
+                  <OpenUIRenderer source={openuiSource!} isStreaming={isSynthesizing} />
 
-                      const isBlock = Boolean(className);
-                      return isBlock ? (
-                        <pre className="p-3 my-2 rounded-lg bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-xs font-mono text-zinc-800 dark:text-zinc-200 overflow-x-auto">
-                          <code>{children}</code>
-                        </pre>
-                      ) : (
-                        <code className="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 text-xs font-mono border border-zinc-200 dark:border-zinc-700/60">
-                          {children}
-                        </code>
-                      );
-                    },
-                  }}
-                >
-                  {message.content}
-                </ReactMarkdown>
-
-                {/* Streaming blinking cursor */}
-                {isSynthesizing && (
-                  <span className="inline-block w-1.5 h-4 ml-0.5 bg-brand-primary animate-pulse align-middle" />
-                )}
-              </div>
-
-              {/* GenUI Visual Spec Preview / OpenUI spec */}
-              {message.visualSpec && (
-                <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-800/80">
-                  {(message.visualSpec as any).openui ? (
-                    <OpenUIRenderer source={(message.visualSpec as any).openui} isStreaming={false} />
-                  ) : (
-                    <div className="flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/70 text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="p-1 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-mono">
-                          <Sparkle className="w-3.5 h-3.5" />
-                        </span>
-                        <div>
-                          <span className="font-semibold text-zinc-800 dark:text-zinc-200 uppercase font-mono text-[11px]">
-                            Interactive Component: {message.visualSpec.type}
-                          </span>
-                          <p className="text-[11px] text-zinc-500 font-mono">
-                            Ready for Brand-Adaptive Generative UI Rendering
-                          </p>
-                        </div>
+                  {textContentWithoutOpenUI && (
+                    <details className="mt-3 group text-xs text-zinc-500 dark:text-zinc-400 font-mono">
+                      <summary className="cursor-pointer hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors list-none inline-flex items-center gap-1.5 select-none">
+                        <CaretRight className="size-3 transition-transform group-open:rotate-90 text-zinc-400" />
+                        <span>Text notes</span>
+                      </summary>
+                      <div className="pt-2 pl-3 border-l border-zinc-200 dark:border-zinc-800 mt-1 prose dark:prose-invert prose-zinc max-w-none text-xs text-zinc-600 dark:text-zinc-300">
+                        <ReactMarkdown>{textContentWithoutOpenUI}</ReactMarkdown>
                       </div>
-                      <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400">
-                        GenUI Active
-                      </span>
-                    </div>
+                    </details>
                   )}
+                </div>
+              ) : (
+                /* Text Mode (or Visual fallback when message has no OpenUI component) */
+                <div className="prose dark:prose-invert prose-zinc max-w-none text-sm leading-relaxed space-y-2">
+                  <ReactMarkdown
+                    components={{
+                      h1: ({ children }) => (
+                        <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mt-4 mb-2">{children}</h1>
+                      ),
+                      h2: ({ children }) => (
+                        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100 mt-3 mb-1.5">
+                          {children}
+                        </h2>
+                      ),
+                      h3: ({ children }) => (
+                        <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mt-2 mb-1">{children}</h3>
+                      ),
+                      p: ({ children }) => (
+                        <p className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed my-1.5">{children}</p>
+                      ),
+                      ul: ({ children }) => (
+                        <ul className="list-disc list-inside space-y-1 my-2 text-zinc-700 dark:text-zinc-300 text-sm">
+                          {children}
+                        </ul>
+                      ),
+                      ol: ({ children }) => (
+                        <ol className="list-decimal list-inside space-y-1 my-2 text-zinc-700 dark:text-zinc-300 text-sm">
+                          {children}
+                        </ol>
+                      ),
+                      li: ({ children }) => <li className="text-zinc-700 dark:text-zinc-300">{children}</li>,
+                      strong: ({ children }) => (
+                        <strong className="font-semibold text-zinc-900 dark:text-zinc-100">{children}</strong>
+                      ),
+                      code: ({ children, className }) => {
+                        const match = /language-(\w+)/.exec(className || "");
+                        const language = match ? match[1] : "";
+                        // In text mode, completely suppress OpenUI code blocks
+                        if (language === "openui" || className === "openui") {
+                          return null;
+                        }
+
+                        const isBlock = Boolean(className);
+                        return isBlock ? (
+                          <pre className="p-3 my-2 rounded-lg bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-xs font-mono text-zinc-800 dark:text-zinc-200 overflow-x-auto">
+                            <code>{children}</code>
+                          </pre>
+                        ) : (
+                          <code className="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 text-xs font-mono border border-zinc-200 dark:border-zinc-700/60">
+                            {children}
+                          </code>
+                        );
+                      },
+                    }}
+                  >
+                    {viewMode === "text" ? (textContentWithoutOpenUI || message.content) : message.content}
+                  </ReactMarkdown>
+
+                  {/* Streaming blinking cursor */}
+                  {isSynthesizing && (
+                    <span className="inline-block w-1.5 h-4 ml-0.5 bg-brand-primary animate-pulse align-middle" />
+                  )}
+                </div>
+              )}
+
+              {/* GenUI Visual Spec Preview Banner (only in visual mode for legacy specs) */}
+              {viewMode === "visual" && !hasOpenUI && message.visualSpec && (
+                <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-800/80">
+                  <div className="flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/70 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="p-1 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-mono">
+                        <Sparkle className="w-3.5 h-3.5" />
+                      </span>
+                      <div>
+                        <span className="font-semibold text-zinc-800 dark:text-zinc-200 uppercase font-mono text-[11px]">
+                          Interactive Component: {message.visualSpec.type}
+                        </span>
+                        <p className="text-[11px] text-zinc-500 font-mono">
+                          Ready for Brand-Adaptive Generative UI Rendering
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400">
+                      GenUI Active
+                    </span>
+                  </div>
                 </div>
               )}
 
