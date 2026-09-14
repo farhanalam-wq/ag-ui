@@ -232,6 +232,16 @@ This document serves as the chronological, living audit trail for all architectu
    - Real-time pipeline step tracker displaying progression: `QUEUED` $\rightarrow$ `CRAWLING` $\rightarrow$ `PARSING` $\rightarrow$ `INDEXING` $\rightarrow$ `READY`.
    - Auto-registers the newly indexed company, dynamically appends it to the switcher, switches the active context, and enables instant streaming queries.
 
+4. **Enterprise Shadcn Sidebar-07 Layout & Phosphor-Native Restructure**:
+   - Installed official shadcn components via `bunx --bun shadcn@latest add`: `breadcrumb`, `sidebar`, `dropdown-menu`, `avatar`, `collapsible`, `separator`, `tooltip`, `sheet`, `button`, `input`, `skeleton`.
+   - Converted all icons strictly to `@phosphor-icons/react` (`SidebarSimple`, `CaretRight`, `CaretUpDown`, `DotsThree`, `Check`, `Circle`, `X`), maintaining the zero Lucide and zero emoji mandate.
+   - Built `CompanySwitcher` replacing the horizontal top grid with an active company scope dropdown displaying indexed companies and "+ Index New Company" action.
+   - Built `NavChats` with New Chat action (`Ctrl+K`) and categorized thread history (`Today`, `Previous 7 Days`).
+   - Built `NavKnowledge` (Crawled Pages, Structured Facts, Vector Chunks, Queue Status) and `NavSettings` (GenUI Catalog, API Swagger docs, Settings).
+   - Built `NavUser` profile card with placeholder dropdown (*Account Profile*, *API Keys*, *Billing*, *Log out*).
+   - Structured `SidebarInset` with minimal sticky header (`SidebarTrigger`, `BreadcrumbList` [Companies > Company > Intelligence Chat], pgvector status, and Sources drawer button).
+   - Verified clean production build with `bun run build` passing all 4 static routes.
+
 ### Planned Deliverables:
 1. **Dynamic Brand Theming Engine**:
    - Injects company brand tokens into CSS custom properties (`--brand-primary`, `--brand-secondary`, `--brand-style`, `--brand-radius`).
