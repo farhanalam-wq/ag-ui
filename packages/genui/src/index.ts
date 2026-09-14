@@ -9,5 +9,11 @@ export * from "./components/product-grid";
 export * from "./components/pricing-grid";
 export * from "./components/metric-grid";
 export * from "./components/enhanced-tag-block";
+export * from "./components/graphic-banner";
+export * from "./components/overview-card";
+export * from "./components/service-grid";
+export * from "./components/competitor-grid";
+export * from "./components/geo-card";
+export * from "./components/executive-brief";
 
 export * from "./registry/genui-library";
