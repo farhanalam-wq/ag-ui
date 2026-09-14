@@ -6,6 +6,7 @@ import { Renderer } from "@openuidev/react-lang";
 import { openuiLibrary, ThemeProvider, defaultDarkTheme } from "@openuidev/react-ui";
 import "@openuidev/react-ui/defaults.css";
 import "@openuidev/react-ui/components.css";
+import "@/app/openui-theme.css";
 import {
   Sparkle,
   ArrowLeft,
@@ -21,22 +22,50 @@ import {
 const PRESET_EXAMPLES = [
   {
     id: "pricing",
-    name: "Pricing Tiers",
+    name: "Elevated Pricing Grid",
     icon: CreditCard,
-    code: `root = Stack([title, subtitle, plans])
-title = TextContent("Resend Pricing Plans", "large-heavy")
-subtitle = TextContent("Transparent pricing built for fast-growing engineering teams.", "medium")
-plans = Table([Col("Plan", names), Col("Price", prices), Col("Monthly Emails", limits), Col("Dedicated IP", dedicated)])
-names = ["Free Hobby", "Pro Developer", "Business Scale", "Enterprise"]
-prices = ["$0 / mo", "$20 / mo", "$100 / mo", "Custom"]
-limits = ["3,000 emails", "50,000 emails", "250,000 emails", "Unlimited"]
-dedicated = ["Shared Pool", "Addon $30/mo", "Included (1 IP)", "Multi-Region Included"]`,
+    code: `root = Stack([header, tiers], "column", "l")
+header = Stack([title, subtitle], "column", "xs")
+title = TextContent("Resend Enterprise Pricing", "large-heavy")
+subtitle = TextContent("Predictable pricing engineered for modern engineering teams.", "medium")
+tiers = Stack([planFree, planPro, planEnterprise], "row", "m", "stretch", "start", true)
+planFree = Card([headFree, priceFree, featsFree, btnFree], "card", "column", "m")
+headFree = CardHeader("Hobby", "For individual developers")
+priceFree = TextContent("$0 / month", "large-heavy")
+featsFree = TagBlock(["3,000 Emails / mo", "Shared IP Pool", "Community Support", "1 Domain"])
+btnFree = Buttons([Button("Get Started Free", "signup_free", "secondary")])
+planPro = Card([headPro, pricePro, featsPro, btnPro], "card", "column", "m")
+headPro = CardHeader("Pro Developer", "Most popular for high-velocity teams")
+pricePro = TextContent("$20 / month", "large-heavy")
+featsPro = TagBlock(["50,000 Emails / mo", "Dedicated IP Option", "Priority Deliverability", "Unlimited Domains"])
+btnPro = Buttons([Button("Deploy Pro", "signup_pro", "primary")])
+planEnterprise = Card([headEnt, priceEnt, featsEnt, btnEnt], "card", "column", "m")
+headEnt = CardHeader("Enterprise", "Dedicated infrastructure & SLA")
+priceEnt = TextContent("Custom Quote", "large-heavy")
+featsEnt = TagBlock(["Unlimited Volume", "Dedicated IP Pools", "99.99% Uptime SLA", "24/7 Slack Support"])
+btnEnt = Buttons([Button("Talk to Sales", "contact_sales", "secondary")])`,
+  },
+  {
+    id: "products",
+    name: "Products Showcase",
+    icon: Lightning,
+    code: `root = Stack([title, grid], "column", "m")
+title = TextContent("Resend Core Infrastructure", "large-heavy")
+grid = Stack([prod1, prod2], "row", "m", "stretch", "start", true)
+prod1 = Card([p1Head, p1Desc, p1Tags], "card", "column", "s")
+p1Head = CardHeader("SMTP Relay Engine", "Transactional email delivery")
+p1Desc = TextContent("Drop-in relay on port 465/587 with automatic TLS 1.3 encryption and instant SPF/DKIM validation.", "medium")
+p1Tags = TagBlock(["SMTP", "TLS 1.3", "Zero Setup"])
+prod2 = Card([p2Head, p2Desc, p2Tags], "card", "column", "s")
+p2Head = CardHeader("Developer API & Webhooks", "RESTful email infrastructure")
+p2Desc = TextContent("Ultra-low latency HTTP API with official SDKs for TypeScript, Python, and Go, plus cryptographic webhooks.", "medium")
+p2Tags = TagBlock(["REST API", "Webhooks", "SDKs"])`,
   },
   {
     id: "metrics",
     name: "Deliverability Analytics",
     icon: ChartBar,
-    code: `root = Stack([title, chart, note])
+    code: `root = Stack([title, chart, note], "column", "m")
 title = TextContent("Monthly Email Volume & Delivery Rate", "large-heavy")
 chart = BarChart(months, [delivered, bounced], "grouped")
 months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"]
@@ -48,15 +77,15 @@ note = Callout("success", "99.8% Inbox Placement", "Delivery rates remain indust
     id: "features",
     name: "Feature Comparison Tabs",
     icon: Rows,
-    code: `root = Stack([title, tabs])
+    code: `root = Stack([title, tabs], "column", "m")
 title = TextContent("Architecture & Protocol Support", "large-heavy")
 tabs = Tabs([tabSmtp, tabHttp, tabWebhooks])
 tabSmtp = TabItem("smtp", "SMTP Relay", smtpContent)
 tabHttp = TabItem("http", "REST API", httpContent)
 tabWebhooks = TabItem("webhooks", "Real-Time Webhooks", webhooksContent)
-smtpContent = [TextContent("Drop-in SMTP relay compatible with any standard client or framework. Port 465/587 TLS supported."), Callout("info", "TLS Required", "All outbound traffic is encrypted in transit via TLS 1.3.")]
-httpContent = [TextContent("Ultra-low latency HTTP API with native SDKs for Node.js, Python, Go, Ruby, and Elixir."), Callout("success", "Batch Sending", "Send up to 100 individualized emails in a single HTTP request.")]
-webhooksContent = [TextContent("Real-time event webhooks with Svix cryptographic signature verification for delivered, opened, clicked, and bounced events.")]`,
+smtpContent = [TextContent("Drop-in SMTP relay compatible with any standard client or framework. Port 465/587 TLS supported.", "medium"), Callout("info", "TLS Required", "All outbound traffic is encrypted in transit via TLS 1.3.")]
+httpContent = [TextContent("Ultra-low latency HTTP API with native SDKs for Node.js, Python, Go, Ruby, and Elixir.", "medium"), Callout("success", "Batch Sending", "Send up to 100 individualized emails in a single HTTP request.")]
+webhooksContent = [TextContent("Real-time event webhooks with Svix cryptographic signature verification for delivered, opened, clicked, and bounced events.", "medium")]`,
   },
 ];
 

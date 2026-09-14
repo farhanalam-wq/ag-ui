@@ -8,7 +8,11 @@ import {
   eq,
   desc,
 } from "@ag-ui/database";
-import { streamChatCompletionGenerator, logger } from "@ag-ui/shared";
+import {
+  streamChatCompletionGenerator,
+  logger,
+  buildOpenUISystemPrompt,
+} from "@ag-ui/shared";
 import type { VisualSpec } from "@ag-ui/contracts";
 
 export const chatRoutes = new Elysia()
@@ -86,14 +90,22 @@ export const chatRoutes = new Elysia()
           },
         };
 
+        const openuiPrompt = buildOpenUISystemPrompt({
+          companyName: retrieved.company.name,
+          brandPrimary: (retrieved.company as any)?.brandColor || "#3b82f6",
+        });
+
         const systemPrompt = `You are the official multimodal AI representative for ${retrieved.company.name} (${retrieved.company.domain}).
 Your role is to deliver concise, authoritative, and brand-aligned responses grounded in company documentation.
 
 GUIDELINES:
 1. Ground your answers strictly in the provided company facts and documentation excerpts below. Do not guess or fabricate information.
-2. Always provide a comprehensive and helpful textual response. Whenever the user asks about products, pricing, features, statistics, or metrics, ALSO invoke the "render_visual_component" tool to emit an interactive visual specification with fully populated props (for products: array of { name, description, tag }; for pricing: array of { name, price, features }; for stats: array of { label, value }).
-3. Keep answers clear, technical, and executive-ready.
-4. CRITICAL RULE: NEVER USE EMOJIS ANYWHERE IN YOUR RESPONSES. Strictly use plain text and clean markdown formatting.
+2. Always provide a comprehensive and helpful textual response. Whenever the user asks about products, pricing, features, statistics, or metrics, ALWAYS accompany your written response with an interactive OpenUI visual component block enclosed in \`\`\`openui ... \`\`\`.
+3. Follow the OpenUI Lang syntax and reference examples strictly.
+4. Keep answers clear, technical, and executive-ready.
+5. CRITICAL RULE: NEVER USE EMOJIS ANYWHERE IN YOUR RESPONSES. Strictly use plain text and clean markdown formatting.
+
+${openuiPrompt}
 
 ${retrieved.compiledPromptContext}`;
 
@@ -131,6 +143,16 @@ ${retrieved.compiledPromptContext}`;
             finalFullText = event.fullText;
             finalVisualSpec = event.visualSpec;
           }
+        }
+
+        // Check if fullText contains an OpenUI block to cache in visualSpec
+        const openuiBlockMatch = /```openui\s*([\s\S]*?)\s*```/.exec(finalFullText);
+        if (openuiBlockMatch && openuiBlockMatch[1]) {
+          finalVisualSpec = {
+            type: "custom" as any,
+            props: { openui: openuiBlockMatch[1].trim() },
+            openui: openuiBlockMatch[1].trim(),
+          } as any;
         }
 
         // Persist assistant response in PostgreSQL

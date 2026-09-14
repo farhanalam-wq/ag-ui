@@ -5,3 +5,4 @@ export * from "./chunker";
 export * from "./embeddings";
 export * from "./facts";
 export * from "./llm";
+export * from "./openui-prompt";
