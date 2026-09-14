@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import Link from "next/link";
 import {
   PromptInput,
   PromptInputBody,
@@ -20,10 +19,8 @@ import {
   MagnifyingGlass,
   Lightning,
   Code,
-  ArrowSquareOut,
   ArrowCounterClockwise,
   Sidebar as SidebarIcon,
-  Plus,
 } from "@phosphor-icons/react";
 import { useCompanyChat } from "@/hooks/use-company-chat";
 import { ChatMessageItem } from "@/components/chat-message";
@@ -276,42 +273,6 @@ export default function Home() {
                   <span>Sources ({activeEvidence.length})</span>
                 </button>
               )}
-
-              <div className="hidden md:inline-flex items-center gap-2 px-2.5 py-1 rounded-full border border-zinc-800/80 bg-zinc-900/50 text-xs text-zinc-400">
-                <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>pgvector active</span>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setIsAddDialogOpen(true)}
-                className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800 text-xs text-zinc-300 transition-colors"
-              >
-                <Plus className="size-3.5 text-zinc-400" />
-                <span>Index URL</span>
-              </button>
-
-              <a
-                href="http://localhost:3001/health"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors border border-zinc-800/80 bg-zinc-900/50 hover:bg-zinc-800 rounded-lg px-2.5 py-1"
-                title="API Health"
-              >
-                <span className="hidden sm:inline">API : </span>
-                <span className="font-mono">3001</span>
-                <ArrowSquareOut className="size-3" />
-              </a>
-
-              {/* OpenUI Live Component Showcase Link */}
-              <Link
-                href="/preview/openui"
-                className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-purple-500/40 bg-purple-500/10 hover:bg-purple-500/20 text-xs text-purple-300 transition-colors"
-                title="OpenUI Live Component Showcase"
-              >
-                <Sparkle className="size-3.5 text-purple-400" />
-                <span>OpenUI Preview</span>
-              </Link>
 
               {/* Shadcn Theme Mode Toggle */}
               <ModeToggle />
