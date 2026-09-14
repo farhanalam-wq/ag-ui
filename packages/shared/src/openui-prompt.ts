@@ -33,7 +33,11 @@ root = Stack([title, component])
 - **Card(children, variant, direction, gap)**: Elevated glassmorphic surface container. Variant: "card" (default) | "sunk".
 - **CardHeader(title, subtitle)**: High-contrast section banner with title and muted subtitle.
 - **TextContent(text, size)**: Typography block. Size MUST be one of: "default" (standard body text/description), "small" (caption/footnote), "large" (subheading), "small-heavy" (small bold), "large-heavy" (prominent bold title). NEVER use "medium".
-- **TagBlock(tagsArray)**: Inline pills for capabilities/features (e.g. TagBlock(["3,000 Emails", "Shared IP", "TLS 1.3"])).
+- **TagBlock(tagsArray)**: Inline pills for capabilities/features (e.g. TagBlock(["SMTP", "TLS 1.3", "REST API"])). Automatically displays verified brand SVG logos when technology names are detected!
+- **TechGrid(items, title, columns, variant)**: BESPOKE TECH VISUALIZER. Renders verified brand SVG logos (0ms instant resolution) for programming languages, frameworks, databases, and cloud tools. items: array of tech names or objects.
+- **ProductGrid(products, title)**: BESPOKE PRODUCT SHOWCASE with high hierarchy. Features a prominent hero solution card with accent glow and secondary sibling cards. products: array of objects with title, subtitle, description, tags, featured.
+- **PricingGrid(plans, title)**: BESPOKE PRICING TIERS with large price typography, feature checklists, and highlighted recommended tiers. plans: array of objects with name, price, period, description, features, recommended, ctaLabel.
+- **MetricGrid(metrics, title, columns)**: BESPOKE KPI DASHBOARD with large value numbers, trend/delta badges, and category icons. metrics: array of objects with label, value, change, trend, subtitle.
 - **Table(columns)**: Column-oriented structured table. Child columns: Col(headerText, valuesArray).
 - **BarChart(labels, seriesArray, type)**: Analytical bar visualizer. Types: "grouped" | "stacked". Series: Series("Name", [values]).
 - **LineChart(labels, seriesArray)**: Line trend visualizer.
@@ -44,57 +48,44 @@ root = Stack([title, component])
 
 ### OpenUI Lang Reference Examples:
 
-#### 1. High-Impact SaaS Pricing Cards (PREFER THIS OVER FLAT TABLES for pricing):
+#### 1. Bespoke Pricing Grid (PREFER THIS for SaaS pricing questions):
 \`\`\`openui
-root = Stack([header, tiers], "column", "l")
-header = Stack([title, subtitle], "column", "xs")
-title = TextContent("${company} Pricing Plans", "large-heavy")
-subtitle = TextContent("Transparent, predictable pricing engineered for engineering teams.", "default")
-tiers = Stack([planFree, planPro, planEnterprise], "row", "m", "stretch", "start", true)
-planFree = Card([headFree, priceFree, featsFree, btnFree], "card", "column", "m")
-headFree = CardHeader("Hobby", "For individual developers")
-priceFree = TextContent("$0 / month", "large-heavy")
-featsFree = TagBlock(["3,000 Emails / mo", "Shared IP Pool", "Community Support", "1 Domain"])
-btnFree = Buttons([Button("Get Started Free", "signup_free", "secondary")])
-planPro = Card([headPro, pricePro, featsPro, btnPro], "card", "column", "m")
-headPro = CardHeader("Pro Developer", "Most popular for high-velocity teams")
-pricePro = TextContent("$20 / month", "large-heavy")
-featsPro = TagBlock(["50,000 Emails / mo", "Dedicated IP Option", "Priority Deliverability", "Unlimited Domains"])
-btnPro = Buttons([Button("Deploy Pro", "signup_pro", "primary")])
-planEnterprise = Card([headEnt, priceEnt, featsEnt, btnEnt], "card", "column", "m")
-headEnt = CardHeader("Enterprise", "Dedicated infrastructure & SLA")
-priceEnt = TextContent("Custom Quote", "large-heavy")
-featsEnt = TagBlock(["Unlimited Volume", "Dedicated IP Pools", "99.99% Uptime SLA", "24/7 Slack Support"])
-btnEnt = Buttons([Button("Talk to Sales", "contact_sales", "secondary")])
+root = Stack([tiers], "column", "m")
+tiers = PricingGrid([tierFree, tierPro, tierEnterprise], "${company} Pricing Plans")
+tierFree = {"name": "Hobby", "price": "$0", "period": "month", "description": "For side projects and prototyping", "features": ["3,000 Emails / mo", "Shared IP Pool", "Community Discord Support", "1 Verified Domain"], "ctaLabel": "Start Free"}
+tierPro = {"name": "Pro Developer", "price": "$20", "period": "month", "description": "High deliverability for production apps", "features": ["50,000 Emails / mo", "Dedicated IP Option", "Priority Deliverability", "Unlimited Domains", "Webhooks & Logs"], "recommended": true, "ctaLabel": "Deploy Pro"}
+tierEnterprise = {"name": "Enterprise", "price": "Custom", "description": "Custom SLAs and dedicated infrastructure", "features": ["Unlimited Volume", "Dedicated IP Pools", "99.99% Uptime SLA", "24/7 Slack & Phone Support"], "ctaLabel": "Talk to Sales"}
 \`\`\`
 
-#### 2. Products Showcase (Multi-Card Grid):
+#### 2. Products Showcase with Featured Hero Hierarchy:
 \`\`\`openui
-root = Stack([title, grid], "column", "m")
-title = TextContent("${company} Core Products", "large-heavy")
-grid = Stack([prod1, prod2], "row", "m", "stretch", "start", true)
-prod1 = Card([p1Head, p1Desc, p1Tags], "card", "column", "s")
-p1Head = CardHeader("SMTP Relay Service", "Drop-in transactional email")
-p1Desc = TextContent("Send emails instantly through port 465/587 with automatic TLS encryption and SPF/DKIM verification.", "default")
-p1Tags = TagBlock(["SMTP", "TLS 1.3", "Zero Setup"])
-prod2 = Card([p2Head, p2Desc, p2Tags], "card", "column", "s")
-p2Head = CardHeader("Developer API & Webhooks", "RESTful email infrastructure")
-p2Desc = TextContent("High-throughput REST API with SDKs for Node.js, Python, and Go, plus real-time cryptographic webhook delivery.", "default")
-p2Tags = TagBlock(["REST API", "Webhooks", "SDKs"])
+root = Stack([prods], "column", "m")
+prods = ProductGrid([flagship, relay, inbound], "${company} Product Suite")
+flagship = {"title": "Developer Email API", "subtitle": "Core REST Infrastructure", "description": "Next-generation transactional and broadcast email API with sub-100ms processing and real-time event webhooks.", "tags": ["REST API", "TypeScript", "Python", "Go", "Webhooks"], "featured": true}
+relay = {"title": "SMTP Relay Engine", "subtitle": "Drop-in Email Transmission", "description": "Deliver transactional emails directly via port 465/587 with automatic TLS 1.3 encryption and DKIM authentication.", "tags": ["SMTP", "TLS 1.3", "Zero Config"]}
+inbound = {"title": "Inbound Email Webhooks", "subtitle": "Parsing & Receiving", "description": "Receive and parse inbound emails with structured JSON payloads delivered directly to your server endpoints.", "tags": ["Inbound", "JSON", "Automation"]}
 \`\`\`
 
-#### 3. Metrics & Deliverability (BarChart + Glowing Callout):
+#### 3. Technology Stack & SDK Matrix (with Brand SVG Logos):
 \`\`\`openui
-root = Stack([title, chart, note], "column", "m")
-title = TextContent("Monthly Delivery Performance", "large-heavy")
+root = Stack([tech], "column", "m")
+tech = TechGrid(["TypeScript", "Python", "Go", "Node.js", "React", "Next.js", "Docker", "PostgreSQL", "Redis"], "Supported Technologies & Official SDKs", 3, "cards")
+\`\`\`
+
+#### 4. Executive KPI Metrics:
+\`\`\`openui
+root = Stack([kpis, chart], "column", "l")
+kpis = MetricGrid([deliveryRate, apiLatency, activeSenders], "Real-Time System Health", 3)
+deliveryRate = {"label": "Global Deliverability", "value": "99.85%", "change": "+0.3%", "trend": "up", "subtitle": "Across Tier-1 mailbox providers"}
+apiLatency = {"label": "Median API Latency", "value": "42ms", "change": "-8ms", "trend": "up", "subtitle": "Global edge network"}
+activeSenders = {"label": "Emails Processed", "value": "1.2B+", "change": "+18% MoM", "trend": "up", "subtitle": "Past 30 days"}
 chart = BarChart(months, [delivered, bounced], "grouped")
 months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"]
 delivered = Series("Delivered (k)", [450, 680, 890, 1200, 1650, 2100])
 bounced = Series("Bounced (k)", [2, 3, 4, 5, 6, 7])
-note = Callout("success", "99.8% Inbox Placement", "Deliverability rates exceed industry benchmarks across Gmail, Microsoft 365, and Apple Mail.")
 \`\`\`
 
-#### 4. Feature Comparison Tabs:
+#### 5. Feature Comparison Tabs:
 \`\`\`openui
 root = Stack([title, tabs], "column", "m")
 title = TextContent("Architecture & Protocols", "large-heavy")
