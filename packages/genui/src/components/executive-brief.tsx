@@ -112,7 +112,7 @@ export function ExecutiveBrief({
                     </h4>
                   </div>
                   {detail.category && (
-                    <span className="text-[9px] font-mono uppercase tracking-wider text-zinc-400 bg-zinc-200/60 dark:bg-zinc-800 px-1.5 py-0.5 rounded shrink-0">
+                    <span className="text-[9px] font-mono uppercase tracking-wider text-zinc-400 bg-zinc-200/60 dark:bg-zinc-800 px-1.5 py-0.5 rounded shrink-0 max-w-[45%] truncate">
                       {detail.category}
                     </span>
                   )}

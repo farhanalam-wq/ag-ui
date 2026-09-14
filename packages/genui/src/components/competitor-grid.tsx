@@ -50,21 +50,23 @@ export function CompetitorGrid({
             className="flex flex-col justify-between rounded-2xl border border-zinc-200 dark:border-zinc-800/80 bg-white/70 dark:bg-zinc-900/60 backdrop-blur-xl p-4 sm:p-5 shadow-sm space-y-3.5 transition-all hover:border-zinc-300 dark:hover:border-zinc-700"
           >
             <div className="space-y-3">
-              {/* Header: Competitor Brand & Positioning */}
-              <div className="flex items-start justify-between gap-2.5">
+              {/* Header: Competitor Brand & Positioning Badge */}
+              <div className="space-y-2">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center shrink-0 p-1.5">
+                  <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center shrink-0 p-1.5 shadow-sm">
                     <TechIcon name={comp.name} size={18} />
                   </div>
-                  <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                  <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 tracking-tight truncate">
                     {comp.name}
                   </h3>
                 </div>
 
                 {comp.positioning && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-medium uppercase tracking-wider bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60 text-zinc-500 dark:text-zinc-400 shrink-0">
-                    {comp.positioning}
-                  </span>
+                  <div className="min-w-0">
+                    <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-mono font-medium uppercase tracking-wider bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60 text-zinc-500 dark:text-zinc-400 max-w-full truncate">
+                      {comp.positioning}
+                    </span>
+                  </div>
                 )}
               </div>
 
