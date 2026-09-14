@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Check, Sparkle, ArrowRight } from "@phosphor-icons/react";
+import { Check, Sparkle } from "@phosphor-icons/react";
 
 export interface PricingTierData {
   name: string;
@@ -8,8 +8,6 @@ export interface PricingTierData {
   description?: string;
   features: string[];
   recommended?: boolean;
-  ctaLabel?: string;
-  ctaAction?: string;
 }
 
 export interface PricingGridProps {
@@ -112,21 +110,6 @@ export function PricingGrid({ plans = [], title, className = "" }: PricingGridPr
                     </ul>
                   </div>
                 )}
-              </div>
-
-              {/* Action CTA Button */}
-              <div className="pt-5 mt-4">
-                <button
-                  type="button"
-                  className={`w-full py-2.5 px-4 rounded-xl text-xs font-semibold tracking-wide transition-all shadow-sm flex items-center justify-center gap-1.5 ${
-                    isRecommended
-                      ? "bg-brand-primary text-white hover:opacity-95 shadow-md shadow-brand-primary/20"
-                      : "bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700/60"
-                  }`}
-                >
-                  <span>{plan.ctaLabel || (isRecommended ? "Choose Plan" : "Get Started")}</span>
-                  <ArrowRight className="size-3" />
-                </button>
               </div>
             </div>
           );

@@ -48,7 +48,6 @@ export const PricingPlanItemSchema = z.object({
   description: z.string().optional().describe("Short target audience description"),
   features: z.array(z.string()).describe("List of included capabilities"),
   recommended: z.boolean().optional().describe("Whether this tier is marked Most Popular / Recommended"),
-  ctaLabel: z.string().optional().describe("Button label, e.g. Get Started, Deploy Pro"),
 });
 
 export const PricingGridSchema = z.object({
