@@ -1,5 +1,6 @@
 import * as React from "react";
 import { resolveIcon, type ResolvedIcon } from "./resolver";
+import { loadIconModule } from "./registry";
 
 export interface TechIconProps extends React.HTMLAttributes<HTMLDivElement> {
   name: string;
@@ -20,14 +21,34 @@ export function TechIcon({
   ...props
 }: TechIconProps) {
   const resolved: ResolvedIcon = React.useMemo(() => resolveIcon(name), [name]);
+  const [dynamicSvg, setDynamicSvg] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (resolved.svg) {
+      setDynamicSvg(null);
+      return;
+    }
+    // If not in synchronous core icons, attempt background load of the slug from @thesvg/icons
+    let active = true;
+    loadIconModule(resolved.slug).then((mod) => {
+      if (active && mod?.svg) {
+        setDynamicSvg(mod.svg);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [resolved.slug, resolved.svg]);
+
+  const rawSvg = resolved.svg || dynamicSvg;
 
   const svgContent = React.useMemo(() => {
-    if (!resolved.svg) return null;
+    if (!rawSvg) return null;
     if (variant === "mono" && resolved.variants?.mono) {
       return resolved.variants.mono;
     }
-    return resolved.svg;
-  }, [resolved, variant]);
+    return rawSvg;
+  }, [rawSvg, resolved.variants, variant]);
 
   const sizePx = typeof size === "number" ? `${size}px` : size;
   const Fallback = resolved.FallbackComponent;
