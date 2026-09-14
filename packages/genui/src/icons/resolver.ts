@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 import { SEMANTIC_ICON_MAP, type SemanticIconEntry } from "./semantic-map";
 import { CORE_ICONS, getCategoryFallback, type TheSvgIconModule } from "./registry";
-import { findBestSlugMatch } from "./slug-index";
+import { findBestSlugMatch, SLUG_SET } from "./slug-index";
 
 export interface ResolvedIcon {
   query: string;
@@ -90,7 +90,7 @@ function inferCategory(query: string): string {
   if (q.includes("cloud") || q.includes("host") || q.includes("server") || q.includes("infra")) {
     return "cloud";
   }
-  if (q.includes("auth") || q.includes("sec") || q.includes("shield") || q.includes("cert")) {
+  if (q.includes("auth") || q.includes("sec") || q.includes("shield") || q.includes("cert") || q.includes("gov")) {
     return "security";
   }
   if (q.includes("pay") || q.includes("bill") || q.includes("card") || q.includes("stripe") || q.includes("express")) {
@@ -131,7 +131,6 @@ export function resolveIcon(input: string): ResolvedIcon {
   }
 
   // 3. Check WHOLE query against comprehensive 7,412 slug index (exact, kebab, or normalized)
-  // This MUST run before token splitting so multi-word brands like "American Express" match american-express instead of express
   let matchedSlug = entry?.slug || findBestSlugMatch(rawLower) || findBestSlugMatch(normalizeIconQuery(rawLower));
 
   // 4. Token-based fallback ONLY if the whole query did not match
@@ -151,11 +150,9 @@ export function resolveIcon(input: string): ResolvedIcon {
     }
   }
 
-  const finalSlug = matchedSlug || rawLower.replace(/[^a-z0-9]/g, "");
-  const iconModule: TheSvgIconModule | undefined = CORE_ICONS[finalSlug];
-
   // Instant synchronous hit in CORE_ICONS
-  if (iconModule) {
+  if (matchedSlug && CORE_ICONS[matchedSlug]) {
+    const iconModule = CORE_ICONS[matchedSlug];
     return {
       query: raw,
       slug: iconModule.slug,
@@ -169,8 +166,8 @@ export function resolveIcon(input: string): ResolvedIcon {
     };
   }
 
-  // Known slug in full 7,412 registry (can be loaded asynchronously by TechIcon)
-  if (matchedSlug) {
+  // Known verified slug in full 7,412 registry (can be loaded asynchronously by TechIcon)
+  if (matchedSlug && SLUG_SET.has(matchedSlug)) {
     const prettyName = matchedSlug
       .split(/[\s_-]+/)
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
@@ -186,7 +183,7 @@ export function resolveIcon(input: string): ResolvedIcon {
     };
   }
 
-  // Completely unknown query: produce deterministic fallback
+  // Completely unknown / abstract phrase (e.g. "Cloud Architecture", "Enterprise AI"): deterministic fallback
   const inferredCat = inferCategory(raw);
   const fallbackPrettyName = raw
     .split(/[\s_-]+/)
@@ -195,7 +192,7 @@ export function resolveIcon(input: string): ResolvedIcon {
 
   return {
     query: raw,
-    slug: finalSlug || "unknown",
+    slug: "unknown",
     displayName: fallbackPrettyName || "Technology",
     category: inferredCat,
     isFallback: true,

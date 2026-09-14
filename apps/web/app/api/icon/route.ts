@@ -9,21 +9,11 @@ function getDistDir(): string | null {
     return cachedDistDir;
   }
 
-  try {
-    const pkgPath = require.resolve("@thesvg/icons/package.json");
-    const dist = path.join(path.dirname(pkgPath), "dist");
-    if (fs.existsSync(dist)) {
-      cachedDistDir = dist;
-      return dist;
-    }
-  } catch {
-    // Fallback search paths
-  }
-
   const fallbackPaths = [
     path.resolve(process.cwd(), "node_modules/@thesvg/icons/dist"),
     path.resolve(process.cwd(), "../../node_modules/@thesvg/icons/dist"),
     path.resolve(process.cwd(), "packages/genui/node_modules/@thesvg/icons/dist"),
+    path.resolve(process.cwd(), "../..", "node_modules/.bun/@thesvg+icons@3.3.7/node_modules/@thesvg/icons/dist"),
   ];
 
   for (const p of fallbackPaths) {
