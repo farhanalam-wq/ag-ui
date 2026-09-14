@@ -9,8 +9,9 @@
     "lint": "echo 'shared: lint ok'"
   },
   "dependencies": {
-    "zod": "^3.24.2",
-    "@ag-ui/contracts": "workspace:*"
+    "@ag-ui/contracts": "workspace:*",
+    "@openuidev/lang-core": "^0.2.18",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
     "typescript": "^5.7.3"

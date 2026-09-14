@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import {
   PromptInput,
   PromptInputBody,
@@ -301,6 +302,16 @@ export default function Home() {
                 <span className="font-mono">3001</span>
                 <ArrowSquareOut className="size-3" />
               </a>
+
+              {/* OpenUI Live Component Showcase Link */}
+              <Link
+                href="/preview/openui"
+                className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-purple-500/40 bg-purple-500/10 hover:bg-purple-500/20 text-xs text-purple-300 transition-colors"
+                title="OpenUI Live Component Showcase"
+              >
+                <Sparkle className="size-3.5 text-purple-400" />
+                <span>OpenUI Preview</span>
+              </Link>
 
               {/* Shadcn Theme Mode Toggle */}
               <ModeToggle />
