@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import { SEMANTIC_ICON_MAP, type SemanticIconEntry } from "./semantic-map";
 import { CORE_ICONS, getCategoryFallback, type TheSvgIconModule } from "./registry";
+import { findBestSlugMatch } from "./slug-index";
 
 export interface ResolvedIcon {
   query: string;
@@ -44,6 +45,12 @@ const NOISE_WORDS = [
   "apps",
   "backend",
   "frontend",
+  "inc",
+  "corp",
+  "llc",
+  "ltd",
+  "technologies",
+  "solutions",
 ];
 
 /**
@@ -86,7 +93,7 @@ function inferCategory(query: string): string {
   if (q.includes("auth") || q.includes("sec") || q.includes("shield") || q.includes("cert")) {
     return "security";
   }
-  if (q.includes("pay") || q.includes("bill") || q.includes("card") || q.includes("stripe")) {
+  if (q.includes("pay") || q.includes("bill") || q.includes("card") || q.includes("stripe") || q.includes("express")) {
     return "saas";
   }
   if (q.includes("http") || q.includes("rest") || q.includes("grpc") || q.includes("soap") || q.includes("net")) {
@@ -97,6 +104,7 @@ function inferCategory(query: string): string {
 
 /**
  * Resolves a natural language or technical query into a local SVG icon or deterministic fallback.
+ * Checks the semantic map first, then the comprehensive 7,412 @thesvg/icons registry.
  */
 export function resolveIcon(input: string): ResolvedIcon {
   if (!input || typeof input !== "string") {
@@ -116,27 +124,37 @@ export function resolveIcon(input: string): ResolvedIcon {
   // 1. Check exact raw match in semantic map
   let entry: SemanticIconEntry | undefined = SEMANTIC_ICON_MAP[rawLower];
 
-  // 2. If not found, normalize and check again
+  // 2. If not found, normalize and check again in semantic map
   if (!entry) {
     const normalized = normalizeIconQuery(rawLower);
     entry = SEMANTIC_ICON_MAP[normalized];
   }
 
-  // 3. Token-based fallback: check if any individual word matches a known brand
-  if (!entry) {
+  // 3. Check WHOLE query against comprehensive 7,412 slug index (exact, kebab, or normalized)
+  // This MUST run before token splitting so multi-word brands like "American Express" match american-express instead of express
+  let matchedSlug = entry?.slug || findBestSlugMatch(rawLower) || findBestSlugMatch(normalizeIconQuery(rawLower));
+
+  // 4. Token-based fallback ONLY if the whole query did not match
+  if (!matchedSlug && !entry) {
     const tokens = rawLower.split(/[\s\-_/.]+/).filter(Boolean);
     for (const token of tokens) {
       if (SEMANTIC_ICON_MAP[token]) {
         entry = SEMANTIC_ICON_MAP[token];
+        matchedSlug = entry.slug;
+        break;
+      }
+      const candidate = findBestSlugMatch(token);
+      if (candidate) {
+        matchedSlug = candidate;
         break;
       }
     }
   }
 
-  // 3. Fallback: check if the slug itself directly exists in CORE_ICONS
-  const slug = entry ? entry.slug : rawLower.replace(/[^a-z0-9]/g, "");
-  const iconModule: TheSvgIconModule | undefined = CORE_ICONS[slug];
+  const finalSlug = matchedSlug || rawLower.replace(/[^a-z0-9]/g, "");
+  const iconModule: TheSvgIconModule | undefined = CORE_ICONS[finalSlug];
 
+  // Instant synchronous hit in CORE_ICONS
   if (iconModule) {
     return {
       query: raw,
@@ -151,30 +169,34 @@ export function resolveIcon(input: string): ResolvedIcon {
     };
   }
 
-  // 4. If an entry matched our map but isn't in synchronous CORE_ICONS,
-  // we still have its verified category and display name
-  if (entry) {
+  // Known slug in full 7,412 registry (can be loaded asynchronously by TechIcon)
+  if (matchedSlug) {
+    const prettyName = matchedSlug
+      .split(/[\s_-]+/)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
+
     return {
       query: raw,
-      slug: entry.slug,
-      displayName: entry.displayName,
-      category: entry.category,
-      isFallback: true,
-      FallbackComponent: getCategoryFallback(entry.category),
+      slug: matchedSlug,
+      displayName: entry?.displayName || prettyName,
+      category: entry?.category || inferCategory(raw),
+      isFallback: false,
+      FallbackComponent: getCategoryFallback(entry?.category || inferCategory(raw)),
     };
   }
 
-  // 5. Completely unknown query: produce deterministic fallback
+  // Completely unknown query: produce deterministic fallback
   const inferredCat = inferCategory(raw);
-  const prettyName = raw
+  const fallbackPrettyName = raw
     .split(/[\s_-]+/)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 
   return {
     query: raw,
-    slug: slug || "unknown",
-    displayName: prettyName || "Technology",
+    slug: finalSlug || "unknown",
+    displayName: fallbackPrettyName || "Technology",
     category: inferredCat,
     isFallback: true,
     FallbackComponent: getCategoryFallback(inferredCat),

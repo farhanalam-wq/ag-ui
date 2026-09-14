@@ -1,5 +1,6 @@
 import * as React from "react";
 import { Info, Sparkle, BookmarkSimple } from "@phosphor-icons/react";
+import { TechIcon } from "../icons/tech-icon";
 
 export interface BriefDetail {
   title: string;
@@ -89,7 +90,7 @@ export function ExecutiveBrief({
         </div>
       )}
 
-      {/* Structured Details Grid */}
+      {/* Structured Details Grid (with automatic brand/company logo resolution) */}
       {Array.isArray(details) && details.length > 0 && (
         <div className="space-y-2.5 pt-1">
           <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-500 dark:text-zinc-400 font-semibold block">
@@ -99,14 +100,19 @@ export function ExecutiveBrief({
             {details.map((detail, idx) => (
               <div
                 key={idx}
-                className="rounded-xl border border-zinc-200 dark:border-zinc-800/70 bg-zinc-50/50 dark:bg-zinc-900/40 p-3.5 space-y-1.5"
+                className="rounded-xl border border-zinc-200 dark:border-zinc-800/70 bg-zinc-50/50 dark:bg-zinc-900/40 p-3.5 space-y-2"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <h4 className="text-xs font-semibold text-zinc-900 dark:text-zinc-200 tracking-tight">
-                    {detail.title}
-                  </h4>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-6 h-6 rounded-lg bg-zinc-100 dark:bg-zinc-800/90 border border-zinc-200/80 dark:border-zinc-700/60 flex items-center justify-center shrink-0 p-1">
+                      <TechIcon name={detail.title} size={15} />
+                    </div>
+                    <h4 className="text-xs font-semibold text-zinc-900 dark:text-zinc-200 tracking-tight truncate">
+                      {detail.title}
+                    </h4>
+                  </div>
                   {detail.category && (
-                    <span className="text-[9px] font-mono uppercase tracking-wider text-zinc-400 bg-zinc-200/60 dark:bg-zinc-800 px-1.5 py-0.5 rounded">
+                    <span className="text-[9px] font-mono uppercase tracking-wider text-zinc-400 bg-zinc-200/60 dark:bg-zinc-800 px-1.5 py-0.5 rounded shrink-0">
                       {detail.category}
                     </span>
                   )}

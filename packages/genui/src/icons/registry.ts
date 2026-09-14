@@ -10,7 +10,7 @@ import {
   PlugsConnected,
 } from "@phosphor-icons/react";
 
-// Synchronous core imports for instant 0ms rendering across all 87 mapped technologies
+// Synchronous core imports for instant 0ms rendering across all core tech & enterprise brands
 
 // Languages
 import python from "@thesvg/icons/python";
@@ -113,20 +113,62 @@ import html5 from "@thesvg/icons/html5";
 import css3 from "@thesvg/icons/css3";
 import webassembly from "@thesvg/icons/webassembly";
 
+// Enterprise Global Brands & Cloud Providers (0ms Instant Core Resolution)
+import redhat from "@thesvg/icons/red-hat";
+import nasa from "@thesvg/icons/nasa";
+import bmw from "@thesvg/icons/bmw";
+import walmart from "@thesvg/icons/walmart";
+import amex from "@thesvg/icons/american-express";
+import meta from "@thesvg/icons/meta";
+import apple from "@thesvg/icons/apple";
+import microsoft from "@thesvg/icons/microsoft";
+import google from "@thesvg/icons/google";
+import amazon from "@thesvg/icons/amazon";
+import ibm from "@thesvg/icons/ibm";
+import oracle from "@thesvg/icons/oracle";
+import intel from "@thesvg/icons/intel";
+import nvidia from "@thesvg/icons/nvidia";
+import amd from "@thesvg/icons/amd";
+import salesforce from "@thesvg/icons/salesforce";
+import sap from "@thesvg/icons/sap";
+import adobe from "@thesvg/icons/adobe";
+import cisco from "@thesvg/icons/cisco";
+import vmware from "@thesvg/icons/vmware";
+import snowflake from "@thesvg/icons/snowflake";
+import databricks from "@thesvg/icons/databricks";
+import tesla from "@thesvg/icons/tesla";
+import netflix from "@thesvg/icons/netflix";
+import uber from "@thesvg/icons/uber";
+import spotify from "@thesvg/icons/spotify";
+import shopify from "@thesvg/icons/shopify";
+import paypal from "@thesvg/icons/paypal";
+import accenture from "@thesvg/icons/accenture";
+
+// Custom verified brand SVG for CERN
+const cern: TheSvgIconModule = {
+  title: "CERN",
+  slug: "cern",
+  hex: "0053A0",
+  categories: ["scientific", "enterprise"],
+  aliases: ["european organization for nuclear research"],
+  svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#0053A0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="2"/><line x1="12" y1="2.5" x2="12" y2="21.5"/><line x1="2.5" y1="12" x2="21.5" y2="12"/></svg>',
+  variants: {},
+};
+
 export interface TheSvgIconModule {
   slug: string;
   title: string;
   hex: string;
-  categories: string[];
-  aliases: string[];
+  categories?: string[];
+  aliases?: string[];
   svg: string;
-  variants: Record<string, string>;
+  variants?: Record<string, string>;
   license?: string;
   url?: string;
 }
 
 /**
- * Fast synchronous core icon registry containing all 87 mapped technologies for 0s instant rendering
+ * Fast synchronous core icon registry containing top tech & global enterprise brands for 0ms instant rendering
  */
 export const CORE_ICONS: Record<string, TheSvgIconModule> = {
   // Languages
@@ -229,27 +271,88 @@ export const CORE_ICONS: Record<string, TheSvgIconModule> = {
   html5,
   css3,
   webassembly,
+
+  // Enterprise Brands & Companies
+  "red-hat": redhat,
+  redhat,
+  nasa,
+  bmw,
+  walmart,
+  "american-express": amex,
+  amex,
+  cern,
+  meta,
+  apple,
+  microsoft,
+  google,
+  amazon,
+  ibm,
+  oracle,
+  intel,
+  nvidia,
+  amd,
+  salesforce,
+  sap,
+  adobe,
+  cisco,
+  vmware,
+  snowflake,
+  databricks,
+  tesla,
+  netflix,
+  uber,
+  spotify,
+  shopify,
+  paypal,
+  accenture,
 };
 
 /**
- * Dynamic in-memory cache for on-demand loading of any of the remaining 6,500+ icons
+ * Dynamic in-memory cache for on-demand loading of any of the remaining 7,300+ icons
  */
 const dynamicIconCache = new Map<string, TheSvgIconModule>();
 
 /**
- * Asynchronously loads an icon from @thesvg/icons if not already in CORE_ICONS
+ * Asynchronously loads an icon from CORE_ICONS, the client API proxy, or dynamic import
  */
 export async function loadIconModule(slug: string): Promise<TheSvgIconModule | null> {
-  if (CORE_ICONS[slug]) {
-    return CORE_ICONS[slug];
+  const normalizedSlug = slug.toLowerCase().trim();
+
+  if (CORE_ICONS[normalizedSlug]) {
+    return CORE_ICONS[normalizedSlug];
   }
-  if (dynamicIconCache.has(slug)) {
-    return dynamicIconCache.get(slug)!;
+  if (dynamicIconCache.has(normalizedSlug)) {
+    return dynamicIconCache.get(normalizedSlug)!;
   }
+
+  // If in the browser, fetch from the Next.js API proxy for safe, lightweight zero-bundle overhead
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/icon?slug=${encodeURIComponent(normalizedSlug)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.svg) {
+          const mod: TheSvgIconModule = {
+            slug: data.slug || normalizedSlug,
+            title: data.title || normalizedSlug,
+            hex: data.hex || "71717A",
+            svg: data.svg,
+            variants: {},
+          };
+          dynamicIconCache.set(normalizedSlug, mod);
+          return mod;
+        }
+      }
+    } catch {
+      // Graceful fallback
+    }
+  }
+
+  // Fallback for SSR / Node environment
   try {
-    const mod = await import(`@thesvg/icons/${slug}`);
+    const mod = await import(`@thesvg/icons/${normalizedSlug}`);
     if (mod?.default?.svg) {
-      dynamicIconCache.set(slug, mod.default);
+      dynamicIconCache.set(normalizedSlug, mod.default);
       return mod.default;
     }
   } catch {

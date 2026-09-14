@@ -95,11 +95,9 @@ export function ServiceGrid({
               <div className="flex-1 p-4 sm:p-5 flex flex-col justify-between space-y-4">
                 <div className="space-y-2">
                   <div className="flex items-center gap-2.5">
-                    {service.icon && (
-                      <div className="w-7 h-7 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center shrink-0">
-                        <TechIcon name={service.icon} size={15} />
-                      </div>
-                    )}
+                    <div className="w-7 h-7 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center shrink-0">
+                      <TechIcon name={service.icon || service.title || service.category || "service"} size={15} />
+                    </div>
                     <h3 className="text-sm sm:text-base font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">
                       {service.title}
                     </h3>
