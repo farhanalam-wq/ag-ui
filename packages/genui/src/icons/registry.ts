@@ -350,7 +350,7 @@ export async function loadIconModule(slug: string): Promise<TheSvgIconModule | n
 
   // Fallback for SSR / Node environment
   try {
-    const mod = await import(`@thesvg/icons/${normalizedSlug}`);
+    const mod = await import(/* webpackIgnore: true */ `@thesvg/icons/${normalizedSlug}`);
     if (mod?.default?.svg) {
       dynamicIconCache.set(normalizedSlug, mod.default);
       return mod.default;
