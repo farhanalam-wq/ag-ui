@@ -12,6 +12,7 @@
     "lint": "turbo run lint",
     "clean": "turbo run clean",
     "crawl": "bun packages/crawler/cli.ts",
+    "ingest": "bun ingest-cli.ts",
     "chat": "bun cli.ts",
     "cli": "bun cli.ts"
   },
