@@ -2,7 +2,7 @@
 // Usage:
 //   bun ingest-cli.ts <url> [options]
 //   bun ingest-cli.ts https://example.com --discover-only --limit 20
-//   bun ingest-cli.ts https://example.com --all --yes --concurrency 20
+//   bun ingest-cli.ts https://example.com --all --yes --fetch-concurrency 20
 // Flow: DISCOVER (sitemap/robots/llms.txt/homepage) → SHOW urls → SELECT (all/N/range)
 //       → CONCURRENT CRAWL+PARSE → POPULATE DB (company/snapshot/brand/documents/chunks/facts).
 // Retrieval is intentionally out of scope here; verify later with the existing chat path.
@@ -84,7 +84,9 @@ interface CliOptions {
   all: boolean;
   yes: boolean;
   select: string | null;
-  concurrency: number;
+  fetchConcurrency: number;
+  parseConcurrency: number;
+  embedConcurrency: number;
   maxSitemapUrls: number;
   maxSitemaps: number;
   timeoutMs: number;
@@ -120,7 +122,10 @@ Options:
   --all                  Non-interactive: take all discovered URLs
   --select "1-20,35"     Non-interactive: explicit 1-based indices/ranges
   --yes                  Skip confirmation prompt before crawling
-  --concurrency N        Parallel page fetches (default 15, max 50)
+  --fetch-concurrency N  Parallel page fetches (default 25, max 50)
+  --parse-concurrency N  Parallel HTML parses (default 5, max 16)
+  --embed-concurrency N  Parallel embedding streams (default 3, max 6)
+  --concurrency N         Deprecated alias for --fetch-concurrency
   --max-sitemap N        Cap sitemap URL intake (default 2000)
   --max-sitemaps N       Cap sitemap files followed (default 10)
   --timeout N            Per-page HTTP timeout ms (default 10000)
@@ -134,8 +139,8 @@ Interactive (no --limit/--all/--select):
 
 Examples:
   bun ingest-cli.ts https://example.com --discover-only --limit 20
-  bun ingest-cli.ts https://example.com --all --yes --concurrency 20
-  bun ingest-cli.ts https://example.com --playwright --concurrency 10
+  bun ingest-cli.ts https://example.com --all --yes --fetch-concurrency 20
+  bun ingest-cli.ts https://example.com --playwright --fetch-concurrency 10
 `);
 }
 
@@ -158,7 +163,13 @@ function parseArgs(argv: string[]): { url: string | null; opts: CliOptions } {
   const positional = args.find((a) => !a.startsWith("--")) ?? null;
 
   const limitRaw = getVal("--limit");
-  const concRaw = getVal("--concurrency");
+  const fetchRaw = getVal("--fetch-concurrency");
+  const parseRaw = getVal("--parse-concurrency");
+  const embedRaw = getVal("--embed-concurrency");
+  const legacyRaw = getVal("--concurrency");
+  if (legacyRaw !== null && fetchRaw === null) {
+    console.log("[DEPRECATED] --concurrency is an alias for --fetch-concurrency and will be removed; switch to --fetch-concurrency.");
+  }
   const maxSmRaw = getVal("--max-sitemap");
   const maxSmsRaw = getVal("--max-sitemaps");
   const timeoutRaw = getVal("--timeout");
@@ -172,7 +183,9 @@ function parseArgs(argv: string[]): { url: string | null; opts: CliOptions } {
       all: has("--all"),
       yes: has("--yes"),
       select: getVal("--select"),
-      concurrency: Math.min(50, Math.max(1, parseInt(concRaw ?? "15", 10) || 15)),
+      fetchConcurrency: Math.min(50, Math.max(1, parseInt(fetchRaw ?? legacyRaw ?? "25", 10) || 25)),
+      parseConcurrency: Math.min(16, Math.max(1, parseInt(parseRaw ?? "5", 10) || 5)),
+      embedConcurrency: Math.min(6, Math.max(1, parseInt(embedRaw ?? "3", 10) || 3)),
       maxSitemapUrls: Math.max(10, parseInt(maxSmRaw ?? "2000", 10) || 2000),
       maxSitemaps: Math.max(1, Math.min(25, parseInt(maxSmsRaw ?? "10", 10) || 10)),
       timeoutMs: Math.max(2000, parseInt(timeoutRaw ?? "10000", 10) || 10000),
@@ -482,9 +495,10 @@ async function crawlPages(
     }
   };
 
+  console.log(`[CRAWL] starting ${selected.length} pages (fetch width ${opts.fetchConcurrency}, parse width ${opts.parseConcurrency})`);
   const { ok, failed } = await mapPool(
     selected,
-    opts.concurrency,
+    opts.fetchConcurrency,
     async (p) => {
       if (!sameHost(p.url)) throw new Error("cross-host skip");
       let html = "";
@@ -666,7 +680,7 @@ async function populateDb(
     for (const c of cs) pending.push({ documentId: d.id, content: c.content, chunkIndex: c.chunkIndex });
   }
   chunkCount = pending.length;
-  console.log(`[DB] chunked into ${pending.length} pieces — embedding…`);
+  console.log(`[DB] chunked into ${pending.length} pieces — embedding (${opts.embedConcurrency} streams)…`);
   if (pending.length > 0) {
     const tE = Date.now();
     const vecs = await generateEmbeddings(pending.map((p) => p.content));
@@ -715,7 +729,7 @@ async function main() {
     process.exit(1);
   });
   const domain = (baseUrl as URL).hostname.replace(/^www\./, "");
-  console.log(`[INGEST] target=${(baseUrl as URL).origin} domain=${domain} concurrency=${opts.concurrency}${opts.usePlaywright ? " +playwright" : ""}`);
+  console.log(`[INGEST] target=${(baseUrl as URL).origin} domain=${domain} fetch=${opts.fetchConcurrency} parse=${opts.parseConcurrency} embed=${opts.embedConcurrency}${opts.usePlaywright ? " +playwright" : ""}`);
 
   // Phase 1: discover.
   const { pages, info } = await discoverPages(baseUrl as URL, opts);
@@ -750,11 +764,11 @@ async function main() {
     process.exit(1);
   }
   const selected = indices.map((i) => pages[i]).filter(Boolean);
-  console.log(`[SELECT] ${selected.length}/${pages.length} pages selected (est. crawl ~${Math.ceil(selected.length / opts.concurrency)} waves x ~1-3s)`);
+  console.log(`[SELECT] ${selected.length}/${pages.length} pages selected (est. crawl ~${Math.ceil(selected.length / opts.fetchConcurrency)} waves x ~1-3s)`);
 
   if (!opts.yes && opts.limit === null && !opts.all && !opts.select) {
     const rl2 = readline.createInterface({ input, output });
-    const c = await rl2.question(`Crawl ${selected.length} pages with concurrency ${opts.concurrency}? [Y/n]: `);
+    const c = await rl2.question(`Crawl ${selected.length} pages (fetch ${opts.fetchConcurrency}, parse ${opts.parseConcurrency}, embed ${opts.embedConcurrency})? [Y/n]: `);
     rl2.close();
     if (c.trim().toLowerCase() === "n" || c.trim().toLowerCase() === "no") {
       console.log("Aborted.");
