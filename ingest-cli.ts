@@ -94,6 +94,7 @@ interface CliOptions {
   usePlaywright: boolean;
   skipEmbed: boolean;
   dryRun: boolean;
+  noEmbedCache: boolean;
 }
 
 interface CrawledDoc {
@@ -133,6 +134,7 @@ Options:
   --timeout N            Per-page HTTP timeout ms (default 10000)
   --playwright           Enable Playwright fallback for JS shells (default OFF for speed)
   --skip-embed           Parse + insert documents but skip chunk/embed (fast smoke test)
+  --no-embed-cache       Bypass Redis embedding cache for reads and writes (parity tests)
   --dry-run              Crawl + parse, print stats, skip all DB writes
   --help                 Show this help
 
@@ -196,6 +198,7 @@ function parseArgs(argv: string[]): { url: string | null; opts: CliOptions } {
       usePlaywright: has("--playwright"),
       skipEmbed: has("--skip-embed"),
       dryRun: has("--dry-run"),
+      noEmbedCache: has("--no-embed-cache"),
     },
   };
 }
@@ -896,7 +899,7 @@ async function populateDb(
     try {
       vecs = await generateEmbeddings(
         pending.map((p) => p.content),
-        { concurrency: opts.embedConcurrency }
+        { concurrency: opts.embedConcurrency, useCache: !opts.noEmbedCache }
       );
     } catch (err: any) {
       await db.update(companySnapshots).set({ status: "FAILED" }).where(eq(companySnapshots.id, snap.id));

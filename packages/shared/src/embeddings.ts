@@ -1,4 +1,5 @@
 import { logger } from "./logger";
+import { EmbedCache, embedCacheKey, getDefaultEmbedCache } from "./embed-cache";
 
 export interface EmbeddingOptions {
   model?: string;
@@ -7,6 +8,8 @@ export interface EmbeddingOptions {
   tokensPerBatch?: number; // max estimated tokens per request (default 6000)
   concurrency?: number; // parallel batch streams (default 3)
   maxAttempts?: number; // attempts per batch (default 3)
+  useCache?: boolean; // Redis embedding cache (default true)
+  cache?: EmbedCache; // injected cache (tests); defaults to process singleton
 }
 
 export interface EmbeddingResult {
@@ -188,20 +191,70 @@ export async function generateEmbeddings(texts: string[], options?: EmbeddingOpt
   );
 
   const allEmbeddings: number[][] = new Array(texts.length);
+
+  // Cache lookup first: partition into hits and misses on the exact truncated
+  // input sent to OpenAI. Misses flow through the batch pipeline below, then
+  // write back. Order is always reassembled by global index.
+  const useCache = options?.useCache !== false;
+  const cache = useCache ? options?.cache ?? getDefaultEmbedCache() : null;
+  let missGlobals: number[] = texts.map((_, i) => i);
+  if (cache) {
+    const sliced = texts.map((t) => t.slice(0, MAX_CHARS));
+    const keys = sliced.map((t) => embedCacheKey(model, EMBED_DIMS, t));
+    const cached = await cache.getMany(keys, model);
+    let hits = 0;
+    const missTexts: string[] = [];
+    missGlobals = [];
+    cached.forEach((v, i) => {
+      if (v !== null) {
+        allEmbeddings[i] = v;
+        hits++;
+      } else {
+        missGlobals.push(i);
+        missTexts.push(texts[i]);
+      }
+    });
+    logger.info(`[EMBEDDINGS] cache ${hits} hits / ${texts.length} total, embedding ${missTexts.length} misses...`);
+    if (missTexts.length === 0) return allEmbeddings;
+    const missBatches = packBatches(missTexts, tokensPerBatch, maxItems);
+    const missVectors: number[][] = new Array(missTexts.length);
+    await runBatches(missBatches, missVectors, { model, apiKey, maxAttempts, concurrency });
+    const writeBack: { key: string; vector: number[]; model: string }[] = [];
+    missVectors.forEach((vec, pos) => {
+      const globalIndex = missGlobals[pos];
+      allEmbeddings[globalIndex] = vec;
+      writeBack.push({ key: keys[globalIndex], vector: vec, model });
+    });
+    await cache.setMany(writeBack);
+    return allEmbeddings;
+  }
+
+  await runBatches(batches, allEmbeddings, { model, apiKey, maxAttempts, concurrency });
+
+  return allEmbeddings;
+}
+
+async function runBatches(
+  batches: PackedBatch[],
+  out: number[][],
+  opts: { model: string; apiKey: string; maxAttempts: number; concurrency: number }
+): Promise<void> {
   let cursor = 0;
-  const workers = Array.from({ length: Math.min(concurrency, batches.length) }, async () => {
+  const workers = Array.from({ length: Math.min(opts.concurrency, batches.length) }, async () => {
     while (true) {
       const b = cursor++;
       if (b >= batches.length) return;
-      const results = await postBatchWithRetry(batches[b], b, { model, apiKey, maxAttempts });
+      const results = await postBatchWithRetry(batches[b], b, {
+        model: opts.model,
+        apiKey: opts.apiKey,
+        maxAttempts: opts.maxAttempts,
+      });
       for (const r of results) {
-        allEmbeddings[r.globalIndex] = r.embedding;
+        out[r.globalIndex] = r.embedding;
       }
     }
   });
   await Promise.all(workers);
-
-  return allEmbeddings;
 }
 
 /**
