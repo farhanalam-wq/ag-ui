@@ -87,6 +87,7 @@ interface CliOptions {
   fetchConcurrency: number;
   parseConcurrency: number;
   embedConcurrency: number;
+  hostGapMs: number;
   maxSitemapUrls: number;
   maxSitemaps: number;
   timeoutMs: number;
@@ -125,6 +126,7 @@ Options:
   --fetch-concurrency N  Parallel page fetches (default 25, max 50)
   --parse-concurrency N  Parallel HTML parses (default 5, max 16)
   --embed-concurrency N  Parallel embedding streams (default 3, max 6)
+  --host-gap-ms N        Min gap ms between requests to same host (default 150, 100-200)
   --concurrency N         Deprecated alias for --fetch-concurrency
   --max-sitemap N        Cap sitemap URL intake (default 2000)
   --max-sitemaps N       Cap sitemap files followed (default 10)
@@ -166,6 +168,7 @@ function parseArgs(argv: string[]): { url: string | null; opts: CliOptions } {
   const fetchRaw = getVal("--fetch-concurrency");
   const parseRaw = getVal("--parse-concurrency");
   const embedRaw = getVal("--embed-concurrency");
+  const hostGapRaw = getVal("--host-gap-ms");
   const legacyRaw = getVal("--concurrency");
   if (legacyRaw !== null && fetchRaw === null) {
     console.log("[DEPRECATED] --concurrency is an alias for --fetch-concurrency and will be removed; switch to --fetch-concurrency.");
@@ -186,6 +189,7 @@ function parseArgs(argv: string[]): { url: string | null; opts: CliOptions } {
       fetchConcurrency: Math.min(50, Math.max(1, parseInt(fetchRaw ?? legacyRaw ?? "25", 10) || 25)),
       parseConcurrency: Math.min(16, Math.max(1, parseInt(parseRaw ?? "5", 10) || 5)),
       embedConcurrency: Math.min(6, Math.max(1, parseInt(embedRaw ?? "3", 10) || 3)),
+      hostGapMs: Math.min(200, Math.max(100, parseInt(hostGapRaw ?? "150", 10) || 150)),
       maxSitemapUrls: Math.max(10, parseInt(maxSmRaw ?? "2000", 10) || 2000),
       maxSitemaps: Math.max(1, Math.min(25, parseInt(maxSmsRaw ?? "10", 10) || 10)),
       timeoutMs: Math.max(2000, parseInt(timeoutRaw ?? "10000", 10) || 10000),
@@ -235,7 +239,7 @@ async function mapPool<T, R>(
   return { ok, failed };
 }
 
-async function fetchText(url: string, timeoutMs: number): Promise<{ text: string; status: number }> {
+async function fetchText(url: string, timeoutMs: number): Promise<{ text: string; status: number; retryAfterMs: number | null }> {
   const res = await fetch(url, {
     headers: {
       "User-Agent":
@@ -249,8 +253,160 @@ async function fetchText(url: string, timeoutMs: number): Promise<{ text: string
   });
   // Guard against giant payloads blowing memory on huge blogs.
   const text = await res.text();
-  return { text, status: res.status };
+  return { text, status: res.status, retryAfterMs: parseRetryAfterMs(res.headers.get("retry-after")) };
 }
+
+// ------------------------------------------- retry + rate limit (P0 task 5) ---
+// Bounded retries, Retry-After honor, per-host gap, dead letter with attempt
+// counts. Exported so fixture tests exercise the exact production code path.
+
+export function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Parses a Retry-After header value (delta seconds or HTTP date) into ms. Null when absent or unparseable. */
+export function parseRetryAfterMs(value: string | null): number | null {
+  if (value === null) return null;
+  const v = value.trim();
+  if (/^\d+$/.test(v)) return parseInt(v, 10) * 1000;
+  const at = Date.parse(v);
+  if (isNaN(at)) return null;
+  return Math.max(0, at - Date.now());
+}
+
+export type FetchStatusKind = "ok" | "retryable" | "terminal";
+
+/** 429 and 5xx are retryable. Every other non-2xx (404, 410, 403, 400, ...) is terminal. */
+export function classifyStatus(status: number): FetchStatusKind {
+  if (status >= 200 && status < 300) return "ok";
+  if (status === 429 || status >= 500) return "retryable";
+  return "terminal";
+}
+
+/** Timeout/abort/reset/refused/DNS wobbles are transient. Anything else thrown is terminal. */
+export function isTransientNetworkError(err: any): boolean {
+  if (!err) return false;
+  if (err.name === "TimeoutError" || err.name === "AbortError") return true;
+  const msg = String(err?.message ?? err);
+  return /timeout|aborted|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|socket hang up|connection reset|fetch failed|network|TLS|certificate/i.test(msg);
+}
+
+/**
+ * Delay before the next attempt after failedAttempt (1-based): 1s, 4s, 16s
+ * plus uniform jitter 0-500ms. An explicit Retry-After wins, capped at 30s.
+ */
+export function computeRetryDelayMs(failedAttempt: number, retryAfterMs: number | null): number {
+  const bases = [1000, 4000, 16000];
+  const jitter = Math.floor(Math.random() * 500);
+  if (retryAfterMs !== null) return Math.min(retryAfterMs, 30000) + jitter;
+  return bases[Math.min(failedAttempt - 1, bases.length - 1)] + jitter;
+}
+
+export class FetchTerminalError extends Error {
+  attempts: number;
+  status: number | null;
+  kind: "status-terminal" | "status-exhausted" | "network-terminal" | "network-exhausted" | "cross-host" | "shell" | "empty";
+  constructor(
+    message: string,
+    attempts: number,
+    status: number | null = null,
+    kind: FetchTerminalError["kind"] = "network-terminal"
+  ) {
+    super(message);
+    this.name = "FetchTerminalError";
+    this.attempts = attempts;
+    this.status = status;
+    this.kind = kind;
+  }
+}
+
+function shortErr(err: any): string {
+  return String(err?.message ?? err)
+    .replace(/\s+/g, " ")
+    .slice(0, 160);
+}
+
+// Per-host last-fire timestamps. Updated synchronously before waiting so
+// concurrent pool workers reserve slots instead of stampeding one host.
+const hostLastAt = new Map<string, number>();
+export function resetHostGaps(): void {
+  hostLastAt.clear();
+}
+
+export async function waitForHostGap(host: string, gapMs: number): Promise<void> {
+  const now = Date.now();
+  const last = hostLastAt.get(host) ?? 0;
+  const wait = last + gapMs - now;
+  hostLastAt.set(host, now + Math.max(0, wait));
+  if (wait > 0) await sleep(wait);
+}
+
+export interface RetryFetchOptions {
+  timeoutMs: number;
+  hostGapMs: number;
+  maxAttempts?: number;
+  onRetry?: () => void;
+}
+
+/**
+ * HTTP fetch with per-host gap and bounded retries. Resolves on 2xx.
+ * Throws FetchTerminalError (carrying attempts + status) on terminal status,
+ * exhausted retries, or non-transient network errors.
+ */
+export async function fetchWithRetry(
+  url: string,
+  o: RetryFetchOptions
+): Promise<{ html: string; status: number; attempts: number }> {
+  const maxAttempts = o.maxAttempts ?? 3;
+  const host = new URL(url).hostname;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    await waitForHostGap(host, o.hostGapMs);
+    let res: { text: string; status: number; retryAfterMs: number | null };
+    try {
+      res = await fetchText(url, o.timeoutMs);
+    } catch (err: any) {
+      if (!isTransientNetworkError(err)) {
+        throw new FetchTerminalError(`${shortErr(err)} (attempts=${attempt}, non-retryable)`, attempt, null, "network-terminal");
+      }
+      if (attempt >= maxAttempts) {
+        throw new FetchTerminalError(
+          `${shortErr(err)} after ${attempt} attempts (retries exhausted)`,
+          attempt,
+          null,
+          "network-exhausted"
+        );
+      }
+      o.onRetry?.();
+      await sleep(computeRetryDelayMs(attempt, null));
+      continue;
+    }
+    const kind = classifyStatus(res.status);
+    if (kind === "ok") return { html: res.text, status: res.status, attempts: attempt };
+    if (kind === "terminal") {
+      throw new FetchTerminalError(
+        `HTTP ${res.status} (attempts=${attempt}, non-retryable)`,
+        attempt,
+        res.status,
+        "status-terminal"
+      );
+    }
+    if (attempt >= maxAttempts) {
+      throw new FetchTerminalError(
+        `HTTP ${res.status} after ${attempt} attempts (retries exhausted)`,
+        attempt,
+        res.status,
+        "status-exhausted"
+      );
+    }
+    o.onRetry?.();
+    await sleep(computeRetryDelayMs(attempt, res.retryAfterMs));
+  }
+  throw new FetchTerminalError("fetch loop exited unexpectedly", maxAttempts);
+}
+
+// TODO(TASKS.md P1 task 2): persist the full dead-letter list into
+// crawl_jobs.error_sample (cap 200 entries) once the table lands. Until then
+// the list lives in memory, prints its full count, and shows the first 10.
 
 function extractLocs(xml: string): string[] {
   const out: string[] = [];
@@ -483,6 +639,7 @@ async function crawlPages(
   let httpCount = 0;
   let pwCount = 0;
   let skippedThin = 0;
+  let retriedCount = 0;
 
   const sameHost = (u: string) => {
     try {
@@ -500,36 +657,87 @@ async function crawlPages(
     selected,
     opts.fetchConcurrency,
     async (p) => {
-      if (!sameHost(p.url)) throw new Error("cross-host skip");
+      if (!sameHost(p.url)) {
+        throw new FetchTerminalError("cross-host skip (attempts=0, non-retryable)", 0, null, "cross-host");
+      }
       let html = "";
       let status = 0;
       let tier: CrawledDoc["tier"] = "http";
+      let attempts = 0;
+      const attemptPlaywright = async (timeout: number) => {
+        await waitForHostGap(new URL(p.url).hostname, opts.hostGapMs);
+        const r = await fetchViaPlaywrightReuse(p.url, timeout);
+        attempts++;
+        pwCount++;
+        return r;
+      };
       try {
-        const r = await fetchText(p.url, opts.timeoutMs);
-        html = r.text;
+        const r = await fetchWithRetry(p.url, {
+          timeoutMs: opts.timeoutMs,
+          hostGapMs: opts.hostGapMs,
+          onRetry: () => {
+            retriedCount++;
+          },
+        });
+        html = r.html;
         status = r.status;
+        attempts = r.attempts;
       } catch (err: any) {
-        // Network/timeout: try playwright once if enabled, else record failure.
-        if (opts.usePlaywright) {
-          const r = await fetchViaPlaywrightReuse(p.url, Math.min(15000, opts.timeoutMs + 5000));
+        const terminal = err instanceof FetchTerminalError ? err : null;
+        attempts = terminal?.attempts ?? attempts;
+        // No Playwright fallback for deterministic 4xx (404/410/403): re-rendering
+        // will not change the answer. Fallback covers transient/exhausted HTTP
+        // failures and JS shells only.
+        const noPwFallback =
+          !opts.usePlaywright ||
+          (terminal !== null &&
+            terminal.kind === "status-terminal" &&
+            terminal.status !== null &&
+            terminal.status < 500);
+        if (noPwFallback) throw err;
+        try {
+          const r = await attemptPlaywright(Math.min(15000, opts.timeoutMs + 5000));
           html = r.html;
           status = r.status;
           tier = "playwright";
-          pwCount++;
-        } else {
-          throw err;
+        } catch (pwErr: any) {
+          throw new FetchTerminalError(
+            `${shortErr(pwErr)} (attempts=${attempts}, playwright fallback failed)`,
+            attempts,
+            status || null,
+            "network-exhausted"
+          );
         }
       }
-      if (status < 200 || status >= 300 || !html) throw new Error(`HTTP ${status || "fetch-fail"}`);
+      if (status < 200 || status >= 300 || !html) {
+        throw new FetchTerminalError(
+          `HTTP ${status || "fetch-fail"} empty-or-bad (attempts=${attempts}, non-retryable)`,
+          attempts,
+          status || null,
+          status ? "status-terminal" : "empty"
+        );
+      }
       if (isShell(html)) {
         if (opts.usePlaywright) {
-          const r = await fetchViaPlaywrightReuse(p.url, 12000);
+          const r = await attemptPlaywright(12000);
           html = r.html;
           status = r.status;
           tier = "playwright";
-          pwCount++;
+          if (status < 200 || status >= 300 || !html) {
+            throw new FetchTerminalError(
+              `HTTP ${status} after playwright render (attempts=${attempts}, non-retryable)`,
+              attempts,
+              status,
+              "status-terminal"
+            );
+          }
         } else {
-          throw new Error("JS shell (retry with --playwright)");
+          throw new FetchTerminalError(
+            `JS shell (attempts=${attempts}, non-retryable; retry with --playwright)`,
+            attempts,
+            status,
+            "shell"
+          );
         }
       } else {
         if (tier === "http") httpCount++;
@@ -580,6 +788,7 @@ async function crawlPages(
       httpCount,
       pwCount,
       skippedThin,
+      retries: retriedCount,
       ms: Date.now() - t0,
     },
   };
@@ -729,7 +938,7 @@ async function main() {
     process.exit(1);
   });
   const domain = (baseUrl as URL).hostname.replace(/^www\./, "");
-  console.log(`[INGEST] target=${(baseUrl as URL).origin} domain=${domain} fetch=${opts.fetchConcurrency} parse=${opts.parseConcurrency} embed=${opts.embedConcurrency}${opts.usePlaywright ? " +playwright" : ""}`);
+  console.log(`[INGEST] target=${(baseUrl as URL).origin} domain=${domain} fetch=${opts.fetchConcurrency} parse=${opts.parseConcurrency} embed=${opts.embedConcurrency} hostgap=${opts.hostGapMs}ms${opts.usePlaywright ? " +playwright" : ""}`);
 
   // Phase 1: discover.
   const { pages, info } = await discoverPages(baseUrl as URL, opts);
@@ -780,10 +989,10 @@ async function main() {
   const { docs, rootHtml, stats } = await crawlPages(selected, baseUrl as URL, opts);
   const elapsedCrawl = ((stats.ms as number) / 1000).toFixed(1);
   const pps = (docs.length / Math.max(0.5, (stats.ms as number) / 1000)).toFixed(1);
-  console.log(`[CRAWL] done: docs=${docs.length} failed=${stats.failed} http=${stats.httpCount} playwright=${stats.pwCount} thin/dup=${stats.skippedThin} in ${elapsedCrawl}s (${pps} docs/s)`);
+  console.log(`[CRAWL] done: docs=${docs.length} failed=${stats.failed} retries=${stats.retries} http=${stats.httpCount} playwright=${stats.pwCount} thin/dup=${stats.skippedThin} in ${elapsedCrawl}s (${pps} docs/s)`);
   if ((stats.failures as string[]).length > 0) {
-    console.log("[CRAWL] sample failures:");
-    for (const f of (stats.failures as string[]).slice(0, 5)) console.log(`  - ${f}`);
+    console.log(`[CRAWL] dead-letter failures (${stats.failed} total, showing ${(stats.failures as string[]).length}):`);
+    for (const f of (stats.failures as string[])) console.log(`  - ${f}`);
   }
   if (opts.dryRun || docs.length === 0) {
     console.log(`[DRY] ${opts.dryRun ? "--dry-run: skipping DB." : "no docs: skipping DB."} Top docs:`);
@@ -817,7 +1026,9 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error("[FATAL]", e?.message ?? e);
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((e) => {
+    console.error("[FATAL]", e?.message ?? e);
+    process.exit(1);
+  });
+}
