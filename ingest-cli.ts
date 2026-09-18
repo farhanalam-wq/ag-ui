@@ -892,7 +892,17 @@ async function populateDb(
   console.log(`[DB] chunked into ${pending.length} pieces — embedding (${opts.embedConcurrency} streams)…`);
   if (pending.length > 0) {
     const tE = Date.now();
-    const vecs = await generateEmbeddings(pending.map((p) => p.content));
+    let vecs: number[][];
+    try {
+      vecs = await generateEmbeddings(
+        pending.map((p) => p.content),
+        { concurrency: opts.embedConcurrency }
+      );
+    } catch (err: any) {
+      await db.update(companySnapshots).set({ status: "FAILED" }).where(eq(companySnapshots.id, snap.id));
+      // TODO(TASKS.md P1 task 2): also record the batch index into crawl_jobs.error_sample once the table lands.
+      throw new Error(`[DB] embedding failed (${err.message}); snapshot marked FAILED, no partial vectors written`);
+    }
     console.log(`[DB] embeddings done in ${((Date.now() - tE) / 1000).toFixed(1)}s (${vecs.length}x1536d)`);
     for (let i = 0; i < pending.length; i += 100) {
       const slice = pending.slice(i, i + 100).map((p, k) => ({
