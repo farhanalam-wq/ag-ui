@@ -44,14 +44,14 @@ Priority tags: (P0) build first, highest demo value, blocks other work. (P1) bui
 - Behavior: before creating company snapshot, `SELECT` from `crawl_jobs` by key. On hit with terminal status `READY`, print existing `company_id`, `snapshot_id`, counts, and exit 0 without crawling. On hit with live status, print job id and status and exit 2. On miss, insert the row and proceed.
 - Acceptance: running the same `--select` twice in a row crawls once; second run exits after the lookup with no fetch activity.
 
-## 4. Split CLI concurrency into fetch, parse, embed knobs (P0) (Pipeline impact #5)
+## 4. ✅ Split CLI concurrency into fetch, parse, embed knobs (P0) (Pipeline impact #5)
 
 - Files: `ingest-cli.ts` (`CliOptions`, `parseArgs`, `printHelp`, `mapPool` call sites, populate path).
 - Replace `--concurrency N` with `--fetch-concurrency` (default 25, clamp 1 to 50), `--parse-concurrency` (default 5, clamp 1 to 16), `--embed-concurrency` (default 3, clamp 1 to 6). Keep `--concurrency` as a deprecated alias that sets fetch concurrency only, and print a warning when it is used.
 - Fetch pool uses fetch concurrency. Parse stage uses parse concurrency. Embedding stream count uses embed concurrency. Update help text and examples. Keep `--timeout`, `--max-sitemap`, `--max-sitemaps`, `--playwright`, `--skip-embed`, `--dry-run` behavior unchanged.
 - Acceptance: `--help` shows the three flags; a `--dry-run` with `--fetch-concurrency 5` shows 5 wide fetch behavior in logs; old `--concurrency 20` still runs and warns.
 
-## 5. Fetch retry, dead letter list, per host rate limiting (P0) (Pipeline impact #2)
+## 5. ✅ Fetch retry, dead letter list, per host rate limiting (P0) (Pipeline impact #2)
 
 - Files: `ingest-cli.ts` fetch path (`fetchText`, `crawlPages`, `mapPool` error capture).
 - Implement per host last request timestamp map plus minimum gap of 150ms default (flag `--host-gap-ms`, default 150, clamp 100 to 200 per the agreed range). Requests to the same host wait for the gap before firing.
@@ -73,14 +73,14 @@ Priority tags: (P0) build first, highest demo value, blocks other work. (P1) bui
 - Category rule: `inferCategory(url, title)` already takes both, so call it with the parsed title, not empty string. Keep the keyword sets, but make them table driven: one `CATEGORY_RULES` array of `{category, match: string[]}` at the top of `extractor.ts` covering about, pricing, product, docs, blog, general. Add `blog` category via matches on `blog`, `changelog`, `news`, `post`. Category aware cleaning: for `blog`, strip `aside`, `.sidebar`, `.newsletter`, `.related-posts`, `.share-buttons` in addition to current selectors; for `docs`, retain `pre`, `code`, `table`, `h4` content that the boilerplate stripper would otherwise drop.
 - Acceptance: resend run shows fetch and parse progressing independently in logs, blog urls classify as `blog`, docs pages keep code blocks in stored content, and a unit check on 6 sample url plus title pairs returns the expected categories.
 
-## 8. Token based embed batching with parallel streams and jittered retry (P0) (Pipeline impact #1)
+## 8. ✅ Token based embed batching with parallel streams and jittered retry (P0) (Pipeline impact #1)
 
 - Files: `packages/shared/src/embeddings.ts`, `ingest-cli.ts` populate path.
 - Replace fixed 64 item batching with token budgeting: estimate `tokens = ceil(chars / 4)` per chunk text (after the existing 8000 char slice), pack chunks greedily to about 6000 tokens per request, hard cap 100 items per request. Expose `tokensPerBatch` (default 6000) and keep `batchSize` as the item cap.
 - Run up to embed concurrency (default 3) batch requests in flight using a small pool, map results back by index so chunk order is preserved exactly. Apply the section 0 embedding retry policy per batch with jitter. On terminal batch failure, abort the run, mark snapshot `FAILED`, and record the batch index in `crawl_jobs.error_sample`. Never write partial vectors for a failed batch.
 - Acceptance: 1818 chunk resend scale input produces about 6000 token batches instead of 64 count batches, wall time drops versus serial, and a forced 429 in a fixture run is retried and still lands vectors in original order.
 
-## 9. Redis embedding cache keyed by sha256 (P0) (Pipeline impact #4)
+## 9. ✅ Redis embedding cache keyed by sha256 (P0) (Pipeline impact #4)
 
 - Files: `packages/shared/src/embeddings.ts`, new small module `packages/shared/src/embed-cache.ts`, `ingest-cli.ts` wiring, `docker-compose.yml` (Redis service already expected via `REDIS_HOST`, verify and document).
 - Key and value exactly per section 0. Lookup before batching: partition chunk texts into cache hits and misses by `sha256(text)`. Only misses go to OpenAI. Write misses back with 30 day TTL. Flag `--no-embed-cache` bypasses read and write for parity tests.
@@ -92,14 +92,14 @@ Priority tags: (P0) build first, highest demo value, blocks other work. (P1) bui
 - No code change beyond asserting: model string constant `EMBED_MODEL = "text-embedding-3-small"`, `EMBED_DIMS = 1536` in one place, referenced by the embedder, the cache key builder, and Qdrant collection creation. Any mismatch throws at startup instead of writing wrong sized vectors.
 - Acceptance: startup self check fails loudly if Qdrant collection vector size is not 1536.
 
-## 11. Qdrant container, collection, payload indexes (P1) (Pipeline impact #9)
+## 11. 🔄 Qdrant container, collection, payload indexes (P1) (Pipeline impact #9)
 
 - Files: `docker-compose.yml`, new script `scripts/qdrant-init.ts` (run via `bun scripts/qdrant-init.ts`), `.env.example` additions `QDRANT_URL=http://localhost:6333`, `QDRANT_API_KEY=` (empty for local).
 - Compose: add `qdrant` service, image pinned `qdrant/qdrant:v1.12.1` (or newer patch verified at build time, record exact tag here after first pull), ports `6333:6333` and `6334:6334`, volume `qdrant_storage:/qdrant/storage`, healthcheck on `/readyz`, `restart: unless-stopped`.
 - Init script is idempotent: create collection `company_chunks` with `vectors.size 1536, distance Cosine, hnsw ef_construct 128, m 16` if missing; create payload indexes `company_id keyword, snapshot_id keyword, document_id keyword, category keyword, chunk_index integer`. Exit 0 whether created or already present, print what it did.
 - Acceptance: fresh `docker compose up -d` plus init script yields a 1536 cosine collection with all five payload indexes, rerunning the script changes nothing.
 
-## 12. Dual write behind a flag, parity check on resend, then drop pgvector (P1) (Pipeline impact #6)
+## 12. 🔄 Dual write behind a flag, parity check on resend, then drop pgvector (P1) (Pipeline impact #6)
 
 - Files: `ingest-cli.ts` populate path, new module `packages/database/src/qdrant.ts` (client, upsert, query helpers), `.env.example` (`QDRANT_DUAL_WRITE=false`).
 - When `QDRANT_DUAL_WRITE=true`: after generating the ordered vectors, write Postgres `chunks` rows exactly as today AND upsert Qdrant points `{id: chunk_uuid, vector, payload}` in batches of 256 to 512. If either side fails terminally, mark snapshot `FAILED` and do not mark READY. Point ID must equal the Postgres chunk UUID string.
@@ -107,7 +107,7 @@ Priority tags: (P0) build first, highest demo value, blocks other work. (P1) bui
 - Cutover only after parity passes: flip reads to Qdrant (task 13), run one clean ingest, then issue the migration dropping the `chunks.embedding` column and removing dual write code paths. Keep the migration file and a backfill note so the decision is reversible by re embedding from stored chunk content.
 - Acceptance: parity doc exists with all green checks, cutover ingest writes Qdrant only, `chunks.embedding` column is gone, retrieval works with zero pgvector references.
 
-## 13. Retrieval: Qdrant top 20, MMR to 6, caches with snapshot invalidation (P0) (Pipeline impact #3)
+## 13. 🔄 Retrieval: Qdrant top 20, MMR to 6, caches with snapshot invalidation (P0) (Pipeline impact #3)
 
 - Files: `packages/database/src/retrieval.ts`, `packages/database/src/qdrant.ts`, Redis cache helpers.
 - New flow in `retrieveCompanyContext`: embed query (via query embedding cache), `query_points` on `company_chunks` with filter `{company_id, snapshot_id}` and `limit 20`, hydrate chunk content plus title plus url from Postgres by `document_id`, MMR diversify (`lambda 0.7`, similarity from Qdrant score, cap 6), build evidence and compiled context from the final 6 only.

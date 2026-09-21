@@ -54,6 +54,7 @@ import {
   chunkMarkdown,
   generateEmbeddings,
   extractCompanyFacts,
+  EmbeddingBatchError,
 } from "./packages/shared/src/index";
 import {
   db,
@@ -105,6 +106,83 @@ interface CrawledDoc {
   headings: string[];
   htmlBytes: number;
   tier: "http" | "playwright";
+}
+
+export interface DeadLetterEntry {
+  url: string;
+  stage: "fetch" | "parse";
+  status?: number | null;
+  error: string;
+  attempts: number;
+}
+
+export interface RawFetchedPage {
+  page: DiscoveredPage;
+  html: string;
+  status: number;
+  tier: "http" | "playwright";
+  attempts: number;
+}
+
+/**
+ * Bounded in-memory FIFO queue with backpressure.
+ * When queue length reaches maxSize (default 200), push() blocks until consumers drain items.
+ * When empty, shift() blocks until producers push items or close() is called.
+ */
+export class AsyncBoundedQueue<T> {
+  private queue: T[] = [];
+  private closed = false;
+  private readonly maxSize: number;
+  private waitingPush: (() => void)[] = [];
+  private waitingShift: ((item: T | null) => void)[] = [];
+
+  constructor(maxSize = 200) {
+    this.maxSize = Math.max(1, maxSize);
+  }
+
+  async push(item: T): Promise<void> {
+    if (this.closed) throw new Error("Cannot push to closed queue");
+    while (this.queue.length >= this.maxSize && !this.closed) {
+      await new Promise<void>((resolve) => this.waitingPush.push(resolve));
+    }
+    if (this.closed) throw new Error("Cannot push to closed queue");
+
+    if (this.waitingShift.length > 0) {
+      const resolver = this.waitingShift.shift()!;
+      resolver(item);
+    } else {
+      this.queue.push(item);
+    }
+  }
+
+  async shift(): Promise<T | null> {
+    if (this.queue.length > 0) {
+      const item = this.queue.shift()!;
+      if (this.waitingPush.length > 0) {
+        const resolver = this.waitingPush.shift()!;
+        resolver();
+      }
+      return item;
+    }
+    if (this.closed) return null;
+    return new Promise<T | null>((resolve) => this.waitingShift.push(resolve));
+  }
+
+  close(): void {
+    this.closed = true;
+    while (this.waitingShift.length > 0) {
+      const resolver = this.waitingShift.shift()!;
+      resolver(null);
+    }
+    while (this.waitingPush.length > 0) {
+      const resolver = this.waitingPush.shift()!;
+      resolver();
+    }
+  }
+
+  get size(): number {
+    return this.queue.length;
+  }
 }
 
 // --------------------------------------------------------------- args ---
@@ -638,11 +716,14 @@ async function crawlPages(
   const t0 = Date.now();
   const seenHash = new Set<string>();
   const docs: CrawledDoc[] = [];
+  const deadLetters: DeadLetterEntry[] = [];
   let rootHtml: string | null = null;
   let httpCount = 0;
   let pwCount = 0;
   let skippedThin = 0;
   let retriedCount = 0;
+  let fetchedCount = 0;
+  let parsedCount = 0;
 
   const sameHost = (u: string) => {
     try {
@@ -655,18 +736,43 @@ async function crawlPages(
     }
   };
 
+  const queue = new AsyncBoundedQueue<RawFetchedPage>(200);
+
   console.log(`[CRAWL] starting ${selected.length} pages (fetch width ${opts.fetchConcurrency}, parse width ${opts.parseConcurrency})`);
-  const { ok, failed } = await mapPool(
-    selected,
-    opts.fetchConcurrency,
-    async (p) => {
+
+  const updateProgress = () => {
+    process.stdout.write(
+      `\r[CRAWL] fetched=${fetchedCount}/${selected.length} parsed=${parsedCount} docs=${docs.length} thin/dup=${skippedThin} dead=${deadLetters.length} queue=${queue.size}`
+    );
+  };
+
+  // Stage A: Fetch workers (fetchConcurrency)
+  let fetchCursor = 0;
+  const fetchWorkerCount = Math.min(opts.fetchConcurrency, Math.max(1, selected.length));
+  const fetchWorkers = Array.from({ length: fetchWorkerCount }, async () => {
+    while (true) {
+      const idx = fetchCursor++;
+      if (idx >= selected.length) break;
+      const p = selected[idx];
+
       if (!sameHost(p.url)) {
-        throw new FetchTerminalError("cross-host skip (attempts=0, non-retryable)", 0, null, "cross-host");
+        deadLetters.push({
+          url: p.url,
+          stage: "fetch",
+          status: null,
+          error: "cross-host skip (non-retryable)",
+          attempts: 0,
+        });
+        fetchedCount++;
+        updateProgress();
+        continue;
       }
+
       let html = "";
       let status = 0;
       let tier: CrawledDoc["tier"] = "http";
       let attempts = 0;
+
       const attemptPlaywright = async (timeout: number) => {
         await waitForHostGap(new URL(p.url).hostname, opts.hostGapMs);
         const r = await fetchViaPlaywrightReuse(p.url, timeout);
@@ -674,6 +780,7 @@ async function crawlPages(
         pwCount++;
         return r;
       };
+
       try {
         const r = await fetchWithRetry(p.url, {
           timeoutMs: opts.timeoutMs,
@@ -688,93 +795,163 @@ async function crawlPages(
       } catch (err: any) {
         const terminal = err instanceof FetchTerminalError ? err : null;
         attempts = terminal?.attempts ?? attempts;
-        // No Playwright fallback for deterministic 4xx (404/410/403): re-rendering
-        // will not change the answer. Fallback covers transient/exhausted HTTP
-        // failures and JS shells only.
         const noPwFallback =
           !opts.usePlaywright ||
           (terminal !== null &&
             terminal.kind === "status-terminal" &&
             terminal.status !== null &&
             terminal.status < 500);
-        if (noPwFallback) throw err;
+
+        if (noPwFallback) {
+          deadLetters.push({
+            url: p.url,
+            stage: "fetch",
+            status: terminal?.status ?? null,
+            error: terminal?.message ?? shortErr(err),
+            attempts,
+          });
+          fetchedCount++;
+          updateProgress();
+          continue;
+        }
+
         try {
           const r = await attemptPlaywright(Math.min(15000, opts.timeoutMs + 5000));
           html = r.html;
           status = r.status;
           tier = "playwright";
         } catch (pwErr: any) {
-          throw new FetchTerminalError(
-            `${shortErr(pwErr)} (attempts=${attempts}, playwright fallback failed)`,
+          deadLetters.push({
+            url: p.url,
+            stage: "fetch",
+            status: status || null,
+            error: `${shortErr(pwErr)} (attempts=${attempts}, playwright fallback failed)`,
             attempts,
-            status || null,
-            "network-exhausted"
-          );
+          });
+          fetchedCount++;
+          updateProgress();
+          continue;
         }
       }
+
       if (status < 200 || status >= 300 || !html) {
-        throw new FetchTerminalError(
-          `HTTP ${status || "fetch-fail"} empty-or-bad (attempts=${attempts}, non-retryable)`,
+        deadLetters.push({
+          url: p.url,
+          stage: "fetch",
+          status: status || null,
+          error: `HTTP ${status || "fetch-fail"} empty-or-bad (non-retryable)`,
           attempts,
-          status || null,
-          status ? "status-terminal" : "empty"
-        );
+        });
+        fetchedCount++;
+        updateProgress();
+        continue;
       }
+
       if (isShell(html)) {
         if (opts.usePlaywright) {
-          const r = await attemptPlaywright(12000);
-          html = r.html;
-          status = r.status;
-          tier = "playwright";
-          if (status < 200 || status >= 300 || !html) {
-            throw new FetchTerminalError(
-              `HTTP ${status} after playwright render (attempts=${attempts}, non-retryable)`,
-              attempts,
+          try {
+            const r = await attemptPlaywright(12000);
+            html = r.html;
+            status = r.status;
+            tier = "playwright";
+            if (status < 200 || status >= 300 || !html) {
+              deadLetters.push({
+                url: p.url,
+                stage: "fetch",
+                status,
+                error: `HTTP ${status} after playwright render (non-retryable)`,
+                attempts,
+              });
+              fetchedCount++;
+              updateProgress();
+              continue;
+            }
+          } catch (pwErr: any) {
+            deadLetters.push({
+              url: p.url,
+              stage: "fetch",
               status,
-              "status-terminal"
-            );
+              error: `Playwright render failed: ${shortErr(pwErr)}`,
+              attempts,
+            });
+            fetchedCount++;
+            updateProgress();
+            continue;
           }
         } else {
-          throw new FetchTerminalError(
-            `JS shell (attempts=${attempts}, non-retryable; retry with --playwright)`,
-            attempts,
+          deadLetters.push({
+            url: p.url,
+            stage: "fetch",
             status,
-            "shell"
-          );
+            error: `JS shell (retry with --playwright)`,
+            attempts,
+          });
+          fetchedCount++;
+          updateProgress();
+          continue;
         }
       } else {
         if (tier === "http") httpCount++;
       }
-      if (p.source === "root" || selected.indexOf(p) === 0) rootHtml = rootHtml ?? html;
-      const clean = extractCleanContent(html, p.url);
-      if (!clean.content || clean.content.length < 50) {
-        skippedThin++;
-        return undefined as any;
-      }
-      const h = sha256(clean.content);
-      if (seenHash.has(h)) {
-        skippedThin++;
-        return undefined as any; // exact-duplicate content (nav-only/blog template dupes)
-      }
-      seenHash.add(h);
-      const doc: CrawledDoc = {
-        url: p.url,
-        title: clean.title,
-        category: clean.category,
-        content: clean.content,
-        headings: clean.headings,
-        htmlBytes: html.length,
-        tier,
-      };
-      docs.push(doc);
-      return doc;
-    },
-    (done, total) => {
-      if (done % 10 === 0 || done === total) {
-        process.stdout.write(`\r[CRAWL] ${done}/${total} fetched | docs=${docs.length} thin/dup=${skippedThin}`);
-      }
+
+      if (p.source === "root" || idx === 0) rootHtml = rootHtml ?? html;
+
+      fetchedCount++;
+      updateProgress();
+      await queue.push({ page: p, html, status, tier, attempts });
     }
-  );
+  });
+
+  // Stage B: Parse workers (parseConcurrency)
+  const parseWorkerCount = Math.min(opts.parseConcurrency, Math.max(1, selected.length));
+  const parseWorkers = Array.from({ length: parseWorkerCount }, async () => {
+    while (true) {
+      const raw = await queue.shift();
+      if (raw === null) break;
+
+      parsedCount++;
+      try {
+        const clean = extractCleanContent(raw.html, raw.page.url);
+        if (!clean.content || clean.content.length < 50) {
+          skippedThin++;
+          updateProgress();
+          continue;
+        }
+        const h = sha256(clean.content);
+        if (seenHash.has(h)) {
+          skippedThin++;
+          updateProgress();
+          continue;
+        }
+        seenHash.add(h);
+
+        docs.push({
+          url: raw.page.url,
+          title: clean.title,
+          category: clean.category,
+          content: clean.content,
+          headings: clean.headings,
+          htmlBytes: raw.html.length,
+          tier: raw.tier,
+        });
+      } catch (parseErr: any) {
+        deadLetters.push({
+          url: raw.page.url,
+          stage: "parse",
+          status: raw.status,
+          error: `Parse failed: ${shortErr(parseErr)}`,
+          attempts: 1,
+        });
+      }
+      updateProgress();
+    }
+  });
+
+  // Run Stage A to completion, then signal EOF on queue, then wait for Stage B to finish draining.
+  await Promise.all(fetchWorkers);
+  queue.close();
+  await Promise.all(parseWorkers);
+
   console.log(""); // newline after progress line
   await closeBrowser();
 
@@ -786,8 +963,9 @@ async function crawlPages(
     stats: {
       selected: selected.length,
       docs: docs.length,
-      failed: failed.length,
-      failures: failed.slice(0, 10).map((f) => `${selected[f.index]?.url} :: ${f.error}`),
+      failed: deadLetters.length,
+      deadLetters,
+      failures: deadLetters.slice(0, 10),
       httpCount,
       pwCount,
       skippedThin,
@@ -903,8 +1081,9 @@ async function populateDb(
       );
     } catch (err: any) {
       await db.update(companySnapshots).set({ status: "FAILED" }).where(eq(companySnapshots.id, snap.id));
+      const batchInfo = err instanceof EmbeddingBatchError ? ` (batch ${err.batchIndex}, status=${err.status ?? "unknown"})` : "";
       // TODO(TASKS.md P1 task 2): also record the batch index into crawl_jobs.error_sample once the table lands.
-      throw new Error(`[DB] embedding failed (${err.message}); snapshot marked FAILED, no partial vectors written`);
+      throw new Error(`[DB] embedding failed${batchInfo}: ${err.message}; snapshot marked FAILED, no partial vectors written`);
     }
     console.log(`[DB] embeddings done in ${((Date.now() - tE) / 1000).toFixed(1)}s (${vecs.length}x1536d)`);
     for (let i = 0; i < pending.length; i += 100) {
@@ -1003,9 +1182,12 @@ async function main() {
   const elapsedCrawl = ((stats.ms as number) / 1000).toFixed(1);
   const pps = (docs.length / Math.max(0.5, (stats.ms as number) / 1000)).toFixed(1);
   console.log(`[CRAWL] done: docs=${docs.length} failed=${stats.failed} retries=${stats.retries} http=${stats.httpCount} playwright=${stats.pwCount} thin/dup=${stats.skippedThin} in ${elapsedCrawl}s (${pps} docs/s)`);
-  if ((stats.failures as string[]).length > 0) {
-    console.log(`[CRAWL] dead-letter failures (${stats.failed} total, showing ${(stats.failures as string[]).length}):`);
-    for (const f of (stats.failures as string[])) console.log(`  - ${f}`);
+  if (stats.deadLetters && stats.deadLetters.length > 0) {
+    console.log(`[CRAWL] dead-letter failures (${stats.failed} total, showing ${Math.min(10, stats.deadLetters.length)}):`);
+    for (const f of stats.deadLetters.slice(0, 10)) {
+      const st = f.status !== null && f.status !== undefined ? `HTTP ${f.status}` : "NET";
+      console.log(`  - [${f.stage}] ${f.url} (${st}, attempts=${f.attempts}): ${f.error}`);
+    }
   }
   if (opts.dryRun || docs.length === 0) {
     console.log(`[DRY] ${opts.dryRun ? "--dry-run: skipping DB." : "no docs: skipping DB."} Top docs:`);
