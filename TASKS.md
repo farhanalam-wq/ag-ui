@@ -86,13 +86,13 @@ Priority tags: (P0) build first, highest demo value, blocks other work. (P1) bui
 - Key and value exactly per section 0. Lookup before batching: partition chunk texts into cache hits and misses by `sha256(text)`. Only misses go to OpenAI. Write misses back with 30 day TTL. Flag `--no-embed-cache` bypasses read and write for parity tests.
 - Acceptance: first resend ingest populates the cache, immediate re ingest of identical content issues near zero OpenAI calls for unchanged chunks, and a cache hit never changes vector order.
 
-## 10. Pin 1536 dims, no truncation (P2) (Pipeline impact #15)
+## 10. ✅ Pin 1536 dims, no truncation (P2) (Pipeline impact #15)
 
 - Files: `packages/shared/src/embeddings.ts`, `packages/database/src/schema.ts`, Qdrant collection config (task 11).
 - No code change beyond asserting: model string constant `EMBED_MODEL = "text-embedding-3-small"`, `EMBED_DIMS = 1536` in one place, referenced by the embedder, the cache key builder, and Qdrant collection creation. Any mismatch throws at startup instead of writing wrong sized vectors.
 - Acceptance: startup self check fails loudly if Qdrant collection vector size is not 1536.
 
-## 11. 🔄 Qdrant container, collection, payload indexes (P1) (Pipeline impact #9)
+## 11. ✅ Qdrant container, collection, payload indexes (P1) (Pipeline impact #9)
 
 - Files: `docker-compose.yml`, new script `scripts/qdrant-init.ts` (run via `bun scripts/qdrant-init.ts`), `.env.example` additions `QDRANT_URL=http://localhost:6333`, `QDRANT_API_KEY=` (empty for local).
 - Compose: add `qdrant` service, image pinned `qdrant/qdrant:v1.12.1` (or newer patch verified at build time, record exact tag here after first pull), ports `6333:6333` and `6334:6334`, volume `qdrant_storage:/qdrant/storage`, healthcheck on `/readyz`, `restart: unless-stopped`.

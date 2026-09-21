@@ -17,7 +17,8 @@ export interface EmbeddingResult {
   index: number;
 }
 
-export const EMBED_MODEL_DEFAULT = "text-embedding-3-small";
+export const EMBED_MODEL = "text-embedding-3-small";
+export const EMBED_MODEL_DEFAULT = EMBED_MODEL;
 export const EMBED_DIMS = 1536;
 const MAX_CHARS = 8000;
 
