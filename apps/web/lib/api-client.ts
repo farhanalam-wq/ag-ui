@@ -12,6 +12,9 @@ export interface CompanySummary {
   domain: string;
   url: string;
   docCount?: number;
+  chunkCount?: number;
+  factCount?: number;
+  status?: string;
   createdAt: string;
   updatedAt?: string;
   latestSnapshot?: {

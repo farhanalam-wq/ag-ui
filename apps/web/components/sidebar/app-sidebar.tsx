@@ -26,6 +26,8 @@ interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   onSelectChat?: (chat: ChatThread) => void;
   chunkCount?: number;
   documentCount?: number;
+  factCount?: number;
+  status?: string;
 }
 
 export function AppSidebar({
@@ -38,6 +40,8 @@ export function AppSidebar({
   onSelectChat,
   chunkCount,
   documentCount,
+  factCount,
+  status,
   ...props
 }: AppSidebarProps) {
   return (
@@ -69,8 +73,10 @@ export function AppSidebar({
         <SidebarSeparator className="bg-zinc-200 dark:bg-zinc-900 mx-2" />
         <NavKnowledge
           companyDomain={selectedCompany.domain}
-          chunkCount={chunkCount}
-          documentCount={documentCount}
+          chunkCount={chunkCount ?? selectedCompany.chunkCount ?? 0}
+          documentCount={documentCount ?? selectedCompany.docCount ?? 0}
+          factCount={factCount ?? selectedCompany.factCount ?? 0}
+          status={status ?? selectedCompany.status ?? "Ready"}
         />
         <SidebarSeparator className="bg-zinc-200 dark:bg-zinc-900 mx-2" />
         <NavSettings />

@@ -151,6 +151,9 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
             .limit(1);
 
           let docCount = latestSnapshot?.pageCount ?? 0;
+          let chunkCount = 0;
+          let factCount = 0;
+
           if (latestSnapshot) {
             try {
               const [docRes] = await db
@@ -158,8 +161,27 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
                 .from(documents)
                 .where(eq(documents.snapshotId, latestSnapshot.id));
               if (docRes && docRes.count > 0) docCount = docRes.count;
+
+              const [factRes] = await db
+                .select({ count: count() })
+                .from(facts)
+                .where(eq(facts.snapshotId, latestSnapshot.id));
+              if (factRes) factCount = factRes.count;
+
+              const docRows = await db
+                .select({ id: documents.id })
+                .from(documents)
+                .where(eq(documents.snapshotId, latestSnapshot.id));
+              if (docRows.length > 0) {
+                const docIds = docRows.map((d) => d.id);
+                const [chunkRes] = await db
+                  .select({ count: count() })
+                  .from(chunks)
+                  .where(inArray(chunks.documentId, docIds));
+                if (chunkRes) chunkCount = chunkRes.count;
+              }
             } catch {
-              // fallback to pageCount
+              // fallback to snapshot pageCount
             }
           }
 
@@ -169,6 +191,9 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
             name: company.name,
             url: company.url,
             docCount,
+            chunkCount,
+            factCount,
+            status: latestSnapshot?.status || "READY",
             createdAt: company.createdAt,
             latestSnapshot: latestSnapshot
               ? {

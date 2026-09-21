@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Globe,
   MagnifyingGlass,
@@ -11,11 +11,14 @@ import {
   WarningCircle,
   Lightning,
   TreeStructure,
+  Database,
+  ChatCircleText,
 } from "@phosphor-icons/react";
 import {
   apiClient,
   type DiscoveryResponse,
   type DiscoveredPageItem,
+  type CompanySummary,
 } from "@/lib/api-client";
 import { DiscoveryTable } from "./discovery-table";
 import {
@@ -64,6 +67,26 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
   const [parseConcurrency, setParseConcurrency] = useState(5);
   const [embedConcurrency, setEmbedConcurrency] = useState(3);
   const [hostGapMs, setHostGapMs] = useState(150);
+
+  // Indexed companies in knowledge base
+  const [indexedCompanies, setIndexedCompanies] = useState<CompanySummary[]>([]);
+  const [loadingCompanies, setLoadingCompanies] = useState(false);
+
+  const loadIndexedCompanies = async () => {
+    setLoadingCompanies(true);
+    try {
+      const list = await apiClient.companies.list();
+      setIndexedCompanies(list);
+    } catch {
+      // non-blocking
+    } finally {
+      setLoadingCompanies(false);
+    }
+  };
+
+  useEffect(() => {
+    loadIndexedCompanies();
+  }, []);
 
   // 1. Run Discovery
   const handleDiscover = async (urlToDiscover?: string) => {
@@ -491,6 +514,126 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
                     className="h-8 w-full px-2 rounded border border-zinc-800 bg-zinc-900 text-zinc-200 text-xs"
                   />
                   <span className="text-[10px] text-zinc-600 block mt-0.5">ms between calls</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Section: Indexed Companies in Knowledge Base */}
+          <div className="pt-6 border-t border-zinc-900 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Database className="size-4 text-brand-primary" />
+                <h3 className="text-xs font-semibold text-zinc-200 uppercase tracking-wider font-mono">
+                  Indexed Companies ({indexedCompanies.length})
+                </h3>
+              </div>
+              <span className="text-[10px] font-mono text-zinc-500">
+                PostgreSQL • Qdrant Vector DB
+              </span>
+            </div>
+
+            {loadingCompanies ? (
+              <div className="p-4 rounded-xl border border-zinc-800/80 bg-zinc-900/30 text-center text-xs text-zinc-500 font-mono flex items-center justify-center gap-2">
+                <div className="size-3 rounded-full border-2 border-brand-primary/30 border-t-brand-primary animate-spin" />
+                <span>Loading indexed database records...</span>
+              </div>
+            ) : indexedCompanies.length === 0 ? (
+              <div className="p-4 rounded-xl border border-zinc-800/80 bg-zinc-900/30 text-center text-xs text-zinc-500 font-mono">
+                No indexed companies in knowledge base yet.
+              </div>
+            ) : (
+              <div className="rounded-xl border border-zinc-800/80 bg-zinc-950/60 divide-y divide-zinc-800/60 overflow-hidden shadow-sm">
+                <div className="max-h-72 overflow-y-auto divide-y divide-zinc-900/60 scrollbar-thin">
+                  {indexedCompanies.map((c) => {
+                    const brandColor = c.brand?.tokens?.colors?.primary || "#3b82f6";
+                    const docCount = c.docCount ?? c.latestSnapshot?.pageCount ?? 0;
+                    const chunkCount = c.chunkCount ?? 0;
+                    const isReady = (c.status || c.latestSnapshot?.status) === "READY";
+
+                    return (
+                      <div
+                        key={c.id}
+                        className="p-3 flex items-center justify-between gap-3 hover:bg-zinc-900/40 transition-colors"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div
+                            className="size-7 rounded-lg flex items-center justify-center font-bold text-[10px] shrink-0 border border-zinc-800 shadow-inner"
+                            style={{ backgroundColor: `${brandColor}20`, color: brandColor }}
+                          >
+                            {c.name.slice(0, 2).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold text-zinc-200 truncate">
+                                {c.name}
+                              </span>
+                              <span
+                                className={`size-1.5 rounded-full ${
+                                  isReady ? "bg-emerald-500" : "bg-blue-500 animate-pulse"
+                                }`}
+                              />
+                            </div>
+                            <span className="text-[10px] font-mono text-zinc-500 truncate block">
+                              {c.domain}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 shrink-0">
+                          <div className="text-right hidden sm:block">
+                            <div className="text-xs font-mono text-zinc-300">
+                              {docCount} docs
+                            </div>
+                            <div className="text-[10px] font-mono text-zinc-500">
+                              {chunkCount > 0 ? `${chunkCount} chunks` : c.status || "Ready"}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const url = c.url || `https://${c.domain}`;
+                                setTargetUrl(url);
+                                handleDiscover(url);
+                              }}
+                              className="px-2 py-1 rounded text-[11px] font-mono border border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 hover:text-white transition-colors cursor-pointer"
+                              title="Re-run discovery on this domain"
+                            >
+                              Re-index
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onCompanyIndexed({
+                                  id: c.id,
+                                  name: c.name,
+                                  domain: c.domain,
+                                  description: `Indexed knowledge base for ${c.name} (${c.domain}).`,
+                                  brandColor,
+                                  badge: `${docCount} Docs • Indexed`,
+                                  docCount,
+                                  chunkCount,
+                                  factCount: c.factCount || 0,
+                                  status: c.status || "READY",
+                                  suggestedQueries: [
+                                    `What are the core products and APIs provided by ${c.name}?`,
+                                    `What are the pricing tiers, limits, and plan options?`,
+                                    `Where are ${c.name} headquarters and contact options?`,
+                                  ],
+                                });
+                              }}
+                              className="px-2 py-1 rounded text-[11px] font-mono border border-brand-primary/30 bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary transition-colors flex items-center gap-1 cursor-pointer"
+                            >
+                              <ChatCircleText className="size-3" />
+                              <span>Chat</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import {
   PromptInput,
   PromptInputBody,
@@ -110,6 +111,7 @@ const DEFAULT_COMPANIES: CompanyItem[] = [
 ];
 
 export default function Home() {
+  const router = useRouter();
   const [companies, setCompanies] = useState<CompanyItem[]>(DEFAULT_COMPANIES);
   const [selectedCompany, setSelectedCompany] = useState<CompanyItem>(DEFAULT_COMPANIES[0]);
   const [query, setQuery] = useState("");
@@ -144,27 +146,25 @@ export default function Home() {
                 def.name.toLowerCase() === apiComp.name.toLowerCase()
             );
 
-            if (defMatch) {
-              return {
-                ...defMatch,
-                id: apiComp.id,
-                name: apiComp.name,
-                domain: apiComp.domain,
-                badge: `${apiComp.docCount || apiComp.latestSnapshot?.pageCount || 0} Docs • Indexed`,
-              };
-            }
-
-            const brandColor = apiComp.brand?.tokens?.colors?.primary || "#3b82f6";
-            const docCount = apiComp.docCount || apiComp.latestSnapshot?.pageCount || 0;
+            const brandColor = apiComp.brand?.tokens?.colors?.primary || defMatch?.brandColor || "#3b82f6";
+            const docCount = apiComp.docCount ?? apiComp.latestSnapshot?.pageCount ?? 0;
+            const chunkCount = apiComp.chunkCount ?? 0;
+            const factCount = apiComp.factCount ?? 0;
+            const status = apiComp.status || apiComp.latestSnapshot?.status || "READY";
 
             return {
+              ...(defMatch || {}),
               id: apiComp.id,
               name: apiComp.name,
               domain: apiComp.domain,
-              description: `Indexed knowledge base for ${apiComp.name} (${apiComp.domain}).`,
+              description: defMatch?.description || `Indexed knowledge base for ${apiComp.name} (${apiComp.domain}).`,
               brandColor,
               badge: `${docCount} Docs • Indexed`,
-              suggestedQueries: [
+              docCount,
+              chunkCount,
+              factCount,
+              status,
+              suggestedQueries: defMatch?.suggestedQueries || [
                 `What are the core products and APIs provided by ${apiComp.name}?`,
                 `What are the pricing tiers, limits, and plan options?`,
                 `Where are ${apiComp.name} headquarters and contact options?`,
@@ -175,6 +175,17 @@ export default function Home() {
 
           setCompanies(dynamicList);
           setSelectedCompany((prev) => {
+            // Check if ?company= was passed in URL
+            if (typeof window !== "undefined") {
+              const params = new URLSearchParams(window.location.search);
+              const companyParam = params.get("company");
+              if (companyParam) {
+                const target = dynamicList.find(
+                  (c) => c.id === companyParam || c.domain.toLowerCase() === companyParam.toLowerCase()
+                );
+                if (target) return target;
+              }
+            }
             const matchedCurrent = dynamicList.find((m) => m.domain === prev.domain);
             return matchedCurrent || dynamicList[0];
           });
@@ -247,8 +258,12 @@ export default function Home() {
             handleSelectCompany(comp);
             setWorkspaceView("chat");
           }}
-          onOpenAddCompany={() => setWorkspaceView("ingest")}
+          onOpenAddCompany={() => router.push("/ingest")}
           onNewChat={handleNewChat}
+          chunkCount={selectedCompany.chunkCount ?? 0}
+          documentCount={selectedCompany.docCount ?? 0}
+          factCount={selectedCompany.factCount ?? 0}
+          status={selectedCompany.status ?? "Ready"}
         />
 
         {/* Main Content Area via SidebarInset */}
