@@ -10,6 +10,7 @@ import {
   eq,
   desc,
   inArray,
+  count,
 } from "@ag-ui/database";
 import { crawlQueue } from "@ag-ui/queues";
 import { validateSafeUrl, SSRFError } from "@ag-ui/crawler";
@@ -149,18 +150,32 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
             .where(eq(brands.companyId, company.id))
             .limit(1);
 
+          let docCount = latestSnapshot?.pageCount ?? 0;
+          if (latestSnapshot) {
+            try {
+              const [docRes] = await db
+                .select({ count: count() })
+                .from(documents)
+                .where(eq(documents.snapshotId, latestSnapshot.id));
+              if (docRes && docRes.count > 0) docCount = docRes.count;
+            } catch {
+              // fallback to pageCount
+            }
+          }
+
           return {
             id: company.id,
             domain: company.domain,
             name: company.name,
             url: company.url,
+            docCount,
             createdAt: company.createdAt,
             latestSnapshot: latestSnapshot
               ? {
                   id: latestSnapshot.id,
                   version: latestSnapshot.version,
                   status: latestSnapshot.status,
-                  pageCount: latestSnapshot.pageCount,
+                  pageCount: docCount,
                 }
               : null,
             brand: brand

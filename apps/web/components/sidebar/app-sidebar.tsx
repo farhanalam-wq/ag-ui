@@ -79,11 +79,11 @@ export function AppSidebar({
       <SidebarFooter className="border-t border-zinc-200/80 dark:border-zinc-900/80 p-2 space-y-2">
         <div className="flex items-center justify-between gap-1.5 px-1 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
           <div
-            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-mono text-zinc-600 dark:text-zinc-400 bg-zinc-200/60 dark:bg-zinc-900/80 border border-zinc-300/80 dark:border-zinc-800/80 group-data-[collapsible=icon]:p-1.5"
-            title="pgvector vector database active"
+            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-mono text-zinc-600 dark:text-zinc-400 bg-zinc-200/60 dark:bg-zinc-900/80 border border-zinc-300/80 dark:border-zinc-800/80 group-data-[collapsible=icon]:p-1.5 cursor-help"
+            title="Qdrant Vector DB active on :6333 (1536-dim HNSW). PostgreSQL active on :5432 (Relational metadata)."
           >
             <span className="size-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-            <span className="group-data-[collapsible=icon]:hidden">pgvector active</span>
+            <span className="group-data-[collapsible=icon]:hidden">Qdrant active</span>
           </div>
 
           <a

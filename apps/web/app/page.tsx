@@ -26,7 +26,7 @@ import {
 import { useCompanyChat } from "@/hooks/use-company-chat";
 import { ChatMessageItem } from "@/components/chat-message";
 import { EvidenceDrawer } from "@/components/evidence-drawer";
-import { AddCompanyDialog, type IndexedCompanyPayload } from "@/components/add-company-dialog";
+import { IngestionStudio } from "@/components/ingestion/ingestion-studio";
 import { apiClient } from "@/lib/api-client";
 import {
   SidebarProvider,
@@ -113,8 +113,8 @@ export default function Home() {
   const [companies, setCompanies] = useState<CompanyItem[]>(DEFAULT_COMPANIES);
   const [selectedCompany, setSelectedCompany] = useState<CompanyItem>(DEFAULT_COMPANIES[0]);
   const [query, setQuery] = useState("");
-  const [viewMode, setViewMode] = useState<"visual" | "text">("visual");
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"visual" | "text">("text");
+  const [workspaceView, setWorkspaceView] = useState<"chat" | "ingest">("chat");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -137,18 +137,46 @@ export default function Home() {
         const apiList = await apiClient.companies.list();
 
         if (apiList.length > 0) {
-          const merged = DEFAULT_COMPANIES.map((def) => {
-            const match = apiList.find(
-              (a) =>
-                a.domain.toLowerCase() === def.domain.toLowerCase() ||
-                a.name.toLowerCase() === def.name.toLowerCase()
+          const dynamicList: CompanyItem[] = apiList.map((apiComp) => {
+            const defMatch = DEFAULT_COMPANIES.find(
+              (def) =>
+                def.domain.toLowerCase() === apiComp.domain.toLowerCase() ||
+                def.name.toLowerCase() === apiComp.name.toLowerCase()
             );
-            return match ? { ...def, id: match.id, name: match.name } : def;
+
+            if (defMatch) {
+              return {
+                ...defMatch,
+                id: apiComp.id,
+                name: apiComp.name,
+                domain: apiComp.domain,
+                badge: `${apiComp.docCount || apiComp.latestSnapshot?.pageCount || 0} Docs • Indexed`,
+              };
+            }
+
+            const brandColor = apiComp.brand?.tokens?.colors?.primary || "#3b82f6";
+            const docCount = apiComp.docCount || apiComp.latestSnapshot?.pageCount || 0;
+
+            return {
+              id: apiComp.id,
+              name: apiComp.name,
+              domain: apiComp.domain,
+              description: `Indexed knowledge base for ${apiComp.name} (${apiComp.domain}).`,
+              brandColor,
+              badge: `${docCount} Docs • Indexed`,
+              suggestedQueries: [
+                `What are the core products and APIs provided by ${apiComp.name}?`,
+                `What are the pricing tiers, limits, and plan options?`,
+                `Where are ${apiComp.name} headquarters and contact options?`,
+                `What compliance certifications and security features exist?`,
+              ],
+            };
           });
-          setCompanies(merged);
+
+          setCompanies(dynamicList);
           setSelectedCompany((prev) => {
-            const matchedCurrent = merged.find((m) => m.domain === prev.domain);
-            return matchedCurrent || merged[0];
+            const matchedCurrent = dynamicList.find((m) => m.domain === prev.domain);
+            return matchedCurrent || dynamicList[0];
           });
         }
       } catch {
@@ -171,16 +199,21 @@ export default function Home() {
     setQuery("");
   };
 
-  const handleCompanyIndexed = (newCompany: IndexedCompanyPayload) => {
+  const handleCompanyIndexed = (newCompany: CompanyItem) => {
     setCompanies((prev) => {
       const exists = prev.some(
         (c) => c.domain.toLowerCase() === newCompany.domain.toLowerCase()
       );
-      return exists ? prev : [newCompany, ...prev];
+      return exists
+        ? prev.map((c) =>
+            c.domain.toLowerCase() === newCompany.domain.toLowerCase() ? newCompany : c
+          )
+        : [newCompany, ...prev];
     });
     setSelectedCompany(newCompany);
     clearMessages();
     setQuery("");
+    setWorkspaceView("chat");
   };
 
   const handleQuerySubmit = async (submittedText: string) => {
@@ -210,8 +243,11 @@ export default function Home() {
         <AppSidebar
           companies={companies}
           selectedCompany={selectedCompany}
-          onSelectCompany={handleSelectCompany}
-          onOpenAddCompany={() => setIsAddDialogOpen(true)}
+          onSelectCompany={(comp) => {
+            handleSelectCompany(comp);
+            setWorkspaceView("chat");
+          }}
+          onOpenAddCompany={() => setWorkspaceView("ingest")}
           onNewChat={handleNewChat}
         />
 
@@ -227,6 +263,10 @@ export default function Home() {
                   <BreadcrumbItem className="hidden md:block">
                     <BreadcrumbLink
                       href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setWorkspaceView("chat");
+                      }}
                       className="text-zinc-400 hover:text-zinc-200 transition-colors"
                     >
                       Companies
@@ -238,13 +278,13 @@ export default function Home() {
                       href="#"
                       className="text-zinc-200 font-medium hover:text-white transition-colors"
                     >
-                      {selectedCompany.name}
+                      {workspaceView === "ingest" ? "New Ingestion" : selectedCompany.name}
                     </BreadcrumbLink>
                   </BreadcrumbItem>
                   <BreadcrumbSeparator className="text-zinc-600" />
                   <BreadcrumbItem>
                     <BreadcrumbPage className="text-zinc-400 font-mono">
-                      Intelligence Chat
+                      {workspaceView === "ingest" ? "Ingestion Studio" : "Intelligence Chat"}
                     </BreadcrumbPage>
                   </BreadcrumbItem>
                 </BreadcrumbList>
@@ -311,139 +351,156 @@ export default function Home() {
             </div>
           </header>
 
-          {/* Main Chat Canvas */}
-          <main className={`flex-1 flex flex-col items-center justify-between p-4 sm:p-6 w-full ${viewMode === "visual" ? "max-w-5xl" : "max-w-4xl"} mx-auto transition-all`}>
-            {/* When Empty: Hero & Suggested Inquiries */}
-            {!isConversationActive && (
-              <div className="w-full flex-1 flex flex-col justify-center items-center my-8 space-y-6">
-                <div className="text-center max-w-2xl mx-auto space-y-3">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-zinc-800 bg-zinc-900/80 text-xs font-medium text-zinc-400">
-                    <Stack className="size-3.5 text-zinc-400" />
-                    <span>Hybrid Retrieval &bull; Fact Extraction &bull; Generative UI</span>
-                  </div>
-
-                  <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-zinc-100">
-                    {selectedCompany.name} Intelligence
-                  </h1>
-
-                  <p className="text-sm text-zinc-400 max-w-xl mx-auto leading-relaxed">
-                    {selectedCompany.description}
-                  </p>
-                </div>
-
-                {/* Suggested Query Chips */}
-                <div className="w-full max-w-2xl space-y-2.5 pt-2">
-                  <div className="flex items-center gap-1.5 text-xs text-zinc-500 font-mono">
-                    <Sparkle className="size-3.5 text-zinc-500" />
-                    <span>Suggested Inquiries for {selectedCompany.name}:</span>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    {selectedCompany.suggestedQueries.map((item, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => {
-                          setQuery(item);
-                          handleQuerySubmit(item);
-                        }}
-                        className="inline-flex items-center gap-1.5 text-xs rounded-lg border border-zinc-800/80 bg-zinc-900/60 hover:bg-zinc-800/80 hover:border-zinc-700 text-zinc-300 px-3 py-1.5 transition-all text-left group"
-                      >
-                        <span>{item}</span>
-                        <ArrowRight className="size-3 text-zinc-500 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Architectural highlights */}
-                <div className="w-full max-w-2xl pt-6 border-t border-zinc-900">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
-                    <div className="p-3.5 rounded-xl border border-zinc-800/70 bg-zinc-900/30 space-y-1.5">
-                      <div className="flex items-center gap-2 text-zinc-200 font-medium text-xs">
-                        <MagnifyingGlass className="size-3.5 text-zinc-400" />
-                        <span>Hybrid Vector & Fact Retrieval</span>
-                      </div>
-                      <p className="text-[11px] text-zinc-400 leading-relaxed">
-                        OpenAI 1536-dim HNSW cosine index combined with deterministic fact extraction.
-                      </p>
+          {/* Conditional Render: Ingestion Studio vs Main Chat Canvas */}
+          {workspaceView === "ingest" ? (
+            <IngestionStudio
+              onCompanyIndexed={handleCompanyIndexed}
+              onCancel={() => setWorkspaceView("chat")}
+            />
+          ) : (
+            <main className={`flex-1 flex flex-col items-center justify-between p-4 sm:p-6 w-full ${viewMode === "visual" ? "max-w-5xl" : "max-w-4xl"} mx-auto transition-all`}>
+              {/* When Empty: Hero & Suggested Inquiries */}
+              {!isConversationActive && (
+                <div className="w-full flex-1 flex flex-col justify-center items-center my-8 space-y-6">
+                  <div className="text-center max-w-2xl mx-auto space-y-3">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-zinc-800 bg-zinc-900/80 text-xs font-medium text-zinc-400">
+                      <Stack className="size-3.5 text-zinc-400" />
+                      <span>Hybrid Retrieval &bull; Fact Extraction &bull; Generative UI</span>
                     </div>
 
-                    <div className="p-3.5 rounded-xl border border-zinc-800/70 bg-zinc-900/30 space-y-1.5">
-                      <div className="flex items-center gap-2 text-zinc-200 font-medium text-xs">
-                        <Code className="size-3.5 text-brand-primary" />
-                        <span>Brand-Adaptive Generative UI</span>
+                    <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-zinc-100">
+                      {selectedCompany.name} Intelligence
+                    </h1>
+
+                    <p className="text-sm text-zinc-400 max-w-xl mx-auto leading-relaxed">
+                      {selectedCompany.description}
+                    </p>
+                  </div>
+
+                  {/* Suggested Query Chips */}
+                  <div className="w-full max-w-2xl space-y-2.5 pt-2">
+                    <div className="flex items-center gap-1.5 text-xs text-zinc-500 font-mono">
+                      <Sparkle className="size-3.5 text-zinc-500" />
+                      <span>Suggested Inquiries for {selectedCompany.name}:</span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {selectedCompany.suggestedQueries.map((item, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            setQuery(item);
+                            handleQuerySubmit(item);
+                          }}
+                          className="inline-flex items-center gap-1.5 text-xs rounded-lg border border-zinc-800/80 bg-zinc-900/60 hover:bg-zinc-800/80 hover:border-zinc-700 text-zinc-300 px-3 py-1.5 transition-all text-left group"
+                        >
+                          <span>{item}</span>
+                          <ArrowRight className="size-3 text-zinc-500 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Architectural highlights */}
+                  <div className="w-full max-w-2xl pt-6 border-t border-zinc-900">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                      <div className="p-3 rounded-lg border border-zinc-900 bg-zinc-950/60 space-y-1">
+                        <div className="flex items-center gap-1.5 text-zinc-300 font-medium">
+                          <ShieldCheck className="size-4 text-emerald-400" />
+                          <span>SSRF Guarded</span>
+                        </div>
+                        <p className="text-zinc-500 text-[11px]">
+                          Private IPs, metadata endpoints & localhost fully restricted.
+                        </p>
                       </div>
-                      <p className="text-[11px] text-zinc-400 leading-relaxed">
-                        Automated extraction of brand palettes, dynamically rendering native React cards.
-                      </p>
+
+                      <div className="p-3 rounded-lg border border-zinc-900 bg-zinc-950/60 space-y-1">
+                        <div className="flex items-center gap-1.5 text-zinc-300 font-medium">
+                          <MagnifyingGlass className="size-4 text-brand-primary" />
+                          <span>Qdrant Vectors</span>
+                        </div>
+                        <p className="text-zinc-500 text-[11px]">
+                          1536-dim HNSW indexing with cached sub-10ms queries.
+                        </p>
+                      </div>
+
+                      <div className="p-3 rounded-lg border border-zinc-900 bg-zinc-950/60 space-y-1">
+                        <div className="flex items-center gap-1.5 text-zinc-300 font-medium">
+                          <Lightning className="size-4 text-amber-400" />
+                          <span>Grounded RAG</span>
+                        </div>
+                        <p className="text-zinc-500 text-[11px]">
+                          Deterministic fact extraction & verifiable cited source blocks.
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
+              )}
+
+              {/* When Active: Conversation Messages Stream */}
+              {isConversationActive && (
+                <div className="w-full space-y-6 my-4 pb-8 flex-1">
+                  {messages.map((msg) => (
+                    <ChatMessageItem
+                      key={msg.id}
+                      message={msg}
+                      companyName={selectedCompany.name}
+                      brandColor={selectedCompany.brandColor}
+                      onOpenEvidence={openDrawerWithEvidence}
+                      viewMode={viewMode}
+                    />
+                  ))}
+                  <div ref={messagesEndRef} />
+                </div>
+              )}
+
+              {/* Bottom Docked PromptInput */}
+              <div className="w-full sticky bottom-4 z-20 pt-2">
+                <PromptInput
+                  value={query}
+                  onValueChange={setQuery}
+                  onSubmit={handleQuerySubmit}
+                  isSubmitting={isStreaming}
+                  className="w-full border-zinc-800 bg-zinc-950/95 shadow-2xl backdrop-blur-2xl"
+                >
+                  <PromptInputBody>
+                    <PromptInputTextarea
+                      placeholder={`Ask anything about ${selectedCompany.name} (e.g. pricing tiers, API limits, HQ location)...`}
+                      className="text-sm text-zinc-100 placeholder-zinc-500 py-1"
+                      minHeight={52}
+                    />
+                  </PromptInputBody>
+
+                  <PromptInputFooter>
+                    <PromptInputTools>
+                      <PromptInputBadge
+                        icon={Buildings}
+                        label={selectedCompany.domain}
+                        className="bg-zinc-900/90 border-zinc-800 text-zinc-300"
+                      />
+                      <PromptInputBadge
+                        icon={Stack}
+                        label="Qdrant HNSW"
+                        className="hidden sm:inline-flex bg-zinc-900/50 border-zinc-800/80 text-zinc-400"
+                      />
+                    </PromptInputTools>
+
+                    <div className="flex items-center gap-2">
+                      <span className="hidden sm:inline-block text-[11px] text-zinc-500 font-mono">
+                        Return to send
+                      </span>
+                      <PromptInputSubmit
+                        className="bg-zinc-100 hover:bg-white text-zinc-950 cursor-pointer"
+                        aria-label="Submit prompt"
+                      />
+                    </div>
+                  </PromptInputFooter>
+                </PromptInput>
               </div>
-            )}
-
-            {/* When Active: Conversation Messages Stream */}
-            {isConversationActive && (
-              <div className="w-full space-y-6 my-4 pb-8 flex-1">
-                {messages.map((msg) => (
-                  <ChatMessageItem
-                    key={msg.id}
-                    message={msg}
-                    companyName={selectedCompany.name}
-                    brandColor={selectedCompany.brandColor}
-                    onOpenEvidence={openDrawerWithEvidence}
-                    viewMode={viewMode}
-                  />
-                ))}
-                <div ref={messagesEndRef} />
-              </div>
-            )}
-
-            {/* Bottom Docked PromptInput */}
-            <div className="w-full sticky bottom-4 z-20 pt-2">
-              <PromptInput
-                value={query}
-                onValueChange={setQuery}
-                onSubmit={handleQuerySubmit}
-                isSubmitting={isStreaming}
-                className="w-full border-zinc-800 bg-zinc-950/95 shadow-2xl backdrop-blur-2xl"
-              >
-                <PromptInputBody>
-                  <PromptInputTextarea
-                    placeholder={`Ask anything about ${selectedCompany.name} (e.g. pricing tiers, API limits, HQ location)...`}
-                    className="text-sm text-zinc-100 placeholder-zinc-500 py-1"
-                    minHeight={52}
-                  />
-                </PromptInputBody>
-
-                <PromptInputFooter>
-                  <PromptInputTools>
-                    <PromptInputBadge
-                      icon={Buildings}
-                      label={selectedCompany.domain}
-                      className="bg-zinc-900/90 border-zinc-800 text-zinc-300"
-                    />
-                    <PromptInputBadge
-                      icon={Stack}
-                      label="Hybrid pgvector"
-                      className="hidden sm:inline-flex bg-zinc-900/50 border-zinc-800/80 text-zinc-400"
-                    />
-                  </PromptInputTools>
-
-                  <div className="flex items-center gap-2">
-                    <span className="hidden sm:inline-block text-[11px] text-zinc-500 font-mono">
-                      Return to send
-                    </span>
-                    <PromptInputSubmit
-                      className="bg-zinc-100 hover:bg-white text-zinc-950"
-                      aria-label="Submit prompt"
-                    />
-                  </div>
-                </PromptInputFooter>
-              </PromptInput>
-            </div>
-          </main>
+            </main>
+          )}
         </SidebarInset>
 
         {/* Collapsible Evidence Drawer */}
@@ -452,13 +509,6 @@ export default function Home() {
           onClose={closeDrawer}
           evidence={activeEvidence}
           selectedEvidence={selectedEvidence}
-        />
-
-        {/* Add Company Dialog */}
-        <AddCompanyDialog
-          isOpen={isAddDialogOpen}
-          onClose={() => setIsAddDialogOpen(false)}
-          onCompanyIndexed={handleCompanyIndexed}
         />
       </div>
     </SidebarProvider>

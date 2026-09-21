@@ -81,13 +81,26 @@ interface DiscoveredPage {
   depth: number;
 }
 
-interface CliOptions {
+export interface PipelineProgressEvent {
+  stage: "DISCOVERING" | "CRAWLING" | "PARSING" | "EMBEDDING" | "EXTRACTING" | "READY";
+  crawled?: number;
+  totalSelected?: number;
+  docs?: number;
+  failed?: number;
+  skippedThin?: number;
+  chunks?: number;
+  facts?: number;
+  message?: string;
+}
+
+export interface CliOptions {
   url: string;
   discoverOnly: boolean;
   limit: number | null;
   all: boolean;
   yes: boolean;
   select: string | null;
+  selectedUrls?: string[];
   fetchConcurrency: number;
   parseConcurrency: number;
   embedConcurrency: number;
@@ -99,6 +112,7 @@ interface CliOptions {
   skipEmbed: boolean;
   dryRun: boolean;
   noEmbedCache: boolean;
+  onProgress?: (event: PipelineProgressEvent) => void | Promise<void>;
 }
 
 interface CrawledDoc {
@@ -1337,7 +1351,13 @@ export async function runIngestPipeline(
 
   // Phase 2: select.
   let indices: number[];
-  if (opts.select) {
+  if (opts.selectedUrls && opts.selectedUrls.length > 0) {
+    const urlSet = new Set(opts.selectedUrls);
+    indices = pages.map((p, i) => (urlSet.has(p.url) ? i : -1)).filter((i) => i !== -1);
+    if (indices.length === 0) {
+      indices = pages.slice(0, Math.min(opts.selectedUrls.length, pages.length)).map((_, i) => i);
+    }
+  } else if (opts.select) {
     indices = parseSelection(opts.select, pages.length);
   } else if (opts.all) {
     indices = pages.map((_, i) => i);
@@ -1356,7 +1376,7 @@ export async function runIngestPipeline(
   const selected = indices.map((i) => pages[i]).filter(Boolean);
   console.log(`[SELECT] ${selected.length}/${pages.length} pages selected (est. crawl ~${Math.ceil(selected.length / opts.fetchConcurrency)} waves x ~1-3s)`);
 
-  if (!opts.yes && opts.limit === null && !opts.all && !opts.select) {
+  if (!opts.yes && opts.limit === null && !opts.all && !opts.select && (!opts.selectedUrls || opts.selectedUrls.length === 0)) {
     const rl2 = readline.createInterface({ input, output });
     const c = await rl2.question(`Crawl ${selected.length} pages (fetch ${opts.fetchConcurrency}, parse ${opts.parseConcurrency}, embed ${opts.embedConcurrency})? [Y/n]: `);
     rl2.close();
@@ -1464,18 +1484,31 @@ export async function runIngestPipeline(
     baseUrl as URL,
     opts,
     async (progress) => {
-      if (!jobContext) return;
+      if (jobContext) {
+        try {
+          const updateData: any = {
+            crawled: progress.crawled,
+            docs: progress.docs,
+            failed: progress.failed,
+            updatedAt: new Date(),
+          };
+          if (progress.stage) updateData.status = progress.stage;
+          await db.update(crawlJobs).set(updateData).where(eq(crawlJobs.id, jobContext.crawlJobId));
+        } catch {
+          // Non-blocking progress update
+        }
+      }
       try {
-        const updateData: any = {
+        await opts.onProgress?.({
+          stage: (progress.stage as any) || "CRAWLING",
           crawled: progress.crawled,
           docs: progress.docs,
           failed: progress.failed,
-          updatedAt: new Date(),
-        };
-        if (progress.stage) updateData.status = progress.stage;
-        await db.update(crawlJobs).set(updateData).where(eq(crawlJobs.id, jobContext.crawlJobId));
+          skippedThin: stats.skippedThin,
+          totalSelected: selected.length,
+        });
       } catch {
-        // Non-blocking progress update
+        // Non-blocking
       }
     }
   );
@@ -1506,7 +1539,27 @@ export async function runIngestPipeline(
   }
 
   // Phase 4: populate DB (chunk → embed → facts).
+  try {
+    await opts.onProgress?.({
+      stage: "EMBEDDING",
+      docs: docs.length,
+      failed: stats.failed,
+      skippedThin: stats.skippedThin,
+      totalSelected: selected.length,
+    });
+  } catch {}
+
   const res = await populateDb(baseUrl as URL, domain, docs, rootHtml, opts, stats, jobContext);
+
+  try {
+    await opts.onProgress?.({
+      stage: "READY",
+      docs: res.insertedDocs,
+      chunks: res.chunkCount,
+      facts: res.factCount,
+      totalSelected: selected.length,
+    });
+  } catch {}
   const total = ((Date.now() - tStart) / 1000).toFixed(1);
   console.log(`\n==============================================`);
   console.log(`INGEST COMPLETE  domain=${domain} total=${total}s`);

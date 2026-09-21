@@ -11,8 +11,62 @@ export interface CompanySummary {
   name: string;
   domain: string;
   url: string;
+  docCount?: number;
   createdAt: string;
-  updatedAt: string;
+  updatedAt?: string;
+  latestSnapshot?: {
+    id: string;
+    version: number;
+    status: string;
+    pageCount: number;
+  } | null;
+  brand?: {
+    logoUrl: string | null;
+    tokens: any;
+  } | null;
+}
+
+export interface DiscoveredPageItem {
+  url: string;
+  category: "pricing" | "product" | "docs" | "blog" | "general" | "about";
+  priority: number;
+  source: "llms.txt" | "sitemap" | "homepage" | "root";
+  depth: number;
+}
+
+export interface DiscoveryResponse {
+  success: boolean;
+  domain: string;
+  origin: string;
+  pages: DiscoveredPageItem[];
+  info: {
+    domain: string;
+    totalUrls: number;
+    durationMs: number;
+    hasLlmsTxt: boolean;
+    hasLlmsFull: boolean;
+    robotsSitemaps: number;
+    sitemapsFollowed: string[];
+    byCategory: Record<string, number>;
+    bySource: Record<string, number>;
+  };
+}
+
+export interface IngestStreamCallbacks {
+  onPhase?: (phase: string, message?: string) => void;
+  onProgress?: (data: {
+    stage: string;
+    crawled?: number;
+    totalSelected?: number;
+    docs?: number;
+    failed?: number;
+    skippedThin?: number;
+    chunks?: number;
+    facts?: number;
+    message?: string;
+  }) => void;
+  onDone?: (result: any) => void;
+  onError?: (error: { message: string }) => void;
 }
 
 export interface CompanyDetailResponse {
@@ -231,6 +285,112 @@ class ApiClient {
             }
           } catch {
             // Ignore malformed partial chunks
+          }
+        }
+      }
+    },
+  };
+
+  /**
+   * Crawler endpoints (Discovery & SSE Streaming Ingestion)
+   */
+  crawler = {
+    discover: async (
+      url: string,
+      options?: { maxSitemaps?: number; maxSitemapUrls?: number }
+    ): Promise<DiscoveryResponse> => {
+      const res = await fetch(`${this.baseUrl}/api/crawler/discover`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, ...options }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(err.error || err.details || `Discovery failed: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+
+    ingestStream: async (
+      payload: {
+        url: string;
+        selectedUrls?: string[];
+        select?: string;
+        fetchConcurrency?: number;
+        parseConcurrency?: number;
+        embedConcurrency?: number;
+        hostGapMs?: number;
+      },
+      callbacks: IngestStreamCallbacks,
+      signal?: AbortSignal
+    ): Promise<void> => {
+      const res = await fetch(`${this.baseUrl}/api/crawler/ingest`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify(payload),
+        signal,
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => "");
+        throw new Error(`Ingestion request failed: HTTP ${res.status} - ${errorText}`);
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No readable response stream received");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() || "";
+
+        for (const part of parts) {
+          if (!part.trim()) continue;
+
+          const lines = part.split("\n");
+          let eventType = "message";
+          let eventDataString = "";
+
+          for (const line of lines) {
+            if (line.startsWith("event:")) {
+              eventType = line.replace("event:", "").trim();
+            } else if (line.startsWith("data:")) {
+              eventDataString = line.replace("data:", "").trim();
+            }
+          }
+
+          if (!eventDataString) continue;
+
+          try {
+            const parsed = JSON.parse(eventDataString);
+            let actualEvent = eventType;
+            let actualData = parsed;
+
+            if (parsed && typeof parsed === "object" && "event" in parsed && "data" in parsed) {
+              actualEvent = parsed.event;
+              actualData = parsed.data;
+            }
+
+            if (actualEvent === "phase") {
+              callbacks.onPhase?.(actualData.phase, actualData.message);
+            } else if (actualEvent === "progress") {
+              callbacks.onProgress?.(actualData);
+            } else if (actualEvent === "done") {
+              callbacks.onDone?.(actualData);
+            } else if (actualEvent === "error") {
+              callbacks.onError?.(actualData);
+            }
+          } catch {
+            // Ignore malformed chunks
           }
         }
       }
