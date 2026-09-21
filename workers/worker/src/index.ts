@@ -1,6 +1,7 @@
 // Allow self-signed certificates for corporate proxy / local dev environments
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
+import { createHash } from "node:crypto";
 import { Worker } from "bullmq";
 import { QUEUE_NAMES, redisConnection } from "@ag-ui/queues";
 import {
@@ -87,13 +88,22 @@ export const crawlWorker = new Worker<CrawlJobData>(
       }[] = [];
 
       if (crawlResult.documents.length > 0) {
-        const docRows = crawlResult.documents.map((doc) => ({
-          snapshotId,
-          url: doc.url,
-          title: doc.title,
-          category: doc.category,
-          content: doc.content,
-        }));
+        const docRows = crawlResult.documents.map((doc) => {
+          const content = doc.content || "";
+          const contentHash = createHash("sha256").update(content).digest("hex");
+          const wordCount = content.split(/\s+/).filter(Boolean).length;
+          const headings = (doc.headings || []).slice(0, 50);
+          return {
+            snapshotId,
+            url: doc.url,
+            title: doc.title,
+            category: doc.category,
+            content,
+            contentHash,
+            wordCount,
+            headings,
+          };
+        });
 
         insertedDocs = await db.insert(documents).values(docRows).returning();
       }

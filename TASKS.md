@@ -22,7 +22,7 @@ Priority tags: (P0) build first, highest demo value, blocks other work. (P1) bui
 - Snapshot statuses: `QUEUED`, `DISCOVERING`, `CRAWLING`, `PARSING`, `EMBEDDING`, `READY`, `FAILED`, `CANCELLED`. Crawl job statuses mirror snapshot statuses.
 - Parity gate before dropping pgvector: top 10 overlap between pgvector and Qdrant on at least 20 sample queries spread across categories, require Jaccard similarity >= 0.8 on every query, plus spot check of 5 known question to answer pairs from the resend corpus.
 
-## 1. Documents table: content_hash, word_count, headings (P2) (Pipeline impact #13)
+## 1. ✅ Documents table: content_hash, word_count, headings (P2) (Pipeline impact #13)
 
 - Files: `packages/database/src/schema.ts`, new migration via drizzle-kit, `ingest-cli.ts` parse plus insert path.
 - Add to `documents`: `content_hash text NOT NULL`, `word_count integer NOT NULL DEFAULT 0`, `headings jsonb NOT NULL DEFAULT '[]'`. Add index on `content_hash`. Keep existing columns unchanged.
@@ -30,7 +30,7 @@ Priority tags: (P0) build first, highest demo value, blocks other work. (P1) bui
 - Insert must write all three columns for every document row. Backfill existing rows once: `content_hash = sha256(content)`, recompute `word_count` and `headings` as empty array where reparse is not available, document the backfill in the migration notes.
 - Acceptance: insert of a resend scale batch writes all three columns, `SELECT COUNT(*) WHERE content_hash IS NULL` returns 0, duplicate page content across two urls yields identical `content_hash`.
 
-## 2. crawl_jobs table (P1) (Pipeline impact #10)
+## 2. ✅ crawl_jobs table (P1) (Pipeline impact #10)
 
 - Files: `packages/database/src/schema.ts`, new migration.
 - Table `crawl_jobs`: `id uuid PK defaultRandom`, `company_id uuid FK companies.id cascade NOT NULL`, `snapshot_id uuid FK company_snapshots.id set null NULL`, `owner text NULL` (nullable, reserved for later auth), `selection_hash text NOT NULL`, `idempotency_key text NOT NULL UNIQUE`, `status text NOT NULL DEFAULT 'QUEUED'`, `selected integer NOT NULL DEFAULT 0`, `crawled integer NOT NULL DEFAULT 0`, `docs integer NOT NULL DEFAULT 0`, `failed integer NOT NULL DEFAULT 0`, `priority integer NOT NULL DEFAULT 0` (reserved, always 0 in this cut), `error_sample jsonb NULL`, `created_at timestamp defaultNow NOT NULL`, `updated_at timestamp defaultNow NOT NULL`.

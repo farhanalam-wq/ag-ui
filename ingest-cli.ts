@@ -64,6 +64,7 @@ import {
   documents,
   chunks,
   facts,
+  crawlJobs,
   eq,
   desc,
 } from "./packages/database/src/index";
@@ -103,9 +104,18 @@ interface CrawledDoc {
   title: string;
   category: string;
   content: string;
+  contentHash: string;
+  wordCount: number;
   headings: string[];
   htmlBytes: number;
   tier: "http" | "playwright";
+}
+
+export interface CrawlProgress {
+  crawled: number;
+  docs: number;
+  failed: number;
+  stage?: string;
 }
 
 export interface DeadLetterEntry {
@@ -711,7 +721,8 @@ async function closeBrowser() {
 async function crawlPages(
   selected: DiscoveredPage[],
   baseUrl: URL,
-  opts: CliOptions
+  opts: CliOptions,
+  onProgress?: (progress: CrawlProgress) => Promise<void> | void
 ): Promise<{ docs: CrawledDoc[]; rootHtml: string | null; stats: Record<string, any> }> {
   const t0 = Date.now();
   const seenHash = new Set<string>();
@@ -898,6 +909,9 @@ async function crawlPages(
 
       fetchedCount++;
       updateProgress();
+      if (fetchedCount % 25 === 0) {
+        await onProgress?.({ crawled: fetchedCount, docs: docs.length, failed: deadLetters.length, stage: "CRAWLING" });
+      }
       await queue.push({ page: p, html, status, tier, attempts });
     }
   });
@@ -925,12 +939,17 @@ async function crawlPages(
         }
         seenHash.add(h);
 
+        const wordCount = clean.content.split(/\s+/).filter(Boolean).length;
+        const headings = (clean.headings || []).slice(0, 50);
+
         docs.push({
           url: raw.page.url,
           title: clean.title,
           category: clean.category,
           content: clean.content,
-          headings: clean.headings,
+          contentHash: h,
+          wordCount,
+          headings,
           htmlBytes: raw.html.length,
           tier: raw.tier,
         });
@@ -944,13 +963,18 @@ async function crawlPages(
         });
       }
       updateProgress();
+      if (parsedCount % 25 === 0) {
+        await onProgress?.({ crawled: fetchedCount, docs: docs.length, failed: deadLetters.length, stage: "PARSING" });
+      }
     }
   });
 
   // Run Stage A to completion, then signal EOF on queue, then wait for Stage B to finish draining.
   await Promise.all(fetchWorkers);
+  await onProgress?.({ crawled: fetchedCount, docs: docs.length, failed: deadLetters.length, stage: "PARSING" });
   queue.close();
   await Promise.all(parseWorkers);
+  await onProgress?.({ crawled: selected.length, docs: docs.length, failed: deadLetters.length, stage: "PARSING" });
 
   console.log(""); // newline after progress line
   await closeBrowser();
@@ -983,44 +1007,60 @@ async function populateDb(
   docs: CrawledDoc[],
   rootHtml: string | null,
   opts: CliOptions,
-  crawlStats: Record<string, any>
+  crawlStats: Record<string, any>,
+  jobContext?: { companyId: string; snapshotId: string; crawlJobId: string; version: number }
 ) {
   const t0 = Date.now();
   const companyName = domain.split(".")[0].toUpperCase();
   console.log(`\n[DB] Populating Postgres (${process.env.DATABASE_URL ? "DATABASE_URL set" : "default localhost"})…`);
 
-  // Company find-or-create.
-  let [existing] = await db.select().from(companies).where(eq(companies.domain, domain)).limit(1);
   let companyId: string;
-  if (!existing) {
-    const [ins] = await db
-      .insert(companies)
-      .values({ domain, name: companyName, url: baseUrl.origin })
-      .returning();
-    companyId = ins.id;
-    console.log(`[DB] created company ${companyName} (${companyId})`);
-  } else {
-    companyId = existing.id;
-    console.log(`[DB] reusing company ${existing.name} (${companyId})`);
-  }
+  let snapId: string;
+  let version: number;
+  let crawlJobId: string | null = jobContext?.crawlJobId ?? null;
 
-  // Snapshot versioning.
-  const [latest] = await db
-    .select()
-    .from(companySnapshots)
-    .where(eq(companySnapshots.companyId, companyId))
-    .orderBy(desc(companySnapshots.version))
-    .limit(1);
-  const version = (latest?.version ?? 0) + 1;
-  const [snap] = await db
-    .insert(companySnapshots)
-    .values({ companyId, version, status: docs.length === 0 ? "FAILED" : "CRAWLING", pageCount: crawlStats.selected ?? docs.length })
-    .returning();
-  console.log(`[DB] snapshot v${version} (${snap.id}) status=CRAWLING`);
+  if (jobContext) {
+    companyId = jobContext.companyId;
+    snapId = jobContext.snapshotId;
+    version = jobContext.version;
+  } else {
+    // Company find-or-create fallback.
+    let [existing] = await db.select().from(companies).where(eq(companies.domain, domain)).limit(1);
+    if (!existing) {
+      const [ins] = await db
+        .insert(companies)
+        .values({ domain, name: companyName, url: baseUrl.origin })
+        .returning();
+      companyId = ins.id;
+      console.log(`[DB] created company ${companyName} (${companyId})`);
+    } else {
+      companyId = existing.id;
+      console.log(`[DB] reusing company ${existing.name} (${companyId})`);
+    }
+
+    // Snapshot versioning.
+    const [latest] = await db
+      .select()
+      .from(companySnapshots)
+      .where(eq(companySnapshots.companyId, companyId))
+      .orderBy(desc(companySnapshots.version))
+      .limit(1);
+    version = (latest?.version ?? 0) + 1;
+    const [snap] = await db
+      .insert(companySnapshots)
+      .values({ companyId, version, status: docs.length === 0 ? "FAILED" : "CRAWLING", pageCount: crawlStats.selected ?? docs.length })
+      .returning();
+    snapId = snap.id;
+    console.log(`[DB] snapshot v${version} (${snapId}) status=CRAWLING`);
+  }
 
   if (docs.length === 0) {
     console.log("[DB] no documents crawled — marking snapshot FAILED, nothing to embed.");
-    return { companyId, snapshotId: snap.id, version, insertedDocs: 0, chunkCount: 0, factCount: 0, ms: Date.now() - t0 };
+    await db.update(companySnapshots).set({ status: "FAILED" }).where(eq(companySnapshots.id, snapId));
+    if (crawlJobId) {
+      await db.update(crawlJobs).set({ status: "FAILED", errorSample: crawlStats.deadLetters?.slice(0, 200) ?? [], updatedAt: new Date() }).where(eq(crawlJobs.id, crawlJobId));
+    }
+    return { companyId, snapshotId: snapId, version, insertedDocs: 0, chunkCount: 0, factCount: 0, ms: Date.now() - t0 };
   }
 
   // Brand upsert from root HTML.
@@ -1047,21 +1087,38 @@ async function populateDb(
     console.log(`[DB] brand extraction skipped: ${err.message}`);
   }
 
-  // Documents bulk insert.
+  // Documents bulk insert (Task 1: content_hash, word_count, headings).
   const inserted = await db
     .insert(documents)
-    .values(docs.map((d) => ({ snapshotId: snap.id, url: d.url, title: d.title, category: d.category, content: d.content })))
+    .values(
+      docs.map((d) => ({
+        snapshotId: snapId,
+        url: d.url,
+        title: d.title,
+        category: d.category,
+        content: d.content,
+        contentHash: d.contentHash,
+        wordCount: d.wordCount,
+        headings: d.headings,
+      }))
+    )
     .returning();
   console.log(`[DB] inserted ${inserted.length} documents`);
 
-  await db.update(companySnapshots).set({ status: "PROCESSING" }).where(eq(companySnapshots.id, snap.id));
+  await db.update(companySnapshots).set({ status: "PROCESSING" }).where(eq(companySnapshots.id, snapId));
+  if (crawlJobId) {
+    await db.update(crawlJobs).set({ status: "EMBEDDING", docs: inserted.length, updatedAt: new Date() }).where(eq(crawlJobs.id, crawlJobId));
+  }
 
   // Chunk + embed (skippable for fast smoke tests).
   let chunkCount = 0;
   if (opts.skipEmbed) {
     console.log("[DB] --skip-embed: chunks/embeddings/facts skipped.");
-    await db.update(companySnapshots).set({ status: "READY", pageCount: docs.length }).where(eq(companySnapshots.id, snap.id));
-    return { companyId, snapshotId: snap.id, version, insertedDocs: inserted.length, chunkCount: 0, factCount: 0, ms: Date.now() - t0 };
+    await db.update(companySnapshots).set({ status: "READY", pageCount: docs.length }).where(eq(companySnapshots.id, snapId));
+    if (crawlJobId) {
+      await db.update(crawlJobs).set({ status: "READY", docs: docs.length, failed: crawlStats.failed ?? 0, errorSample: crawlStats.deadLetters?.slice(0, 200) ?? [], updatedAt: new Date() }).where(eq(crawlJobs.id, crawlJobId));
+    }
+    return { companyId, snapshotId: snapId, version, insertedDocs: inserted.length, chunkCount: 0, factCount: 0, ms: Date.now() - t0 };
   }
 
   const pending: { documentId: string; content: string; chunkIndex: number }[] = [];
@@ -1080,9 +1137,21 @@ async function populateDb(
         { concurrency: opts.embedConcurrency, useCache: !opts.noEmbedCache }
       );
     } catch (err: any) {
-      await db.update(companySnapshots).set({ status: "FAILED" }).where(eq(companySnapshots.id, snap.id));
+      await db.update(companySnapshots).set({ status: "FAILED" }).where(eq(companySnapshots.id, snapId));
       const batchInfo = err instanceof EmbeddingBatchError ? ` (batch ${err.batchIndex}, status=${err.status ?? "unknown"})` : "";
-      // TODO(TASKS.md P1 task 2): also record the batch index into crawl_jobs.error_sample once the table lands.
+      if (crawlJobId) {
+        const errSample = [
+          ...(crawlStats.deadLetters || []).slice(0, 199),
+          {
+            stage: "embedding",
+            batchIndex: err instanceof EmbeddingBatchError ? err.batchIndex : null,
+            status: err instanceof EmbeddingBatchError ? err.status : null,
+            error: err.message,
+            attempts: 3,
+          },
+        ];
+        await db.update(crawlJobs).set({ status: "FAILED", errorSample: errSample, updatedAt: new Date() }).where(eq(crawlJobs.id, crawlJobId));
+      }
       throw new Error(`[DB] embedding failed${batchInfo}: ${err.message}; snapshot marked FAILED, no partial vectors written`);
     }
     console.log(`[DB] embeddings done in ${((Date.now() - tE) / 1000).toFixed(1)}s (${vecs.length}x1536d)`);
@@ -1103,13 +1172,23 @@ async function populateDb(
   const companyRow = (await db.select().from(companies).where(eq(companies.id, companyId)).limit(1))[0];
   const extracted = extractCompanyFacts(companyRow?.name ?? companyName, domain, inserted);
   if (extracted.length > 0) {
-    await db.insert(facts).values(extracted.map((f) => ({ snapshotId: snap.id, subject: f.subject, predicate: f.predicate, value: f.value, confidence: f.confidence })));
+    await db.insert(facts).values(extracted.map((f) => ({ snapshotId: snapId, subject: f.subject, predicate: f.predicate, value: f.value, confidence: f.confidence })));
   }
   console.log(`[DB] facts: ${extracted.length}`);
 
-  await db.update(companySnapshots).set({ status: "READY", pageCount: docs.length }).where(eq(companySnapshots.id, snap.id));
-  console.log(`[DB] snapshot ${snap.id} → READY`);
-  return { companyId, snapshotId: snap.id, version, insertedDocs: inserted.length, chunkCount, factCount: extracted.length, ms: Date.now() - t0 };
+  await db.update(companySnapshots).set({ status: "READY", pageCount: docs.length }).where(eq(companySnapshots.id, snapId));
+  if (crawlJobId) {
+    await db.update(crawlJobs).set({
+      status: "READY",
+      crawled: crawlStats.selected ?? docs.length,
+      docs: docs.length,
+      failed: crawlStats.failed ?? 0,
+      errorSample: crawlStats.deadLetters?.slice(0, 200) ?? [],
+      updatedAt: new Date(),
+    }).where(eq(crawlJobs.id, crawlJobId));
+  }
+  console.log(`[DB] snapshot ${snapId} → READY`);
+  return { companyId, snapshotId: snapId, version, insertedDocs: inserted.length, chunkCount, factCount: extracted.length, ms: Date.now() - t0 };
 }
 
 // ---------------------------------------------------------------- main ---
@@ -1177,8 +1256,82 @@ async function main() {
     }
   }
 
+  // Pre-initialize Company, Snapshot, and CrawlJob when not dry-run
+  let jobContext: { companyId: string; snapshotId: string; crawlJobId: string; version: number } | undefined;
+  if (!opts.dryRun) {
+    const companyName = domain.split(".")[0].toUpperCase();
+    let [existingComp] = await db.select().from(companies).where(eq(companies.domain, domain)).limit(1);
+    let cId: string;
+    if (!existingComp) {
+      const [ins] = await db.insert(companies).values({ domain, name: companyName, url: (baseUrl as URL).origin }).returning();
+      cId = ins.id;
+      console.log(`[DB] created company ${companyName} (${cId})`);
+    } else {
+      cId = existingComp.id;
+      console.log(`[DB] reusing company ${existingComp.name} (${cId})`);
+    }
+
+    const [latestSnap] = await db
+      .select()
+      .from(companySnapshots)
+      .where(eq(companySnapshots.companyId, cId))
+      .orderBy(desc(companySnapshots.version))
+      .limit(1);
+    const snapVersion = (latestSnap?.version ?? 0) + 1;
+    const [snap] = await db
+      .insert(companySnapshots)
+      .values({ companyId: cId, version: snapVersion, status: "CRAWLING", pageCount: selected.length })
+      .returning();
+
+    // Generate selection hash & idempotency key per Task 2 / Section 0 contract
+    const chunkerVersion = "chunker-v1:1800:250";
+    const embedModelVersion = "text-embedding-3-small:1536";
+    const sortedUrls = selected.map((p) => p.url).sort();
+    const selectionInput = `${domain}\n${sortedUrls.join("\n")}\n${chunkerVersion}\n${embedModelVersion}`;
+    const idempotencyKey = sha256(selectionInput);
+    const selectionHash = sha256(`${domain}\n${sortedUrls.join("\n")}`);
+
+    const [job] = await db
+      .insert(crawlJobs)
+      .values({
+        companyId: cId,
+        snapshotId: snap.id,
+        selectionHash,
+        idempotencyKey,
+        status: "CRAWLING",
+        selected: selected.length,
+        crawled: 0,
+        docs: 0,
+        failed: 0,
+        priority: 0,
+      })
+      .returning();
+
+    jobContext = { companyId: cId, snapshotId: snap.id, crawlJobId: job.id, version: snapVersion };
+    console.log(`[DB] crawl_job initialized: ${job.id} (snapshot v${snapVersion})`);
+  }
+
   // Phase 3: concurrent crawl + parse.
-  const { docs, rootHtml, stats } = await crawlPages(selected, baseUrl as URL, opts);
+  const { docs, rootHtml, stats } = await crawlPages(
+    selected,
+    baseUrl as URL,
+    opts,
+    async (progress) => {
+      if (!jobContext) return;
+      try {
+        const updateData: any = {
+          crawled: progress.crawled,
+          docs: progress.docs,
+          failed: progress.failed,
+          updatedAt: new Date(),
+        };
+        if (progress.stage) updateData.status = progress.stage;
+        await db.update(crawlJobs).set(updateData).where(eq(crawlJobs.id, jobContext.crawlJobId));
+      } catch {
+        // Non-blocking progress update
+      }
+    }
+  );
   const elapsedCrawl = ((stats.ms as number) / 1000).toFixed(1);
   const pps = (docs.length / Math.max(0.5, (stats.ms as number) / 1000)).toFixed(1);
   console.log(`[CRAWL] done: docs=${docs.length} failed=${stats.failed} retries=${stats.retries} http=${stats.httpCount} playwright=${stats.pwCount} thin/dup=${stats.skippedThin} in ${elapsedCrawl}s (${pps} docs/s)`);
@@ -1197,7 +1350,7 @@ async function main() {
 
   // Phase 4: populate DB (chunk → embed → facts).
   try {
-    const res = await populateDb(baseUrl as URL, domain, docs, rootHtml, opts, stats);
+    const res = await populateDb(baseUrl as URL, domain, docs, rootHtml, opts, stats, jobContext);
     const total = ((Date.now() - tStart) / 1000).toFixed(1);
     console.log(`\n==============================================`);
     console.log(`INGEST COMPLETE  domain=${domain} total=${total}s`);
