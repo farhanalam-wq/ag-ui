@@ -54,8 +54,12 @@ export interface DiscoveryResponse {
 
 export interface IngestStreamCallbacks {
   onPhase?: (phase: string, message?: string) => void;
+  onJob?: (data: { jobId: string; companyId: string; snapshotId: string }) => void;
   onProgress?: (data: {
     stage: string;
+    jobId?: string;
+    companyId?: string;
+    snapshotId?: string;
     crawled?: number;
     totalSelected?: number;
     docs?: number;
@@ -311,6 +315,67 @@ class ApiClient {
       return res.json();
     },
 
+    getJobStatus: async (
+      jobId: string
+    ): Promise<{
+      job: {
+        id: string;
+        companyId: string;
+        snapshotId: string;
+        status: string;
+        selected: number;
+        crawled: number;
+        docs: number;
+        failed: number;
+        errorSample?: any[];
+      };
+      snapshot?: {
+        id: string;
+        version: number;
+        status: string;
+        pageCount: number;
+      } | null;
+    }> => {
+      const res = await fetch(`${this.baseUrl}/api/crawler/jobs/${jobId}`);
+      if (!res.ok) {
+        throw new Error(`Failed to get crawl job ${jobId}: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+
+    getLatestStatus: async (
+      domain: string
+    ): Promise<{
+      company: CompanySummary;
+      job?: {
+        id: string;
+        companyId: string;
+        snapshotId: string;
+        status: string;
+        selected: number;
+        crawled: number;
+        docs: number;
+        failed: number;
+        errorSample?: any[];
+      } | null;
+      snapshot?: {
+        id: string;
+        version: number;
+        status: string;
+        pageCount: number;
+      } | null;
+      brand?: {
+        logoUrl: string | null;
+        tokens: any;
+      } | null;
+    }> => {
+      const res = await fetch(`${this.baseUrl}/api/crawler/status/${encodeURIComponent(domain)}`);
+      if (!res.ok) {
+        throw new Error(`Failed to get status for domain ${domain}: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+
     ingestStream: async (
       payload: {
         url: string;
@@ -380,8 +445,12 @@ class ApiClient {
               actualData = parsed.data;
             }
 
-            if (actualEvent === "phase") {
+            if (actualEvent === "ping") {
+              // Heartbeat keep-alive ping - connection is healthy
+            } else if (actualEvent === "phase") {
               callbacks.onPhase?.(actualData.phase, actualData.message);
+            } else if (actualEvent === "job") {
+              callbacks.onJob?.(actualData);
             } else if (actualEvent === "progress") {
               callbacks.onProgress?.(actualData);
             } else if (actualEvent === "done") {

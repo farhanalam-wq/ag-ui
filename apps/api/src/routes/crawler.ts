@@ -2,7 +2,7 @@ import { Elysia, t } from "elysia";
 import { validateSafeUrl } from "@ag-ui/crawler";
 import { discoverPages } from "@ag-ui/crawler";
 import { logger } from "@ag-ui/shared";
-import { db, brands, eq } from "@ag-ui/database";
+import { db, brands, companies, companySnapshots, crawlJobs, eq, desc } from "@ag-ui/database";
 import { runIngestPipeline, type PipelineProgressEvent } from "../../../../ingest-cli";
 
 class AsyncEventQueue<T> {
@@ -117,7 +117,104 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
     }
   )
 
-  // 2. Real-time streaming crawl + parse + dedup + chunk + embed (Qdrant) pipeline
+  // 2. Query status of an active or recent crawl job by ID
+  .get(
+    "/jobs/:id",
+    async ({ params, set }) => {
+      const [job] = await db
+        .select()
+        .from(crawlJobs)
+        .where(eq(crawlJobs.id, params.id))
+        .limit(1);
+
+      if (!job) {
+        set.status = 404;
+        return { error: "Job not found" };
+      }
+
+      let snapshot = null;
+      if (job.snapshotId) {
+        const [snap] = await db
+          .select()
+          .from(companySnapshots)
+          .where(eq(companySnapshots.id, job.snapshotId))
+          .limit(1);
+        snapshot = snap || null;
+      }
+
+      return { job, snapshot };
+    },
+    {
+      params: t.Object({
+        id: t.String(),
+      }),
+      detail: {
+        summary: "Get crawl job status",
+        description: "Returns the current state and progress counters of a crawl job.",
+      },
+    }
+  )
+
+  // 3. Query status of the latest crawl job for a domain
+  .get(
+    "/status/:domain",
+    async ({ params, set }) => {
+      const cleanDomain = params.domain
+        .replace(/^https?:\/\//, "")
+        .replace(/\/.*$/, "")
+        .replace(/^www\./, "")
+        .trim();
+
+      const [company] = await db
+        .select()
+        .from(companies)
+        .where(eq(companies.domain, cleanDomain))
+        .limit(1);
+
+      if (!company) {
+        set.status = 404;
+        return { error: "Company not found for domain" };
+      }
+
+      const [latestJob] = await db
+        .select()
+        .from(crawlJobs)
+        .where(eq(crawlJobs.companyId, company.id))
+        .orderBy(desc(crawlJobs.createdAt))
+        .limit(1);
+
+      const [latestSnapshot] = await db
+        .select()
+        .from(companySnapshots)
+        .where(eq(companySnapshots.companyId, company.id))
+        .orderBy(desc(companySnapshots.version))
+        .limit(1);
+
+      const [brand] = await db
+        .select()
+        .from(brands)
+        .where(eq(brands.companyId, company.id))
+        .limit(1);
+
+      return {
+        company,
+        job: latestJob || null,
+        snapshot: latestSnapshot || null,
+        brand: brand ? { logoUrl: brand.logoUrl, tokens: brand.tokens } : null,
+      };
+    },
+    {
+      params: t.Object({
+        domain: t.String(),
+      }),
+      detail: {
+        summary: "Get domain crawl status",
+        description: "Returns latest company, snapshot, and crawl job status for a domain.",
+      },
+    }
+  )
+
+  // 4. Real-time streaming crawl + parse + dedup + chunk + embed (Qdrant) pipeline
   .post(
     "/ingest",
     async function* ({ body, set }) {
@@ -143,6 +240,14 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
 
       const eventQueue = new AsyncEventQueue<{ event: string; data: any }>();
 
+      // Keep-alive heartbeat interval (2s) so connection never times out during embedding or pauses
+      const pingTimer = setInterval(() => {
+        eventQueue.push({
+          event: "ping",
+          data: { ts: Date.now() },
+        });
+      }, 2000);
+
       // Initializing event
       eventQueue.push({
         event: "phase",
@@ -166,6 +271,8 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
         },
       })
         .then(async (result) => {
+          clearInterval(pingTimer);
+
           // Fetch brand intelligence if available
           let brandData = null;
           try {
@@ -191,6 +298,7 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
           eventQueue.close();
         })
         .catch((err) => {
+          clearInterval(pingTimer);
           logger.error(`[API:INGEST] Pipeline failure: ${err.message}`);
           eventQueue.push({
             event: "error",
@@ -200,8 +308,12 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
         });
 
       // Stream events back to client via SSE
-      for await (const evt of eventQueue) {
-        yield evt;
+      try {
+        for await (const evt of eventQueue) {
+          yield evt;
+        }
+      } finally {
+        clearInterval(pingTimer);
       }
     },
     {
@@ -221,3 +333,4 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
       },
     }
   );
+

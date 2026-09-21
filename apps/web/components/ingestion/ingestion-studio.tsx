@@ -189,6 +189,9 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
             setPhase(p);
             if (msg) setLogs((prev) => [...prev, `[PHASE: ${p}] ${msg}`]);
           },
+          onJob: (job) => {
+            setLogs((prev) => [...prev, `[JOB] Initialized crawl job ${job.jobId}`]);
+          },
           onProgress: (prog) => {
             setProgress(prog as any);
             setLogs((prev) => [
@@ -211,8 +214,69 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
         }
       );
     } catch (err: any) {
-      setPipelineError(err.message || "Pipeline execution failed");
-      setLogs((prev) => [...prev, `[FATAL] ${err.message}`]);
+      // Stream interrupted (e.g. dev server reload or network hiccup).
+      // Inspect the server job status rather than failing immediately!
+      setLogs((prev) => [
+        ...prev,
+        `[RECONNECT] Live stream interrupted (${err.message}). Checking server crawl status...`,
+      ]);
+
+      try {
+        let isComplete = false;
+        for (let attempt = 0; attempt < 40; attempt++) {
+          await new Promise((r) => setTimeout(r, 1500));
+          const statusRes = await apiClient.crawler.getLatestStatus(discoveryData.domain);
+          const job = statusRes.job;
+          const snap = statusRes.snapshot;
+
+          if (job) {
+            setProgress({
+              stage: job.status,
+              crawled: job.crawled,
+              totalSelected: job.selected || selectedUrls.size,
+              docs: job.docs,
+              failed: job.failed,
+            } as any);
+
+            setLogs((prev) => [
+              ...prev,
+              `[SERVER STATUS: ${job.status}] fetched=${job.crawled}/${job.selected} docs=${job.docs} dead=${job.failed}`,
+            ]);
+
+            if (job.status === "READY" && snap) {
+              setResult({
+                companyId: statusRes.company.id,
+                companyName: statusRes.company.name,
+                domain: statusRes.company.domain,
+                snapshotId: snap.id,
+                version: snap.version,
+                insertedDocs: job.docs,
+                chunkCount: snap.pageCount || job.docs,
+                factCount: 0,
+                timings: { discoveryMs: 0, crawlMs: 0, dbMs: 0, totalMs: 0 },
+                brand: statusRes.brand,
+              });
+              setStep("done");
+              setLogs((prev) => [
+                ...prev,
+                `[COMPLETE] ${statusRes.company.name} successfully indexed on server! Docs: ${job.docs}`,
+              ]);
+              isComplete = true;
+              break;
+            } else if (job.status === "FAILED") {
+              throw new Error("Crawl job failed on server");
+            }
+          }
+        }
+
+        if (!isComplete) {
+          setPipelineError("Crawl status polling timed out.");
+          setLogs((prev) => [...prev, "[FATAL] Crawl status polling timed out"]);
+        }
+      } catch (pollErr: any) {
+        setPipelineError(pollErr.message || err.message || "Pipeline execution failed");
+        setLogs((prev) => [...prev, `[FATAL] ${pollErr.message || err.message}`]);
+      }
     }
   };
 

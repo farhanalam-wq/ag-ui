@@ -83,6 +83,9 @@ interface DiscoveredPage {
 
 export interface PipelineProgressEvent {
   stage: "DISCOVERING" | "CRAWLING" | "PARSING" | "EMBEDDING" | "EXTRACTING" | "READY";
+  jobId?: string;
+  companyId?: string;
+  snapshotId?: string;
   crawled?: number;
   totalSelected?: number;
   docs?: number;
@@ -131,6 +134,7 @@ export interface CrawlProgress {
   crawled: number;
   docs: number;
   failed: number;
+  skippedThin?: number;
   stage?: string;
 }
 
@@ -767,10 +771,38 @@ async function crawlPages(
 
   console.log(`[CRAWL] starting ${selected.length} pages (fetch width ${opts.fetchConcurrency}, parse width ${opts.parseConcurrency})`);
 
-  const updateProgress = () => {
+  let lastProgressEmit = 0;
+  let progressTimer: any = null;
+
+  const notifyProgress = (stage: string = "CRAWLING", immediate = false) => {
     process.stdout.write(
       `\r[CRAWL] fetched=${fetchedCount}/${selected.length} parsed=${parsedCount} docs=${docs.length} thin/dup=${skippedThin} dead=${deadLetters.length} queue=${queue.size}`
     );
+
+    const fire = () => {
+      lastProgressEmit = Date.now();
+      onProgress?.({
+        crawled: fetchedCount,
+        docs: docs.length,
+        failed: deadLetters.length,
+        skippedThin,
+        stage,
+      });
+    };
+
+    const now = Date.now();
+    if (immediate || now - lastProgressEmit >= 40 || fetchedCount === selected.length) {
+      if (progressTimer) {
+        clearTimeout(progressTimer);
+        progressTimer = null;
+      }
+      fire();
+    } else if (!progressTimer) {
+      progressTimer = setTimeout(() => {
+        progressTimer = null;
+        fire();
+      }, 40);
+    }
   };
 
   // Stage A: Fetch workers (fetchConcurrency)
@@ -791,7 +823,7 @@ async function crawlPages(
           attempts: 0,
         });
         fetchedCount++;
-        updateProgress();
+        notifyProgress("CRAWLING");
         continue;
       }
 
@@ -838,7 +870,7 @@ async function crawlPages(
             attempts,
           });
           fetchedCount++;
-          updateProgress();
+          notifyProgress("CRAWLING");
           continue;
         }
 
@@ -856,7 +888,7 @@ async function crawlPages(
             attempts,
           });
           fetchedCount++;
-          updateProgress();
+          notifyProgress("CRAWLING");
           continue;
         }
       }
@@ -870,7 +902,7 @@ async function crawlPages(
           attempts,
         });
         fetchedCount++;
-        updateProgress();
+        notifyProgress("CRAWLING");
         continue;
       }
 
@@ -890,7 +922,7 @@ async function crawlPages(
                 attempts,
               });
               fetchedCount++;
-              updateProgress();
+              notifyProgress("CRAWLING");
               continue;
             }
           } catch (pwErr: any) {
@@ -902,7 +934,7 @@ async function crawlPages(
               attempts,
             });
             fetchedCount++;
-            updateProgress();
+            notifyProgress("CRAWLING");
             continue;
           }
         } else {
@@ -914,7 +946,7 @@ async function crawlPages(
             attempts,
           });
           fetchedCount++;
-          updateProgress();
+          notifyProgress("CRAWLING");
           continue;
         }
       } else {
@@ -924,10 +956,7 @@ async function crawlPages(
       if (p.source === "root" || idx === 0) rootHtml = rootHtml ?? html;
 
       fetchedCount++;
-      updateProgress();
-      if (fetchedCount % 25 === 0) {
-        await onProgress?.({ crawled: fetchedCount, docs: docs.length, failed: deadLetters.length, stage: "CRAWLING" });
-      }
+      notifyProgress("CRAWLING");
       await queue.push({ page: p, html, status, tier, attempts });
     }
   });
@@ -944,13 +973,13 @@ async function crawlPages(
         const clean = extractCleanContent(raw.html, raw.page.url);
         if (!clean.content || clean.content.length < 50) {
           skippedThin++;
-          updateProgress();
+          notifyProgress("PARSING");
           continue;
         }
         const h = sha256(clean.content);
         if (seenHash.has(h)) {
           skippedThin++;
-          updateProgress();
+          notifyProgress("PARSING");
           continue;
         }
         seenHash.add(h);
@@ -978,19 +1007,16 @@ async function crawlPages(
           attempts: 1,
         });
       }
-      updateProgress();
-      if (parsedCount % 25 === 0) {
-        await onProgress?.({ crawled: fetchedCount, docs: docs.length, failed: deadLetters.length, stage: "PARSING" });
-      }
+      notifyProgress("PARSING");
     }
   });
 
   // Run Stage A to completion, then signal EOF on queue, then wait for Stage B to finish draining.
   await Promise.all(fetchWorkers);
-  await onProgress?.({ crawled: fetchedCount, docs: docs.length, failed: deadLetters.length, stage: "PARSING" });
+  notifyProgress("PARSING", true);
   queue.close();
   await Promise.all(parseWorkers);
-  await onProgress?.({ crawled: selected.length, docs: docs.length, failed: deadLetters.length, stage: "PARSING" });
+  notifyProgress("PARSING", true);
 
   console.log(""); // newline after progress line
   await closeBrowser();
@@ -1327,11 +1353,40 @@ export async function runIngestPipeline(
   console.log(`[INGEST] target=${(baseUrl as URL).origin} domain=${domain} fetch=${opts.fetchConcurrency} parse=${opts.parseConcurrency} embed=${opts.embedConcurrency} hostgap=${opts.hostGapMs}ms${opts.usePlaywright ? " +playwright" : ""}`);
 
   // Phase 1: discover.
-  const { pages, info } = await discoverPages(baseUrl as URL, opts);
-  if (pages.length === 0) {
-    throw new Error("[DISCOVERY] no crawlable URLs found — aborting.");
+  let pages: DiscoveredPage[];
+  let info: any;
+
+  if (opts.selectedUrls && opts.selectedUrls.length > 0) {
+    pages = opts.selectedUrls.map((u) => ({
+      url: u,
+      category: inferCategory(u, ""),
+      priority: 5,
+      source: "sitemap" as const,
+      depth: 1,
+    }));
+    info = {
+      domain,
+      totalUrls: pages.length,
+      durationMs: 0,
+      hasLlmsTxt: false,
+      hasLlmsFull: false,
+      robotsSitemaps: 0,
+      sitemapsFollowed: [],
+      byCategory: {},
+      bySource: {},
+      ms: 0,
+    };
+    console.log(`[INGEST] using ${pages.length} pre-selected URLs from client (skipping redundant discovery)`);
+  } else {
+    const res = await discoverPages(baseUrl as URL, opts);
+    pages = res.pages;
+    info = res.info;
+    if (pages.length === 0) {
+      throw new Error("[DISCOVERY] no crawlable URLs found — aborting.");
+    }
+    printDiscovery(pages, info, domain);
   }
-  printDiscovery(pages, info, domain);
+
   if (opts.discoverOnly) {
     const n = opts.limit ?? pages.length;
     console.log(`[DISCOVER-ONLY] top ${Math.min(n, pages.length)}:`);
@@ -1352,11 +1407,7 @@ export async function runIngestPipeline(
   // Phase 2: select.
   let indices: number[];
   if (opts.selectedUrls && opts.selectedUrls.length > 0) {
-    const urlSet = new Set(opts.selectedUrls);
-    indices = pages.map((p, i) => (urlSet.has(p.url) ? i : -1)).filter((i) => i !== -1);
-    if (indices.length === 0) {
-      indices = pages.slice(0, Math.min(opts.selectedUrls.length, pages.length)).map((_, i) => i);
-    }
+    indices = pages.map((_, i) => i);
   } else if (opts.select) {
     indices = parseSelection(opts.select, pages.length);
   } else if (opts.all) {
@@ -1476,6 +1527,23 @@ export async function runIngestPipeline(
 
     jobContext = { companyId: cId, snapshotId: snap.id, crawlJobId: job.id, version: snapVersion };
     console.log(`[DB] crawl_job initialized: ${job.id} (snapshot v${snapVersion})`);
+
+    try {
+      await opts.onProgress?.({
+        stage: "CRAWLING",
+        jobId: job.id,
+        companyId: cId,
+        snapshotId: snap.id,
+        crawled: 0,
+        docs: 0,
+        failed: 0,
+        skippedThin: 0,
+        totalSelected: selected.length,
+        message: `Crawl job registered: ${job.id}`,
+      });
+    } catch {
+      // Non-blocking
+    }
   }
 
   // Phase 3: concurrent crawl + parse.
@@ -1501,10 +1569,13 @@ export async function runIngestPipeline(
       try {
         await opts.onProgress?.({
           stage: (progress.stage as any) || "CRAWLING",
+          jobId: jobContext?.crawlJobId,
+          companyId: jobContext?.companyId,
+          snapshotId: jobContext?.snapshotId,
           crawled: progress.crawled,
           docs: progress.docs,
           failed: progress.failed,
-          skippedThin: stats.skippedThin,
+          skippedThin: progress.skippedThin ?? stats?.skippedThin ?? 0,
           totalSelected: selected.length,
         });
       } catch {
