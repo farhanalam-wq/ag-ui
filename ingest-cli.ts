@@ -1253,26 +1253,61 @@ async function populateDb(
       updatedAt: new Date(),
     }).where(eq(crawlJobs.id, crawlJobId));
   }
-  console.log(`[DB] snapshot ${snapId} → READY`);
   return { companyId, snapshotId: snapId, version, insertedDocs: inserted.length, chunkCount, factCount: extracted.length, ms: Date.now() - t0 };
 }
 
 // ---------------------------------------------------------------- main ---
 
-async function main() {
-  const { url, opts } = parseArgs(process.argv);
-  if (!url) {
-    printHelp();
-    process.exit(1);
-  }
+export interface IngestPipelineResult {
+  companyId: string;
+  companyName: string;
+  domain: string;
+  snapshotId: string;
+  version: number;
+  insertedDocs: number;
+  chunkCount: number;
+  factCount: number;
+  timings: {
+    discoveryMs: number;
+    crawlMs: number;
+    dbMs: number;
+    totalMs: number;
+  };
+}
+
+export async function runIngestPipeline(
+  urlInput: string,
+  userOpts?: Partial<CliOptions>
+): Promise<IngestPipelineResult> {
   const tStart = Date.now();
-  let target = url.trim();
+  let target = urlInput.trim();
   if (!target.startsWith("http://") && !target.startsWith("https://")) target = "https://" + target;
+
+  const defaultOpts: CliOptions = {
+    url: target,
+    discoverOnly: false,
+    limit: null,
+    all: false,
+    yes: false,
+    select: null,
+    fetchConcurrency: 25,
+    parseConcurrency: 5,
+    embedConcurrency: 3,
+    hostGapMs: 150,
+    maxSitemapUrls: 2000,
+    maxSitemaps: 10,
+    timeoutMs: 10000,
+    usePlaywright: false,
+    skipEmbed: false,
+    dryRun: false,
+    noEmbedCache: false,
+  };
+
+  const opts: CliOptions = { ...defaultOpts, ...userOpts };
 
   // SSRF gate once (DNS-checked). Page fetches below stay same-host without per-URL DNS for scale.
   const baseUrl = await validateSafeUrl(target).catch((e: any) => {
-    console.error(`[SSRF] blocked: ${e.message}`);
-    process.exit(1);
+    throw new Error(`[SSRF] blocked: ${e.message}`);
   });
   const domain = (baseUrl as URL).hostname.replace(/^www\./, "");
   console.log(`[INGEST] target=${(baseUrl as URL).origin} domain=${domain} fetch=${opts.fetchConcurrency} parse=${opts.parseConcurrency} embed=${opts.embedConcurrency} hostgap=${opts.hostGapMs}ms${opts.usePlaywright ? " +playwright" : ""}`);
@@ -1280,15 +1315,24 @@ async function main() {
   // Phase 1: discover.
   const { pages, info } = await discoverPages(baseUrl as URL, opts);
   if (pages.length === 0) {
-    console.error("[DISCOVERY] no crawlable URLs found — aborting.");
-    process.exit(1);
+    throw new Error("[DISCOVERY] no crawlable URLs found — aborting.");
   }
   printDiscovery(pages, info, domain);
   if (opts.discoverOnly) {
     const n = opts.limit ?? pages.length;
     console.log(`[DISCOVER-ONLY] top ${Math.min(n, pages.length)}:`);
     pages.slice(0, n).forEach((p, i) => console.log(`  ${i + 1}. [${p.category}] ${p.url}`));
-    process.exit(0);
+    return {
+      companyId: "",
+      companyName: domain.split(".")[0].toUpperCase(),
+      domain,
+      snapshotId: "",
+      version: 0,
+      insertedDocs: 0,
+      chunkCount: 0,
+      factCount: 0,
+      timings: { discoveryMs: info.ms, crawlMs: 0, dbMs: 0, totalMs: Date.now() - tStart },
+    };
   }
 
   // Phase 2: select.
@@ -1301,13 +1345,13 @@ async function main() {
     indices = pages.slice(0, opts.limit).map((_, i) => i);
   } else {
     const rl = readline.createInterface({ input, output });
-    const ans = await rl.question(`Select pages: 'all' | N (top N) | ranges (e.g. 1-50,60) [all]: `);
+    const ans = await rl.question(`Select pages to ingest: 'all' | N (e.g. 5, 20) | ranges (e.g. 1-20,35) [default 20]: `);
     rl.close();
-    indices = parseSelection(ans.trim() === "" ? "all" : ans, pages.length);
+    const cleanAns = ans.trim() === "" ? "20" : ans.trim();
+    indices = parseSelection(cleanAns, pages.length);
   }
   if (indices.length === 0) {
-    console.error("[SELECT] empty selection — aborting.");
-    process.exit(1);
+    throw new Error("[SELECT] empty selection — aborting.");
   }
   const selected = indices.map((i) => pages[i]).filter(Boolean);
   console.log(`[SELECT] ${selected.length}/${pages.length} pages selected (est. crawl ~${Math.ceil(selected.length / opts.fetchConcurrency)} waves x ~1-3s)`);
@@ -1317,17 +1361,18 @@ async function main() {
     const c = await rl2.question(`Crawl ${selected.length} pages (fetch ${opts.fetchConcurrency}, parse ${opts.parseConcurrency}, embed ${opts.embedConcurrency})? [Y/n]: `);
     rl2.close();
     if (c.trim().toLowerCase() === "n" || c.trim().toLowerCase() === "no") {
-      console.log("Aborted.");
-      process.exit(0);
+      throw new Error("Ingestion aborted by user.");
     }
   }
 
   // Pre-initialize Company, Snapshot, and CrawlJob when not dry-run
   let jobContext: { companyId: string; snapshotId: string; crawlJobId: string; version: number } | undefined;
+  const companyName = domain.split(".")[0].toUpperCase();
+  let cId = "";
+  let snapVersion = 1;
+
   if (!opts.dryRun) {
-    const companyName = domain.split(".")[0].toUpperCase();
     let [existingComp] = await db.select().from(companies).where(eq(companies.domain, domain)).limit(1);
-    let cId: string;
     if (!existingComp) {
       const [ins] = await db.insert(companies).values({ domain, name: companyName, url: (baseUrl as URL).origin }).returning();
       cId = ins.id;
@@ -1356,11 +1401,25 @@ async function main() {
       if (existingJob.status === "READY") {
         console.log(`[IDEMPOTENCY HIT] Identical crawl job already completed: ${existingJob.id}`);
         console.log(`  company=${cId} snapshot=${existingJob.snapshotId} docs=${existingJob.docs} crawled=${existingJob.crawled}`);
-        console.log(`Exiting 0 without recrawling.`);
-        process.exit(0);
+        console.log(`Reusing existing indexed knowledge base.`);
+        return {
+          companyId: cId,
+          companyName,
+          domain,
+          snapshotId: existingJob.snapshotId ?? "",
+          version: snapVersion,
+          insertedDocs: existingJob.docs,
+          chunkCount: 0,
+          factCount: 0,
+          timings: {
+            discoveryMs: info.ms,
+            crawlMs: 0,
+            dbMs: 0,
+            totalMs: Date.now() - tStart,
+          },
+        };
       } else if (["QUEUED", "CRAWLING", "PROCESSING", "EMBEDDING"].includes(existingJob.status)) {
-        console.log(`[IDEMPOTENCY HIT] Active crawl job ${existingJob.id} is currently ${existingJob.status}. Exiting 2.`);
-        process.exit(2);
+        console.log(`[IDEMPOTENCY HIT] Active crawl job ${existingJob.id} is currently ${existingJob.status}.`);
       } else {
         console.log(`[IDEMPOTENCY] Previous job ${existingJob.id} was ${existingJob.status}. Removing stale record to retry...`);
         await db.delete(crawlJobs).where(eq(crawlJobs.id, existingJob.id));
@@ -1373,7 +1432,7 @@ async function main() {
       .where(eq(companySnapshots.companyId, cId))
       .orderBy(desc(companySnapshots.version))
       .limit(1);
-    const snapVersion = (latestSnap?.version ?? 0) + 1;
+    snapVersion = (latestSnap?.version ?? 0) + 1;
     const [snap] = await db
       .insert(companySnapshots)
       .values({ companyId: cId, version: snapVersion, status: "CRAWLING", pageCount: selected.length })
@@ -1433,24 +1492,58 @@ async function main() {
   if (opts.dryRun || docs.length === 0) {
     console.log(`[DRY] ${opts.dryRun ? "--dry-run: skipping DB." : "no docs: skipping DB."} Top docs:`);
     docs.slice(0, 5).forEach((d, i) => console.log(`  ${i + 1}. [${d.category}] ${d.title} (${d.content.length} chars) ${d.url}`));
-    process.exit(docs.length === 0 ? 1 : 0);
+    return {
+      companyId: cId,
+      companyName,
+      domain,
+      snapshotId: jobContext?.snapshotId ?? "",
+      version: snapVersion,
+      insertedDocs: docs.length,
+      chunkCount: 0,
+      factCount: 0,
+      timings: { discoveryMs: info.ms, crawlMs: stats.ms as number, dbMs: 0, totalMs: Date.now() - tStart },
+    };
   }
 
   // Phase 4: populate DB (chunk → embed → facts).
+  const res = await populateDb(baseUrl as URL, domain, docs, rootHtml, opts, stats, jobContext);
+  const total = ((Date.now() - tStart) / 1000).toFixed(1);
+  console.log(`\n==============================================`);
+  console.log(`INGEST COMPLETE  domain=${domain} total=${total}s`);
+  console.log(`  company=${res.companyId} snapshot=${res.snapshotId} v${res.version}`);
+  console.log(`  discovered=${pages.length} selected=${selected.length} docs=${res.insertedDocs} chunks=${res.chunkCount} facts=${res.factCount}`);
+  console.log(`  crawl=${elapsedCrawl}s (${pps} docs/s) db=${(res.ms / 1000).toFixed(1)}s`);
+  console.log(`==============================================`);
+
+  return {
+    companyId: res.companyId,
+    companyName,
+    domain,
+    snapshotId: res.snapshotId,
+    version: res.version,
+    insertedDocs: res.insertedDocs,
+    chunkCount: res.chunkCount,
+    factCount: res.factCount,
+    timings: {
+      discoveryMs: info.ms,
+      crawlMs: stats.ms as number,
+      dbMs: res.ms,
+      totalMs: Date.now() - tStart,
+    },
+  };
+}
+
+async function main() {
+  const { url, opts } = parseArgs(process.argv);
+  if (!url) {
+    printHelp();
+    process.exit(1);
+  }
   try {
-    const res = await populateDb(baseUrl as URL, domain, docs, rootHtml, opts, stats, jobContext);
-    const total = ((Date.now() - tStart) / 1000).toFixed(1);
-    console.log(`\n==============================================`);
-    console.log(`INGEST COMPLETE  domain=${domain} total=${total}s`);
-    console.log(`  company=${res.companyId} snapshot=${res.snapshotId} v${res.version}`);
-    console.log(`  discovered=${pages.length} selected=${selected.length} docs=${res.insertedDocs} chunks=${res.chunkCount} facts=${res.factCount}`);
-    console.log(`  crawl=${elapsedCrawl}s (${pps} docs/s) db=${(res.ms / 1000).toFixed(1)}s`);
-    console.log(`Verify retrieval later with: bun cli.ts ${domain}`);
-    console.log(`==============================================`);
+    await runIngestPipeline(url, opts);
     process.exit(0);
   } catch (err: any) {
-    console.error(`[DB] populate failed: ${err.message}`);
-    console.error(err?.stack ?? err);
+    console.error("[FATAL]", err?.message ?? err);
     process.exit(1);
   } finally {
     try {

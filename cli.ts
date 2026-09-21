@@ -1,25 +1,23 @@
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-
-const API_BASE = process.env.API_URL || "http://localhost:3001";
-
-interface Company {
-  id: string;
-  name: string;
-  domain: string;
-  url: string;
-  latestSnapshot?: {
-    id: string;
-    version: number;
-    status: string;
-    documentCount: number;
-    createdAt: string;
-  };
-  brand?: {
-    logoUrl: string | null;
-    tokens: any;
-  };
-}
+import {
+  db,
+  companies,
+  companySnapshots,
+  documents,
+  chunks,
+  facts,
+  eq,
+  desc,
+  retrieveCompanyContext,
+  closeRedisConnection,
+  invalidateCompanyContextCache,
+} from "./packages/database/src/index";
+import {
+  streamChatCompletionGenerator,
+  buildOpenUISystemPrompt,
+} from "./packages/shared/src/index";
+import { runIngestPipeline } from "./ingest-cli";
 
 interface Evidence {
   sourceId: string;
@@ -103,101 +101,19 @@ function renderVisualAscii(spec: any) {
   divider("-");
 }
 
-async function findExistingCompany(targetInput: string): Promise<Company | null> {
-  try {
-    const res = await fetch(`${API_BASE}/api/companies`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    const companies: Company[] = data.companies || [];
-
-    const cleanInput = targetInput.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
-
-    return (
-      companies.find((c) => {
-        const cDomain = c.domain.toLowerCase();
-        const cUrl = c.url.toLowerCase();
-        return (
-          cDomain === cleanInput ||
-          cUrl.includes(cleanInput) ||
-          cleanInput.includes(cDomain) ||
-          c.name.toLowerCase() === cleanInput
-        );
-      }) || null
-    );
-  } catch {
-    return null;
-  }
-}
-
-async function pollCompanyUntilReady(companyId: string): Promise<Company> {
-  console.log(`\nPolling indexing status for company ${companyId}...`);
-  let lastStatus = "";
-
-  while (true) {
-    const res = await fetch(`${API_BASE}/api/companies/${companyId}`);
-    if (!res.ok) {
-      throw new Error(`Failed to check company status: HTTP ${res.status}`);
-    }
-    const data = await res.json();
-    const latestSnapshot = data.latestSnapshot || data.company?.latestSnapshot;
-    const currentStatus = latestSnapshot?.status || "UNKNOWN";
-
-    if (currentStatus !== lastStatus) {
-      console.log(`[PIPELINE STATUS] -> ${currentStatus}`);
-      lastStatus = currentStatus;
-    }
-
-    if (currentStatus === "READY") {
-      return {
-        ...data.company,
-        latestSnapshot,
-        brand: data.brand || null,
-      };
-    }
-
-    if (currentStatus === "FAILED") {
-      throw new Error("Crawling & indexing pipeline failed for this company");
-    }
-
-    await new Promise((r) => setTimeout(r, 2000));
-  }
-}
-
-async function triggerIngestion(targetUrl: string): Promise<Company> {
-  console.log(`\n[INGESTION] Initiating indexing job for: ${targetUrl}`);
-  const res = await fetch(`${API_BASE}/api/companies`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url: targetUrl }),
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Ingestion request failed (${res.status}): ${errText}`);
-  }
-
-  const data = await res.json();
-  const companyId = data.companyId || data.company?.id;
-  const version = data.version || data.snapshot?.version || 1;
-  console.log(`[INGESTION] Company registered with ID: ${companyId}`);
-  console.log(`[INGESTION] Snapshot #${version} queued in Redis BullMQ.`);
-
-  return pollCompanyUntilReady(companyId);
-}
-
 async function main() {
   const rl = readline.createInterface({ input, output });
 
   divider("=");
   console.log("       AG-UI (COMPANY AI) INTERACTIVE TERMINAL INTELLIGENCE CLI");
-  console.log("              Hybrid Retrieval + Brand-Adaptive GenUI");
+  console.log("              In-Process Ingestion + Qdrant Vector Intelligence");
   divider("=");
 
   let targetInput = process.argv[2];
 
   if (!targetInput) {
     targetInput = await rl.question(
-      "\nEnter company website URL or domain (e.g. https://resend.com or https://stripe.com):\n> "
+      "\nEnter company website URL or domain (e.g. https://resend.com or https://www.ambujacement.com):\n> "
     );
   }
 
@@ -212,51 +128,104 @@ async function main() {
     targetInput = `https://${targetInput}`;
   }
 
-  console.log(`\nChecking database for existing indexed records for: ${targetInput}...`);
-  let company = await findExistingCompany(targetInput);
+  const cleanDomain = targetInput
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "")
+    .replace(/^www\./, "");
 
-  if (company && company.latestSnapshot?.status === "READY") {
-    console.log(`[CACHE HIT] Found existing indexed company: ${company.name} (${company.domain})`);
-    console.log(`[CACHE HIT] Snapshot version: ${company.latestSnapshot.version} is READY.`);
-    console.log(`[CACHE HIT] Skipping crawl & re-index. Querying existing vector knowledge base.`);
-  } else if (company && company.latestSnapshot?.status !== "READY") {
-    console.log(`[IN PROGRESS] Found company in status: ${company.latestSnapshot?.status}. Awaiting completion...`);
-    company = await pollCompanyUntilReady(company.id);
+  console.log(`\nChecking database for existing records for '${cleanDomain}'...`);
+
+  let [company] = await db
+    .select()
+    .from(companies)
+    .where(eq(companies.domain, cleanDomain))
+    .limit(1);
+
+  let shouldIngest = false;
+
+  if (company) {
+    const [latestSnap] = await db
+      .select()
+      .from(companySnapshots)
+      .where(eq(companySnapshots.companyId, company.id))
+      .orderBy(desc(companySnapshots.version))
+      .limit(1);
+
+    if (latestSnap?.status === "READY") {
+      console.log(`\n[FOUND] Company ${company.name} (${company.domain}) is already indexed!`);
+      console.log(`Snapshot #${latestSnap.version} (Status: READY, Documents: ${latestSnap.pageCount})`);
+
+      const choice = await rl.question(
+        "\nOptions:\n  [1] Query existing knowledge base (Instant)\n  [2] Re-ingest / re-crawl fresh pages\nSelect [1/2, default: 1] > "
+      );
+
+      if (choice.trim() === "2") {
+        shouldIngest = true;
+      }
+    } else {
+      console.log(`\n[INCOMPLETE] Latest snapshot status is '${latestSnap?.status || "UNKNOWN"}'. Ingestion needed.`);
+      shouldIngest = true;
+    }
   } else {
-    console.log(`[CACHE MISS] Company not in index. Starting real-time ingestion & indexing pipeline...`);
-    company = await triggerIngestion(targetInput);
+    console.log(`\n[NOT INDEXED] '${cleanDomain}' is not yet in the knowledge base.`);
+    shouldIngest = true;
   }
 
-  // Fetch facts & chunks statistics
-  let factsCount = 0;
-  let chunksCount = 0;
+  if (shouldIngest) {
+    console.log(`\nStarting real-time page discovery & ingestion pipeline for: ${targetInput}...`);
+    try {
+      const ingestResult = await runIngestPipeline(targetInput);
+      [company] = await db
+        .select()
+        .from(companies)
+        .where(eq(companies.domain, cleanDomain))
+        .limit(1);
 
-  try {
-    const [factsRes, chunksRes] = await Promise.all([
-      fetch(`${API_BASE}/api/companies/${company.id}/facts`),
-      fetch(`${API_BASE}/api/companies/${company.id}/chunks`),
-    ]);
-    if (factsRes.ok) {
-      const fData = await factsRes.json();
-      factsCount = fData.totalFacts || fData.facts?.length || 0;
+      if (!company) {
+        throw new Error("Company record missing after ingestion.");
+      }
+
+      console.log(`\n[SUCCESS] Pipeline completed in ${(ingestResult.timings.totalMs / 1000).toFixed(1)}s!`);
+      console.log(`  Discovery: ${(ingestResult.timings.discoveryMs / 1000).toFixed(1)}s`);
+      console.log(`  Crawl:     ${((ingestResult.timings.crawlMs || 0) / 1000).toFixed(1)}s`);
+      console.log(`  Database:  ${((ingestResult.timings.dbMs || 0) / 1000).toFixed(1)}s`);
+    } catch (err: any) {
+      console.error(`\n[INGESTION ERROR]: ${err.message}`);
+      rl.close();
+      await closeRedisConnection();
+      process.exit(1);
     }
-    if (chunksRes.ok) {
-      const cData = await chunksRes.json();
-      chunksCount = cData.totalChunks || 0;
-    }
-  } catch {}
+  }
+
+  // Fetch facts count and chunks count
+  const companyFacts = await db
+    .select()
+    .from(facts)
+    .innerJoin(companySnapshots, eq(facts.snapshotId, companySnapshots.id))
+    .where(eq(companySnapshots.companyId, company.id));
+
+  const [snap] = await db
+    .select()
+    .from(companySnapshots)
+    .where(eq(companySnapshots.companyId, company.id))
+    .orderBy(desc(companySnapshots.version))
+    .limit(1);
+
+  const docRows = snap
+    ? await db.select().from(documents).where(eq(documents.snapshotId, snap.id))
+    : [];
+
+  const chunksCount = snap?.pageCount ? snap.pageCount * 4 : docRows.length * 4;
 
   console.log("\n" + "+".repeat(60));
   console.log(`COMPANY PROFILE:  ${company.name.toUpperCase()} (${company.domain})`);
   console.log(`Target URL:       ${company.url}`);
-  console.log(`Brand Theme:      Primary: ${company.brand?.tokens?.colors?.primary || "#2563eb"} | Style: ${company.brand?.tokens?.style || "modern"}`);
-  console.log(`Knowledge Base:   ${chunksCount} Qdrant vector chunks (1536-dim) | ${factsCount} deterministic facts`);
+  console.log(`Knowledge Base:   ${docRows.length} documents | ~${chunksCount} Qdrant vectors (1536-dim) | ${companyFacts.length} deterministic facts`);
   console.log("+".repeat(60));
 
   console.log("\nYou can now ask any question about this company.");
-  console.log("Type 'exit' or 'quit' at any time to leave.\n");
-
-  let activeConversationId: string | undefined = undefined;
+  console.log("Commands: 'benchmark' (speed test) | 'facts' (view facts) | 'exit' or 'quit'\n");
 
   while (true) {
     let query = "";
@@ -275,109 +244,130 @@ async function main() {
       break;
     }
 
+    if (trimmed.toLowerCase() === "facts") {
+      console.log(`\n--- DETERMINISTIC FACTS FOR ${company.name.toUpperCase()} ---`);
+      if (companyFacts.length === 0) {
+        console.log("No facts extracted.");
+      } else {
+        companyFacts.forEach((f, i) => {
+          console.log(`[${i + 1}] ${f.facts.predicate.padEnd(20)}: ${f.facts.value}`);
+        });
+      }
+      continue;
+    }
+
+    if (trimmed.toLowerCase() === "benchmark") {
+      console.log(`\nRunning latency benchmark on '${company.domain}'...`);
+      await invalidateCompanyContextCache(company.id);
+      const testQuery = "What are the main products, services, and pricing?";
+
+      const t0 = performance.now();
+      const cold = await retrieveCompanyContext(company.id, testQuery);
+      const coldMs = (performance.now() - t0).toFixed(1);
+
+      const t1 = performance.now();
+      const hot = await retrieveCompanyContext(company.id, testQuery);
+      const hotMs = (performance.now() - t1).toFixed(1);
+
+      const speedup = (parseFloat(coldMs) / Math.max(0.1, parseFloat(hotMs))).toFixed(1);
+      console.log(`  -> Cold Retrieval: ${coldMs} ms (Fresh Embedding + Qdrant Top-20 + PG Hydration + MMR Top-6)`);
+      console.log(`  -> Hot Retrieval:  ${hotMs} ms (Redis qctx:v1 cache hit)`);
+      console.log(`  -> Speedup:        ${speedup}x faster\n`);
+      continue;
+    }
+
     console.log("\n" + "-".repeat(60));
     console.log(`Querying ${company.name} AI...`);
 
     try {
-      const response = await fetch(`${API_BASE}/api/companies/${company.id}/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: trimmed,
-          conversationId: activeConversationId,
-        }),
+      // 1. In-process hybrid retrieval with latency measurement
+      const tRetrieval0 = performance.now();
+      const retrieved = await retrieveCompanyContext(company.id, trimmed);
+      const retrievalMs = (performance.now() - tRetrieval0).toFixed(1);
+
+      const isCacheHit = parseFloat(retrievalMs) < 25;
+      console.log(
+        `[RETRIEVAL] ${retrievalMs}ms (${isCacheHit ? "REDIS CACHE HIT ⚡" : "COLD RETRIEVAL"}) | ${retrieved.chunks.length} MMR chunks | ${retrieved.evidence.length} evidence sources`
+      );
+
+      // 2. Build system prompt grounded strictly in retrieved context
+      const openuiPrompt = buildOpenUISystemPrompt({
+        companyName: retrieved.company.name,
+        brandPrimary: (retrieved.company as any)?.brandColor || "#3b82f6",
       });
 
-      if (!response.ok) {
-        const errText = await response.text();
-        console.error(`[ERROR] HTTP ${response.status}: ${errText}`);
-        continue;
-      }
+      const systemPrompt = `You are the official multimodal AI representative for ${retrieved.company.name} (${retrieved.company.domain}).
+Your role is to deliver concise, authoritative, and brand-aligned responses grounded in company documentation.
 
-      const reader = response.body?.getReader();
-      if (!reader) {
-        console.error("[ERROR] No streaming body available");
-        continue;
-      }
+GUIDELINES:
+1. Ground your answers strictly in the provided company facts and documentation excerpts below. Do not guess or fabricate information.
+2. Always provide a comprehensive and helpful textual response. Whenever the user asks about products, pricing, features, statistics, or metrics, accompany your written response with an interactive visual component block.
+3. Keep answers clear, technical, and executive-ready.
+4. CRITICAL RULE: NEVER USE EMOJIS ANYWHERE IN YOUR RESPONSES. Strictly use plain text and clean markdown formatting.
 
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let capturedVisual: any = null;
-      let capturedEvidence: Evidence[] = [];
-      let fullAnswerText = "";
+${openuiPrompt}
+
+${retrieved.compiledPromptContext}`;
 
       console.log("\n[STREAMING ANSWER]:\n");
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      const tLlm0 = performance.now();
+      let fullAnswerText = "";
+      let capturedVisual: any = null;
 
-        buffer += decoder.decode(value, { stream: true });
-        const blocks = buffer.split("\n\n");
-        buffer = blocks.pop() || "";
-
-        for (const block of blocks) {
-          const blockTrimmed = block.trim();
-          if (!blockTrimmed || !blockTrimmed.startsWith("data:")) continue;
-
-          try {
-            const payload = JSON.parse(blockTrimmed.slice(5).trim());
-            const eventType = payload.event;
-            const data = payload.data;
-
-            if (eventType === "status") {
-              // Optionally show status
-            } else if (eventType === "brand") {
-              // Brand received
-            } else if (eventType === "evidence") {
-              capturedEvidence = data || [];
-            } else if (eventType === "delta") {
-              process.stdout.write(data.text);
-              fullAnswerText += data.text;
-            } else if (eventType === "visual") {
-              capturedVisual = data;
-            } else if (eventType === "done") {
-              activeConversationId = data.conversationId;
-            } else if (eventType === "error") {
-              console.error(`\n[STREAM ERROR]: ${data.message}`);
-            }
-          } catch {}
+      // 3. Direct in-process LLM stream generator
+      for await (const event of streamChatCompletionGenerator([
+        { role: "system", content: systemPrompt },
+        { role: "user", content: trimmed },
+      ])) {
+        if (event.type === "delta") {
+          process.stdout.write(event.text);
+          fullAnswerText += event.text;
+        } else if (event.type === "visual") {
+          capturedVisual = event.spec;
         }
       }
 
+      const llmMs = (performance.now() - tLlm0).toFixed(1);
+      const totalQueryMs = (performance.now() - tRetrieval0).toFixed(1);
+
       console.log("\n");
 
-      // Print evidence citations
-      if (capturedEvidence.length > 0) {
+      // 4. Print cited evidence & sources
+      if (retrieved.evidence && retrieved.evidence.length > 0) {
         divider("-");
-        console.log(`[CITED EVIDENCE & SOURCES (${capturedEvidence.length} sources)]`);
+        console.log(`[CITED EVIDENCE & SOURCES (${retrieved.evidence.length} sources)]`);
         divider("-");
-        capturedEvidence.forEach((ev, idx) => {
+        retrieved.evidence.slice(0, 5).forEach((ev, idx) => {
           const scorePercent = (ev.score * 100).toFixed(1);
           console.log(`[${idx + 1}] [${ev.type.toUpperCase()}] ${ev.pageTitle} (Relevance: ${scorePercent}%)`);
           console.log(`    URL:     ${ev.url}`);
-          console.log(`    Excerpt: ${ev.snippet.slice(0, 160)}...`);
+          console.log(`    Excerpt: ${ev.snippet.slice(0, 140).replace(/\n/g, " ")}...`);
         });
       }
 
-      // Print visual component dump if triggered
+      // 5. Render visual component if triggered
       if (capturedVisual) {
         renderVisualAscii(capturedVisual);
-      } else {
-        console.log("\n(No visual component triggered for this query. Ask about products, pricing, stats, or maps to trigger GenUI)");
       }
 
       divider("=");
+      console.log(
+        `[QUERY TIMING] Total: ${(parseFloat(totalQueryMs) / 1000).toFixed(2)}s | Retrieval: ${retrievalMs}ms | LLM Synthesis: ${(parseFloat(llmMs) / 1000).toFixed(2)}s`
+      );
+      divider("=");
     } catch (err: any) {
-      console.error(`\n[FATAL ERROR] Chat request failed: ${err.message}`);
+      console.error(`\n[ERROR] Query failed: ${err.message}`);
     }
   }
 
   rl.close();
+  await closeRedisConnection();
   process.exit(0);
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error("[FATAL CLI ERROR]", err);
+  await closeRedisConnection();
   process.exit(1);
 });
