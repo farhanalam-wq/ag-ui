@@ -10,7 +10,7 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
@@ -67,6 +67,8 @@ import {
   crawlJobs,
   eq,
   desc,
+  isDualWriteEnabled,
+  upsertChunkPoints,
 } from "./packages/database/src/index";
 
 // ---------------------------------------------------------------- types ---
@@ -1121,10 +1123,28 @@ async function populateDb(
     return { companyId, snapshotId: snapId, version, insertedDocs: inserted.length, chunkCount: 0, factCount: 0, ms: Date.now() - t0 };
   }
 
-  const pending: { documentId: string; content: string; chunkIndex: number }[] = [];
+  const pending: {
+    id: string;
+    documentId: string;
+    content: string;
+    chunkIndex: number;
+    url: string;
+    title: string;
+    category: string;
+  }[] = [];
   for (const d of inserted) {
     const cs = chunkMarkdown(d.content, { docTitle: d.title, url: d.url });
-    for (const c of cs) pending.push({ documentId: d.id, content: c.content, chunkIndex: c.chunkIndex });
+    for (const c of cs) {
+      pending.push({
+        id: randomUUID(),
+        documentId: d.id,
+        content: c.content,
+        chunkIndex: c.chunkIndex,
+        url: d.url,
+        title: d.title,
+        category: d.category,
+      });
+    }
   }
   chunkCount = pending.length;
   console.log(`[DB] chunked into ${pending.length} pieces — embedding (${opts.embedConcurrency} streams)…`);
@@ -1155,17 +1175,64 @@ async function populateDb(
       throw new Error(`[DB] embedding failed${batchInfo}: ${err.message}; snapshot marked FAILED, no partial vectors written`);
     }
     console.log(`[DB] embeddings done in ${((Date.now() - tE) / 1000).toFixed(1)}s (${vecs.length}x1536d)`);
-    for (let i = 0; i < pending.length; i += 100) {
-      const slice = pending.slice(i, i + 100).map((p, k) => ({
-        documentId: p.documentId,
-        content: p.content,
-        chunkIndex: p.chunkIndex,
-        embedding: vecs[i + k],
-      }));
-      await db.insert(chunks).values(slice as any);
-      process.stdout.write(`\r[DB] chunks inserted ${Math.min(i + 100, pending.length)}/${pending.length}`);
+
+    // 1. Write chunks to Postgres with explicit pre-generated UUIDs
+    try {
+      for (let i = 0; i < pending.length; i += 100) {
+        const slice = pending.slice(i, i + 100).map((p, k) => ({
+          id: p.id,
+          documentId: p.documentId,
+          content: p.content,
+          chunkIndex: p.chunkIndex,
+          embedding: vecs[i + k],
+        }));
+        await db.insert(chunks).values(slice as any);
+        process.stdout.write(`\r[DB] chunks inserted ${Math.min(i + 100, pending.length)}/${pending.length}`);
+      }
+      console.log("");
+    } catch (err: any) {
+      await db.update(companySnapshots).set({ status: "FAILED" }).where(eq(companySnapshots.id, snapId));
+      if (crawlJobId) {
+        await db.update(crawlJobs).set({
+          status: "FAILED",
+          errorSample: [...(crawlStats.deadLetters || []).slice(0, 199), { stage: "postgres_chunk_insert", error: err.message }],
+          updatedAt: new Date(),
+        }).where(eq(crawlJobs.id, crawlJobId));
+      }
+      throw new Error(`[DB] Postgres chunk insert failed: ${err.message}; snapshot marked FAILED`);
     }
-    console.log("");
+
+    // 2. Dual-write to Qdrant if enabled
+    if (isDualWriteEnabled()) {
+      try {
+        const qdrantPoints = pending.map((p, idx) => ({
+          id: p.id,
+          vector: vecs[idx],
+          payload: {
+            company_id: companyId,
+            snapshot_id: snapId,
+            document_id: p.documentId,
+            chunk_index: p.chunkIndex,
+            url: p.url,
+            title: p.title,
+            category: p.category,
+          },
+        }));
+        console.log(`[QDRANT] Dual-writing ${qdrantPoints.length} points to 'company_chunks' (batches of 256)...`);
+        await upsertChunkPoints(qdrantPoints, 256);
+        console.log(`[QDRANT] Dual-write complete (${qdrantPoints.length} points)`);
+      } catch (err: any) {
+        await db.update(companySnapshots).set({ status: "FAILED" }).where(eq(companySnapshots.id, snapId));
+        if (crawlJobId) {
+          await db.update(crawlJobs).set({
+            status: "FAILED",
+            errorSample: [...(crawlStats.deadLetters || []).slice(0, 199), { stage: "qdrant_dual_write", error: err.message }],
+            updatedAt: new Date(),
+          }).where(eq(crawlJobs.id, crawlJobId));
+        }
+        throw new Error(`[QDRANT] Dual-write failed: ${err.message}; snapshot marked FAILED, not marked READY`);
+      }
+    }
   }
 
   // Deterministic facts.

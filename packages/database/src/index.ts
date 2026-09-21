@@ -11,3 +11,4 @@ export const db = drizzle(client, { schema });
 export * from "./schema";
 export * from "drizzle-orm";
 export * from "./retrieval";
+export * from "./qdrant";

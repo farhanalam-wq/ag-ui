@@ -99,7 +99,7 @@ Priority tags: (P0) build first, highest demo value, blocks other work. (P1) bui
 - Init script is idempotent: create collection `company_chunks` with `vectors.size 1536, distance Cosine, hnsw ef_construct 128, m 16` if missing; create payload indexes `company_id keyword, snapshot_id keyword, document_id keyword, category keyword, chunk_index integer`. Exit 0 whether created or already present, print what it did.
 - Acceptance: fresh `docker compose up -d` plus init script yields a 1536 cosine collection with all five payload indexes, rerunning the script changes nothing.
 
-## 12. 🔄 Dual write behind a flag, parity check on resend, then drop pgvector (P1) (Pipeline impact #6)
+## 12. ✅ Dual write behind a flag, parity check on resend, then drop pgvector (P1) (Pipeline impact #6)
 
 - Files: `ingest-cli.ts` populate path, new module `packages/database/src/qdrant.ts` (client, upsert, query helpers), `.env.example` (`QDRANT_DUAL_WRITE=false`).
 - When `QDRANT_DUAL_WRITE=true`: after generating the ordered vectors, write Postgres `chunks` rows exactly as today AND upsert Qdrant points `{id: chunk_uuid, vector, payload}` in batches of 256 to 512. If either side fails terminally, mark snapshot `FAILED` and do not mark READY. Point ID must equal the Postgres chunk UUID string.
