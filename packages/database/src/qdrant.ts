@@ -178,3 +178,87 @@ export async function getCollectionInfo(collection = QDRANT_COLLECTION): Promise
   const data = await res.json();
   return data.result;
 }
+
+/**
+ * Computes dot product (cosine similarity for unit-normalized vectors).
+ */
+export function dotProduct(a: number[], b: number[]): number {
+  let dot = 0;
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    dot += a[i] * b[i];
+  }
+  return dot;
+}
+
+/**
+ * Deterministic, local Maximal Marginal Relevance (MMR) diversification.
+ * Balances query relevance and novelty relative to already selected items.
+ *
+ * Formula: argmax_{d in C \ S} [ lambda * Sim(d, q) - (1 - lambda) * max_{s in S} Sim(d, s) ]
+ *
+ * @param candidates List of items with id, vector, and score
+ * @param queryVector Query vector (1536-dim unit-normalized)
+ * @param lambda Trade-off factor (default 0.7 per Task 13)
+ * @param limit Max items to select (default 6 per Task 13)
+ */
+export function mmrDiversify<T extends { id: string; vector?: number[]; score: number }>(
+  candidates: T[],
+  queryVector: number[],
+  lambda = 0.7,
+  limit = 6
+): T[] {
+  if (candidates.length <= limit) {
+    return candidates;
+  }
+
+  const selected: T[] = [];
+  const remaining = [...candidates];
+  const maxSelections = Math.min(limit, candidates.length);
+
+  while (selected.length < maxSelections && remaining.length > 0) {
+    let bestIdx = -1;
+    let bestMmrScore = -Infinity;
+
+    for (let i = 0; i < remaining.length; i++) {
+      const candidate = remaining[i];
+      const candVector = candidate.vector;
+
+      // Relevance to query: either from Qdrant score or dot product
+      const simToQuery =
+        candVector && candVector.length === queryVector.length
+          ? dotProduct(candVector, queryVector)
+          : candidate.score;
+
+      // Redundancy: max similarity to already selected candidates
+      let maxSimToSelected = 0;
+      if (selected.length > 0 && candVector) {
+        for (const sel of selected) {
+          if (sel.vector && sel.vector.length === candVector.length) {
+            const sim = dotProduct(candVector, sel.vector);
+            if (sim > maxSimToSelected) {
+              maxSimToSelected = sim;
+            }
+          }
+        }
+      }
+
+      const mmrScore = lambda * simToQuery - (1 - lambda) * maxSimToSelected;
+
+      if (mmrScore > bestMmrScore) {
+        bestMmrScore = mmrScore;
+        bestIdx = i;
+      }
+    }
+
+    if (bestIdx >= 0) {
+      selected.push(remaining[bestIdx]);
+      remaining.splice(bestIdx, 1);
+    } else {
+      break;
+    }
+  }
+
+  return selected;
+}
+

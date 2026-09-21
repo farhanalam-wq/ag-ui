@@ -37,7 +37,7 @@ Priority tags: (P0) build first, highest demo value, blocks other work. (P1) bui
 - Status values restricted to the list in section 0. Progress counters updated at least every 25 completed pages during crawl plus at each stage transition.
 - Acceptance: one row per CLI ingest run, counters move monotonically during a `--limit 50` run, `idempotency_key` unique constraint verified by inserting the same key twice and getting a conflict.
 
-## 3. Idempotency key per company plus selection hash (P2) (Pipeline impact #12)
+## 3. ✅ Idempotency key per company plus selection hash (P2) (Pipeline impact #12)
 
 - Files: `ingest-cli.ts` selection block, `packages/database/src/schema.ts` (constraint from task 2).
 - Key input string: `domain + "\n" + sorted_normalized_selected_urls.join("\n") + "\n" + chunker_version + "\n" + embed_model_version`, where `chunker_version = "chunker-v1:1800:250"` and `embed_model_version = "text-embedding-3-small:1536"`. Key = `sha256(input)`.
@@ -107,7 +107,7 @@ Priority tags: (P0) build first, highest demo value, blocks other work. (P1) bui
 - Cutover only after parity passes: flip reads to Qdrant (task 13), run one clean ingest, then issue the migration dropping the `chunks.embedding` column and removing dual write code paths. Keep the migration file and a backfill note so the decision is reversible by re embedding from stored chunk content.
 - Acceptance: parity doc exists with all green checks, cutover ingest writes Qdrant only, `chunks.embedding` column is gone, retrieval works with zero pgvector references.
 
-## 13. 🔄 Retrieval: Qdrant top 20, MMR to 6, caches with snapshot invalidation (P0) (Pipeline impact #3)
+## 13. ✅ Retrieval: Qdrant top 20, MMR to 6, caches with snapshot invalidation (P0) (Pipeline impact #3)
 
 - Files: `packages/database/src/retrieval.ts`, `packages/database/src/qdrant.ts`, Redis cache helpers.
 - New flow in `retrieveCompanyContext`: embed query (via query embedding cache), `query_points` on `company_chunks` with filter `{company_id, snapshot_id}` and `limit 20`, hydrate chunk content plus title plus url from Postgres by `document_id`, MMR diversify (`lambda 0.7`, similarity from Qdrant score, cap 6), build evidence and compiled context from the final 6 only.

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, vector, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, integer, index } from "drizzle-orm/pg-core";
 
 export const companies = pgTable("companies", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -59,13 +59,9 @@ export const chunks = pgTable(
       .notNull(),
     content: text("content").notNull(),
     chunkIndex: integer("chunk_index").notNull(),
-    embedding: vector("embedding", { dimensions: 1536 }),
   },
   (table) => [
-    index("chunks_embedding_idx").using(
-      "hnsw",
-      table.embedding.op("vector_cosine_ops")
-    ),
+    index("chunks_document_id_idx").on(table.documentId),
   ]
 );
 

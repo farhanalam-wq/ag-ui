@@ -12,3 +12,4 @@ export * from "./schema";
 export * from "drizzle-orm";
 export * from "./retrieval";
 export * from "./qdrant";
+export * from "./cache";

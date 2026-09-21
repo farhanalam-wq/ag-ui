@@ -1,7 +1,7 @@
 // Allow self-signed certificates for corporate proxy / local dev environments
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Worker } from "bullmq";
 import { QUEUE_NAMES, redisConnection } from "@ag-ui/queues";
 import {
@@ -13,6 +13,8 @@ import {
   chunks,
   facts,
   eq,
+  upsertChunkPoints,
+  invalidateCompanyContextCache,
 } from "@ag-ui/database";
 import { CompanyCrawler } from "@ag-ui/crawler";
 import {
@@ -144,19 +146,50 @@ export const crawlWorker = new Worker<CrawlJobData>(
           allChunksToProcess.map((c) => c.content)
         );
 
-        const chunkRows = allChunksToProcess.map((c, idx) => ({
-          documentId: c.documentId,
-          content: c.content,
-          chunkIndex: c.chunkIndex,
-          embedding: embeddings[idx],
-        }));
+        const docMap = new Map(insertedDocs.map((d) => [d.id, d]));
+        const chunkRows = allChunksToProcess.map((c) => {
+          const chunkId = randomUUID();
+          const doc = docMap.get(c.documentId);
+          return {
+            id: chunkId,
+            documentId: c.documentId,
+            content: c.content,
+            chunkIndex: c.chunkIndex,
+            url: doc?.url || "",
+            title: doc?.title || "",
+            category: doc?.category || "general",
+          };
+        });
 
-        // Batch inserts of 50 rows
+        // 1. Batch insert relational chunks into PostgreSQL (no vector column)
         for (let i = 0; i < chunkRows.length; i += 50) {
-          await db.insert(chunks).values(chunkRows.slice(i, i + 50));
+          await db.insert(chunks).values(
+            chunkRows.slice(i, i + 50).map((r) => ({
+              id: r.id,
+              documentId: r.documentId,
+              content: r.content,
+              chunkIndex: r.chunkIndex,
+            }))
+          );
         }
 
-        logger.info(`[CRAWL WORKER] Successfully saved ${chunkRows.length} vector chunks with pgvector HNSW embeddings`);
+        // 2. Batch upsert vectors into Qdrant
+        const qdrantPoints = chunkRows.map((r, idx) => ({
+          id: r.id,
+          vector: embeddings[idx],
+          payload: {
+            company_id: companyId,
+            snapshot_id: snapshotId,
+            document_id: r.documentId,
+            chunk_index: r.chunkIndex,
+            url: r.url,
+            title: r.title,
+            category: r.category,
+          },
+        }));
+
+        await upsertChunkPoints(qdrantPoints, 256);
+        logger.info(`[CRAWL WORKER] Successfully saved ${chunkRows.length} vector chunks into Qdrant collection 'company_chunks'`);
       }
 
       // 7. Deterministic fact extraction
@@ -183,7 +216,7 @@ export const crawlWorker = new Worker<CrawlJobData>(
         logger.info(`[CRAWL WORKER] Successfully saved ${factRows.length} deterministic facts to PostgreSQL`);
       }
 
-      // 8. Mark snapshot as READY
+      // 8. Mark snapshot as READY & invalidate stale retrieval cache
       await db
         .update(companySnapshots)
         .set({
@@ -192,6 +225,7 @@ export const crawlWorker = new Worker<CrawlJobData>(
         })
         .where(eq(companySnapshots.id, snapshotId));
 
+      await invalidateCompanyContextCache(companyId);
       logger.info(`[CRAWL WORKER] Snapshot ${snapshotId} marked as READY`);
 
       return {

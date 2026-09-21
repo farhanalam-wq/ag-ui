@@ -67,8 +67,8 @@ import {
   crawlJobs,
   eq,
   desc,
-  isDualWriteEnabled,
   upsertChunkPoints,
+  invalidateCompanyContextCache,
 } from "./packages/database/src/index";
 
 // ---------------------------------------------------------------- types ---
@@ -1117,6 +1117,7 @@ async function populateDb(
   if (opts.skipEmbed) {
     console.log("[DB] --skip-embed: chunks/embeddings/facts skipped.");
     await db.update(companySnapshots).set({ status: "READY", pageCount: docs.length }).where(eq(companySnapshots.id, snapId));
+    await invalidateCompanyContextCache(companyId);
     if (crawlJobId) {
       await db.update(crawlJobs).set({ status: "READY", docs: docs.length, failed: crawlStats.failed ?? 0, errorSample: crawlStats.deadLetters?.slice(0, 200) ?? [], updatedAt: new Date() }).where(eq(crawlJobs.id, crawlJobId));
     }
@@ -1176,15 +1177,14 @@ async function populateDb(
     }
     console.log(`[DB] embeddings done in ${((Date.now() - tE) / 1000).toFixed(1)}s (${vecs.length}x1536d)`);
 
-    // 1. Write chunks to Postgres with explicit pre-generated UUIDs
+    // 1. Write relational chunks to Postgres with explicit pre-generated UUIDs
     try {
       for (let i = 0; i < pending.length; i += 100) {
-        const slice = pending.slice(i, i + 100).map((p, k) => ({
+        const slice = pending.slice(i, i + 100).map((p) => ({
           id: p.id,
           documentId: p.documentId,
           content: p.content,
           chunkIndex: p.chunkIndex,
-          embedding: vecs[i + k],
         }));
         await db.insert(chunks).values(slice as any);
         process.stdout.write(`\r[DB] chunks inserted ${Math.min(i + 100, pending.length)}/${pending.length}`);
@@ -1202,36 +1202,34 @@ async function populateDb(
       throw new Error(`[DB] Postgres chunk insert failed: ${err.message}; snapshot marked FAILED`);
     }
 
-    // 2. Dual-write to Qdrant if enabled
-    if (isDualWriteEnabled()) {
-      try {
-        const qdrantPoints = pending.map((p, idx) => ({
-          id: p.id,
-          vector: vecs[idx],
-          payload: {
-            company_id: companyId,
-            snapshot_id: snapId,
-            document_id: p.documentId,
-            chunk_index: p.chunkIndex,
-            url: p.url,
-            title: p.title,
-            category: p.category,
-          },
-        }));
-        console.log(`[QDRANT] Dual-writing ${qdrantPoints.length} points to 'company_chunks' (batches of 256)...`);
-        await upsertChunkPoints(qdrantPoints, 256);
-        console.log(`[QDRANT] Dual-write complete (${qdrantPoints.length} points)`);
-      } catch (err: any) {
-        await db.update(companySnapshots).set({ status: "FAILED" }).where(eq(companySnapshots.id, snapId));
-        if (crawlJobId) {
-          await db.update(crawlJobs).set({
-            status: "FAILED",
-            errorSample: [...(crawlStats.deadLetters || []).slice(0, 199), { stage: "qdrant_dual_write", error: err.message }],
-            updatedAt: new Date(),
-          }).where(eq(crawlJobs.id, crawlJobId));
-        }
-        throw new Error(`[QDRANT] Dual-write failed: ${err.message}; snapshot marked FAILED, not marked READY`);
+    // 2. Direct vector write to Qdrant collection 'company_chunks'
+    try {
+      const qdrantPoints = pending.map((p, idx) => ({
+        id: p.id,
+        vector: vecs[idx],
+        payload: {
+          company_id: companyId,
+          snapshot_id: snapId,
+          document_id: p.documentId,
+          chunk_index: p.chunkIndex,
+          url: p.url,
+          title: p.title,
+          category: p.category,
+        },
+      }));
+      console.log(`[QDRANT] Upserting ${qdrantPoints.length} points to 'company_chunks' (batches of 256)...`);
+      await upsertChunkPoints(qdrantPoints, 256);
+      console.log(`[QDRANT] Vector upsert complete (${qdrantPoints.length} points)`);
+    } catch (err: any) {
+      await db.update(companySnapshots).set({ status: "FAILED" }).where(eq(companySnapshots.id, snapId));
+      if (crawlJobId) {
+        await db.update(crawlJobs).set({
+          status: "FAILED",
+          errorSample: [...(crawlStats.deadLetters || []).slice(0, 199), { stage: "qdrant_vector_write", error: err.message }],
+          updatedAt: new Date(),
+        }).where(eq(crawlJobs.id, crawlJobId));
       }
+      throw new Error(`[QDRANT] Vector upsert failed: ${err.message}; snapshot marked FAILED, not marked READY`);
     }
   }
 
@@ -1244,6 +1242,7 @@ async function populateDb(
   console.log(`[DB] facts: ${extracted.length}`);
 
   await db.update(companySnapshots).set({ status: "READY", pageCount: docs.length }).where(eq(companySnapshots.id, snapId));
+  await invalidateCompanyContextCache(companyId);
   if (crawlJobId) {
     await db.update(crawlJobs).set({
       status: "READY",
@@ -1338,6 +1337,36 @@ async function main() {
       console.log(`[DB] reusing company ${existingComp.name} (${cId})`);
     }
 
+    // Generate selection hash & idempotency key per Task 2 / Task 3 / Section 0 contract
+    const chunkerVersion = "chunker-v1:1800:250";
+    const embedModelVersion = "text-embedding-3-small:1536";
+    const sortedUrls = selected.map((p) => p.url).sort();
+    const selectionInput = `${domain}\n${sortedUrls.join("\n")}\n${chunkerVersion}\n${embedModelVersion}`;
+    const idempotencyKey = sha256(selectionInput);
+    const selectionHash = sha256(`${domain}\n${sortedUrls.join("\n")}`);
+
+    // Check crawl_jobs by idempotency key (Task 3)
+    const [existingJob] = await db
+      .select()
+      .from(crawlJobs)
+      .where(eq(crawlJobs.idempotencyKey, idempotencyKey))
+      .limit(1);
+
+    if (existingJob) {
+      if (existingJob.status === "READY") {
+        console.log(`[IDEMPOTENCY HIT] Identical crawl job already completed: ${existingJob.id}`);
+        console.log(`  company=${cId} snapshot=${existingJob.snapshotId} docs=${existingJob.docs} crawled=${existingJob.crawled}`);
+        console.log(`Exiting 0 without recrawling.`);
+        process.exit(0);
+      } else if (["QUEUED", "CRAWLING", "PROCESSING", "EMBEDDING"].includes(existingJob.status)) {
+        console.log(`[IDEMPOTENCY HIT] Active crawl job ${existingJob.id} is currently ${existingJob.status}. Exiting 2.`);
+        process.exit(2);
+      } else {
+        console.log(`[IDEMPOTENCY] Previous job ${existingJob.id} was ${existingJob.status}. Removing stale record to retry...`);
+        await db.delete(crawlJobs).where(eq(crawlJobs.id, existingJob.id));
+      }
+    }
+
     const [latestSnap] = await db
       .select()
       .from(companySnapshots)
@@ -1349,14 +1378,6 @@ async function main() {
       .insert(companySnapshots)
       .values({ companyId: cId, version: snapVersion, status: "CRAWLING", pageCount: selected.length })
       .returning();
-
-    // Generate selection hash & idempotency key per Task 2 / Section 0 contract
-    const chunkerVersion = "chunker-v1:1800:250";
-    const embedModelVersion = "text-embedding-3-small:1536";
-    const sortedUrls = selected.map((p) => p.url).sort();
-    const selectionInput = `${domain}\n${sortedUrls.join("\n")}\n${chunkerVersion}\n${embedModelVersion}`;
-    const idempotencyKey = sha256(selectionInput);
-    const selectionHash = sha256(`${domain}\n${sortedUrls.join("\n")}`);
 
     const [job] = await db
       .insert(crawlJobs)
@@ -1433,7 +1454,8 @@ async function main() {
     process.exit(1);
   } finally {
     try {
-      const { client } = await import("./packages/database/src/index");
+      const { client, closeRedisConnection } = await import("./packages/database/src/index");
+      await closeRedisConnection();
       await (client as any).end?.();
     } catch {
       // ignore
