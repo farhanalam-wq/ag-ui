@@ -250,7 +250,7 @@ async function main() {
   console.log(`COMPANY PROFILE:  ${company.name.toUpperCase()} (${company.domain})`);
   console.log(`Target URL:       ${company.url}`);
   console.log(`Brand Theme:      Primary: ${company.brand?.tokens?.colors?.primary || "#2563eb"} | Style: ${company.brand?.tokens?.style || "modern"}`);
-  console.log(`Knowledge Base:   ${chunksCount} pgvector chunks (1536-dim) | ${factsCount} deterministic facts`);
+  console.log(`Knowledge Base:   ${chunksCount} Qdrant vector chunks (1536-dim) | ${factsCount} deterministic facts`);
   console.log("+".repeat(60));
 
   console.log("\nYou can now ask any question about this company.");
