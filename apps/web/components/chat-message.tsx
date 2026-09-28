@@ -13,25 +13,12 @@ import {
   Eye,
 } from "@phosphor-icons/react";
 import type { ChatMessage as ChatMessageType, EvidenceItem } from "@/hooks/use-company-chat";
-import { OpenUIRenderer } from "./openui-renderer";
 
 interface ChatMessageProps {
   message: ChatMessageType;
   companyName: string;
   brandColor?: string;
   onOpenEvidence: (item?: EvidenceItem) => void;
-  viewMode?: "visual" | "text";
-}
-
-function extractOpenUISource(content: string, visualSpec?: any): string | null {
-  if (visualSpec?.openui) {
-    return visualSpec.openui;
-  }
-  const match = /```openui\s*([\s\S]*?)(?:```|$)/.exec(content);
-  if (match && match[1]) {
-    return match[1].trim();
-  }
-  return null;
 }
 
 function extractTextWithoutOpenUI(content: string): string {
@@ -43,7 +30,6 @@ export function ChatMessageItem({
   companyName,
   brandColor = "#3b82f6",
   onOpenEvidence,
-  viewMode = "visual",
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
@@ -73,20 +59,9 @@ export function ChatMessageItem({
   const isSynthesizing = message.stage === "synthesizing";
   const isError = message.stage === "error";
 
-  const openuiSource = extractOpenUISource(message.content, message.visualSpec);
   const textContentWithoutOpenUI = extractTextWithoutOpenUI(message.content);
-  const hasOpenUI = Boolean(openuiSource);
 
-  // Pure Visual Mode: When in visual view and message has OpenUI, render PURELY the component
-  if (viewMode === "visual" && hasOpenUI) {
-    return (
-      <div className="w-full my-2">
-        <OpenUIRenderer source={openuiSource!} isStreaming={isSynthesizing} />
-      </div>
-    );
-  }
-
-  // Text Mode (or fallback when message has no OpenUI component)
+  // Text-only mode
   return (
     <div className="flex justify-start w-full">
       <div className="flex items-start gap-3 max-w-3xl w-full">
@@ -165,7 +140,7 @@ export function ChatMessageItem({
                     code: ({ children, className }) => {
                       const match = /language-(\w+)/.exec(className || "");
                       const language = match ? match[1] : "";
-                      // In text mode, completely suppress OpenUI code blocks
+                      // Suppress any legacy OpenUI code blocks (text-only mode)
                       if (language === "openui" || className === "openui") {
                         return null;
                       }

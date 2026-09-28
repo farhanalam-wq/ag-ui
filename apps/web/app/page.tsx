@@ -22,7 +22,6 @@ import {
   Code,
   ArrowCounterClockwise,
   Sidebar as SidebarIcon,
-  ChatCircleText,
 } from "@phosphor-icons/react";
 import { useCompanyChat } from "@/hooks/use-company-chat";
 import { ChatMessageItem } from "@/components/chat-message";
@@ -115,7 +114,6 @@ export default function Home() {
   const [companies, setCompanies] = useState<CompanyItem[]>(DEFAULT_COMPANIES);
   const [selectedCompany, setSelectedCompany] = useState<CompanyItem>(DEFAULT_COMPANIES[0]);
   const [query, setQuery] = useState("");
-  const [viewMode, setViewMode] = useState<"visual" | "text">("text");
   const [workspaceView, setWorkspaceView] = useState<"chat" | "ingest">("chat");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -331,36 +329,6 @@ export default function Home() {
                 </button>
               )}
 
-              {/* Visual vs Text View Mode Toggle */}
-              <div className="inline-flex items-center p-0.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900/80 text-xs font-medium">
-                <button
-                  type="button"
-                  onClick={() => setViewMode("visual")}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all ${
-                    viewMode === "visual"
-                      ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm font-semibold"
-                      : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
-                  }`}
-                  title="Generative Visual UI mode"
-                >
-                  <Sparkle className={`size-3.5 ${viewMode === "visual" ? "text-brand-primary" : ""}`} />
-                  <span>Visual</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode("text")}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all ${
-                    viewMode === "text"
-                      ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm font-semibold"
-                      : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
-                  }`}
-                  title="Plain text chat mode"
-                >
-                  <ChatCircleText className="size-3.5" />
-                  <span>Text</span>
-                </button>
-              </div>
-
               {/* Shadcn Theme Mode Toggle */}
               <ModeToggle />
             </div>
@@ -373,14 +341,14 @@ export default function Home() {
               onCancel={() => setWorkspaceView("chat")}
             />
           ) : (
-            <main className={`flex-1 flex flex-col items-center justify-between p-4 sm:p-6 w-full ${viewMode === "visual" ? "max-w-5xl" : "max-w-4xl"} mx-auto transition-all`}>
+            <main className="flex-1 flex flex-col items-center justify-between p-4 sm:p-6 w-full max-w-4xl mx-auto transition-all">
               {/* When Empty: Hero & Suggested Inquiries */}
               {!isConversationActive && (
                 <div className="w-full flex-1 flex flex-col justify-center items-center my-8 space-y-6">
                   <div className="text-center max-w-2xl mx-auto space-y-3">
                     <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-zinc-800 bg-zinc-900/80 text-xs font-medium text-zinc-400">
                       <Stack className="size-3.5 text-zinc-400" />
-                      <span>Hybrid Retrieval &bull; Fact Extraction &bull; Generative UI</span>
+                      <span>Hybrid Retrieval &bull; Fact Extraction &bull; Text Answers</span>
                     </div>
 
                     <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-zinc-100">
@@ -464,7 +432,6 @@ export default function Home() {
                       companyName={selectedCompany.name}
                       brandColor={selectedCompany.brandColor}
                       onOpenEvidence={openDrawerWithEvidence}
-                      viewMode={viewMode}
                     />
                   ))}
                   <div ref={messagesEndRef} />

@@ -112,7 +112,7 @@ export interface ChatStreamPayload {
 }
 
 export interface ChatStreamEvent {
-  event: "status" | "brand" | "evidence" | "delta" | "visual" | "done" | "error";
+  event: "status" | "brand" | "evidence" | "delta" | "done" | "error";
   data: any;
 }
 
@@ -121,7 +121,6 @@ export interface ChatStreamCallbacks {
   onBrand?: (brand: any) => void;
   onEvidence?: (evidence: any[]) => void;
   onDelta?: (delta: { text: string }) => void;
-  onVisual?: (spec: any) => void;
   onDone?: (summary: { conversationId?: string; messageId?: string }) => void;
   onError?: (error: { message: string }) => void;
 }
@@ -283,8 +282,6 @@ class ApiClient {
               callbacks.onEvidence?.(Array.isArray(actualData) ? actualData : []);
             } else if (actualEvent === "delta") {
               callbacks.onDelta?.(actualData);
-            } else if (actualEvent === "visual") {
-              callbacks.onVisual?.(actualData);
             } else if (actualEvent === "done") {
               callbacks.onDone?.(actualData);
             } else if (actualEvent === "error") {

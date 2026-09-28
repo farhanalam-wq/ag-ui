@@ -8,12 +8,7 @@ import {
   eq,
   desc,
 } from "@ag-ui/database";
-import {
-  streamChatCompletionGenerator,
-  logger,
-  buildOpenUISystemPrompt,
-} from "@ag-ui/shared";
-import type { VisualSpec } from "@ag-ui/contracts";
+import { streamChatCompletionGenerator, logger } from "@ag-ui/shared";
 
 export const chatRoutes = new Elysia()
   // 1. Streaming Chat Endpoint (Native Elysia SSE Generator)
@@ -90,22 +85,15 @@ export const chatRoutes = new Elysia()
           },
         };
 
-        const openuiPrompt = buildOpenUISystemPrompt({
-          companyName: retrieved.company.name,
-          brandPrimary: (retrieved.company as any)?.brandColor || "#3b82f6",
-        });
-
-        const systemPrompt = `You are the official multimodal AI representative for ${retrieved.company.name} (${retrieved.company.domain}).
-Your role is to deliver concise, authoritative, and brand-aligned responses grounded in company documentation.
+        const systemPrompt = `You are the official AI representative for ${retrieved.company.name} (${retrieved.company.domain}).
+Your role is to deliver concise, authoritative, and brand-aligned text responses grounded in company documentation.
 
 GUIDELINES:
 1. Ground your answers strictly in the provided company facts and documentation excerpts below. Do not guess or fabricate information.
-2. Always provide a comprehensive and helpful textual response. Whenever the user asks about products, pricing, features, statistics, or metrics, ALWAYS accompany your written response with an interactive OpenUI visual component block enclosed in \`\`\`openui ... \`\`\`.
-3. Follow the OpenUI Lang syntax and reference examples strictly.
+2. Always provide a comprehensive and helpful textual response using plain text and clean markdown formatting.
+3. Do NOT emit visual components, OpenUI blocks, or tool calls. Text only.
 4. Keep answers clear, technical, and executive-ready.
 5. CRITICAL RULE: NEVER USE EMOJIS ANYWHERE IN YOUR RESPONSES. Strictly use plain text and clean markdown formatting.
-
-${openuiPrompt}
 
 ${retrieved.compiledPromptContext}`;
 
@@ -123,11 +111,10 @@ ${retrieved.compiledPromptContext}`;
         }));
 
         let finalFullText = "";
-        let finalVisualSpec: VisualSpec | undefined = undefined;
 
         logger.info(`[CHAT API] Invoking streamChatCompletionGenerator with ${conversationHistory.length} messages...`);
 
-        // Stream completion via async generator
+        // Stream text-only completion via async generator
         for await (const event of streamChatCompletionGenerator([
           { role: "system", content: systemPrompt },
           ...conversationHistory,
@@ -136,26 +123,12 @@ ${retrieved.compiledPromptContext}`;
           if (event.type === "delta") {
             finalFullText += event.text;
             yield { event: "delta", data: { text: event.text } };
-          } else if (event.type === "visual") {
-            finalVisualSpec = event.spec;
-            yield { event: "visual", data: event.spec };
           } else if (event.type === "done") {
             finalFullText = event.fullText;
-            finalVisualSpec = event.visualSpec;
           }
         }
 
-        // Check if fullText contains an OpenUI block to cache in visualSpec
-        const openuiBlockMatch = /```openui\s*([\s\S]*?)\s*```/.exec(finalFullText);
-        if (openuiBlockMatch && openuiBlockMatch[1]) {
-          finalVisualSpec = {
-            type: "custom" as any,
-            props: { openui: openuiBlockMatch[1].trim() },
-            openui: openuiBlockMatch[1].trim(),
-          } as any;
-        }
-
-        // Persist assistant response in PostgreSQL
+        // Persist assistant response in PostgreSQL (text-only, no visual spec)
         const [savedMsg] = await db
           .insert(messages)
           .values({
@@ -163,7 +136,7 @@ ${retrieved.compiledPromptContext}`;
             role: "assistant",
             content: finalFullText,
             evidence: retrieved.evidence,
-            visualSpec: finalVisualSpec || null,
+            visualSpec: null,
           })
           .returning();
 
@@ -174,7 +147,7 @@ ${retrieved.compiledPromptContext}`;
             conversationId: activeConvId,
             messageId: savedMsg.id,
             evidenceCount: retrieved.evidence.length,
-            hasVisual: !!finalVisualSpec,
+            hasVisual: false,
           },
         };
       } catch (err: any) {
@@ -192,8 +165,7 @@ ${retrieved.compiledPromptContext}`;
       }),
       detail: {
         summary: "Stream Brand-Adaptive Chat Response (SSE)",
-        description:
-          "Performs hybrid retrieval, streams real-time tokens, and emits GenUI visual component specs.",
+        description: "Performs hybrid retrieval and streams real-time text-only tokens.",
       },
     }
   )
@@ -257,7 +229,7 @@ ${retrieved.compiledPromptContext}`;
       }),
       detail: {
         summary: "Get conversation messages",
-        description: "Returns message history and attached visual specs for a session.",
+        description: "Returns message history for a session.",
       },
     }
   );

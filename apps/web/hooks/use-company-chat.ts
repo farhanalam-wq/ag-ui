@@ -19,7 +19,6 @@ export interface ChatMessage {
   stage?: "idle" | "retrieving" | "synthesizing" | "done" | "error";
   stageMessage?: string;
   evidence?: EvidenceItem[];
-  visualSpec?: any;
   createdAt: Date;
 }
 
@@ -126,13 +125,6 @@ export function useCompanyChat() {
                         stage: "synthesizing",
                       }
                     : m
-                )
-              );
-            },
-            onVisual: (data) => {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantMessageId ? { ...m, visualSpec: data } : m
                 )
               );
             },

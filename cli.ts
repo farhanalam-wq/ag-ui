@@ -13,10 +13,7 @@ import {
   closeRedisConnection,
   invalidateCompanyContextCache,
 } from "./packages/database/src/index";
-import {
-  streamChatCompletionGenerator,
-  buildOpenUISystemPrompt,
-} from "./packages/shared/src/index";
+import { streamChatCompletionGenerator } from "./packages/shared/src/index";
 import { runIngestPipeline } from "./ingest-cli";
 
 interface Evidence {
@@ -30,75 +27,6 @@ interface Evidence {
 
 function divider(char = "=", len = 70) {
   console.log(char.repeat(len));
-}
-
-function renderVisualAscii(spec: any) {
-  divider("-");
-  console.log(`[VISUAL COMPONENT RENDER: ${spec.type.toUpperCase()}]`);
-  divider("-");
-
-  const props = spec.props || {};
-
-  if (spec.type === "products" && Array.isArray(props.products)) {
-    for (const p of props.products) {
-      console.log(`+-------------------------------------------------------------+`);
-      console.log(`| [PRODUCT] ${p.name.padEnd(50)}|`);
-      if (p.tag) {
-        console.log(`| Tag: ${p.tag.padEnd(55)}|`);
-      }
-      console.log(`| Description: ${p.description.slice(0, 46).padEnd(46)}|`);
-      if (p.description.length > 46) {
-        console.log(`|              ${p.description.slice(46, 92).padEnd(46)}|`);
-      }
-      console.log(`+-------------------------------------------------------------+`);
-    }
-  } else if (spec.type === "pricing" && Array.isArray(props.plans)) {
-    for (const plan of props.plans) {
-      console.log(`+-------------------------------------------------------------+`);
-      console.log(`| [TIER] ${plan.name} - ${plan.price}${plan.period ? ` / ${plan.period}` : ""}`);
-      if (plan.highlighted) console.log(`| (RECOMMENDED TIER)`);
-      if (Array.isArray(plan.features)) {
-        console.log(`| Features:`);
-        for (const f of plan.features) {
-          console.log(`|   * ${f}`);
-        }
-      }
-      console.log(`+-------------------------------------------------------------+`);
-    }
-  } else if (spec.type === "stats" && Array.isArray(props.items)) {
-    if (props.title) console.log(`Title: ${props.title}`);
-    for (const item of props.items) {
-      console.log(`* ${item.label}: ${item.value} ${item.change ? `(${item.change})` : ""}`);
-    }
-  } else if (spec.type === "map") {
-    if (props.center) {
-      console.log(`Map Center: Lat ${props.center.lat}, Lng ${props.center.lng}`);
-    }
-    if (Array.isArray(props.markers)) {
-      console.log(`Locations / Pins:`);
-      for (const m of props.markers) {
-        console.log(`  * [${m.label}] ${m.address} (Coordinates: ${m.lat}, ${m.lng})`);
-      }
-    }
-  } else if (spec.type === "timeline" && Array.isArray(props.events)) {
-    for (const ev of props.events) {
-      console.log(`[${ev.date}] ${ev.title}: ${ev.description}`);
-    }
-  } else if (spec.type === "comparison" && Array.isArray(props.rows)) {
-    console.log(`Comparison Matrix:`);
-    if (Array.isArray(props.headers)) {
-      console.log(`Headers: ${props.headers.join(" | ")}`);
-    }
-    for (const r of props.rows) {
-      console.log(`* ${r.feature}: ${Array.isArray(r.values) ? r.values.join(" vs ") : r.values}`);
-    }
-  } else {
-    console.log(`Raw Props:`, JSON.stringify(props, null, 2));
-  }
-
-  console.log("\n[RAW JSON CONTRACT DUMP]:");
-  console.log(JSON.stringify(spec, null, 2));
-  divider("-");
 }
 
 async function main() {
@@ -290,22 +218,16 @@ async function main() {
         `[RETRIEVAL] ${retrievalMs}ms (${isCacheHit ? "REDIS CACHE HIT ⚡" : "COLD RETRIEVAL"}) | ${retrieved.chunks.length} MMR chunks | ${retrieved.evidence.length} evidence sources`
       );
 
-      // 2. Build system prompt grounded strictly in retrieved context
-      const openuiPrompt = buildOpenUISystemPrompt({
-        companyName: retrieved.company.name,
-        brandPrimary: (retrieved.company as any)?.brandColor || "#3b82f6",
-      });
-
-      const systemPrompt = `You are the official multimodal AI representative for ${retrieved.company.name} (${retrieved.company.domain}).
-Your role is to deliver concise, authoritative, and brand-aligned responses grounded in company documentation.
+      // 2. Build system prompt grounded strictly in retrieved context (text-only)
+      const systemPrompt = `You are the official AI representative for ${retrieved.company.name} (${retrieved.company.domain}).
+Your role is to deliver concise, authoritative, and brand-aligned text responses grounded in company documentation.
 
 GUIDELINES:
 1. Ground your answers strictly in the provided company facts and documentation excerpts below. Do not guess or fabricate information.
-2. Always provide a comprehensive and helpful textual response. Whenever the user asks about products, pricing, features, statistics, or metrics, accompany your written response with an interactive visual component block.
-3. Keep answers clear, technical, and executive-ready.
-4. CRITICAL RULE: NEVER USE EMOJIS ANYWHERE IN YOUR RESPONSES. Strictly use plain text and clean markdown formatting.
-
-${openuiPrompt}
+2. Always provide a comprehensive and helpful textual response using plain text and clean markdown formatting.
+3. Do NOT emit visual components, OpenUI blocks, or tool calls. Text only.
+4. Keep answers clear, technical, and executive-ready.
+5. CRITICAL RULE: NEVER USE EMOJIS ANYWHERE IN YOUR RESPONSES. Strictly use plain text and clean markdown formatting.
 
 ${retrieved.compiledPromptContext}`;
 
@@ -313,9 +235,8 @@ ${retrieved.compiledPromptContext}`;
 
       const tLlm0 = performance.now();
       let fullAnswerText = "";
-      let capturedVisual: any = null;
 
-      // 3. Direct in-process LLM stream generator
+      // 3. Direct in-process LLM stream generator (text-only)
       for await (const event of streamChatCompletionGenerator([
         { role: "system", content: systemPrompt },
         { role: "user", content: trimmed },
@@ -323,8 +244,6 @@ ${retrieved.compiledPromptContext}`;
         if (event.type === "delta") {
           process.stdout.write(event.text);
           fullAnswerText += event.text;
-        } else if (event.type === "visual") {
-          capturedVisual = event.spec;
         }
       }
 
@@ -344,11 +263,6 @@ ${retrieved.compiledPromptContext}`;
           console.log(`    URL:     ${ev.url}`);
           console.log(`    Excerpt: ${ev.snippet.slice(0, 140).replace(/\n/g, " ")}...`);
         });
-      }
-
-      // 5. Render visual component if triggered
-      if (capturedVisual) {
-        renderVisualAscii(capturedVisual);
       }
 
       divider("=");
