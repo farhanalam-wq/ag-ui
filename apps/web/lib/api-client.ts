@@ -136,6 +136,23 @@ export interface EmbedConfig {
   brand: { logoUrl: string | null; tokens: any } | null;
 }
 
+export interface IssueWidgetKeyResponse {
+  widgetKey: string | null;
+  reused: boolean;
+  id: string;
+  keyPrefix: string;
+  companyId: string;
+  label: string;
+}
+
+export interface WidgetKeyListItem {
+  id: string;
+  keyPrefix: string;
+  label: string;
+  revoked: boolean;
+  createdAt: string;
+}
+
 class ApiClient {
   private baseUrl: string;
 
@@ -321,6 +338,45 @@ class ApiClient {
       if (res.status === 404) throw new Error("Assistant offline — widget key not found");
       if (res.status === 410) throw new Error("This assistant was disabled");
       if (!res.ok) throw new Error(`Failed to load assistant: HTTP ${res.status}`);
+      return res.json();
+    },
+
+    issueKey: async (companyId: string, label = "default"): Promise<IssueWidgetKeyResponse> => {
+      const res = await fetch(`${this.baseUrl}/api/embed/keys`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId, label }),
+      });
+      if (res.status === 404) throw new Error("Company not found");
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Failed to issue widget key: HTTP ${res.status} - ${errText}`);
+      }
+      return res.json();
+    },
+
+    listKeys: async (companyId: string): Promise<WidgetKeyListItem[]> => {
+      const res = await fetch(
+        `${this.baseUrl}/api/embed/keys?companyId=${encodeURIComponent(companyId)}`
+      );
+      if (res.status === 404) throw new Error("Company not found");
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Failed to list widget keys: HTTP ${res.status} - ${errText}`);
+      }
+      const data = await res.json();
+      return data.keys || [];
+    },
+
+    revokeKey: async (keyId: string): Promise<{ revoked: boolean }> => {
+      const res = await fetch(`${this.baseUrl}/api/embed/keys/${encodeURIComponent(keyId)}/revoke`, {
+        method: "POST",
+      });
+      if (res.status === 404) throw new Error("Widget key not found");
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Failed to revoke widget key: HTTP ${res.status} - ${errText}`);
+      }
       return res.json();
     },
 

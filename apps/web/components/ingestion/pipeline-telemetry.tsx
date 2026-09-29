@@ -13,6 +13,7 @@ import {
   ShareNetwork,
   Cpu,
 } from "@phosphor-icons/react";
+import { EmbedSnippet } from "./embed-snippet";
 
 export interface PipelineProgressData {
   stage: "DISCOVERING" | "CRAWLING" | "PARSING" | "EMBEDDING" | "EXTRACTING" | "READY";
@@ -320,6 +321,9 @@ export function PipelineTelemetry({
               </div>
             </div>
           )}
+
+          {/* Embeddable chatbot snippet (opaque widget key, raw shown once) */}
+          <EmbedSnippet result={result} />
         </div>
       )}
 
