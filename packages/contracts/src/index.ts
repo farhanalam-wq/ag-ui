@@ -4,3 +4,4 @@ export * from "./visual-spec";
 export * from "./answer";
 export * from "./crawl";
 export * from "./catalog";
+export * from "./widget";
