@@ -45,7 +45,11 @@ export function useCompanyChat() {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(
-    async (text: string, companyId: string) => {
+    async (
+      text: string,
+      companyIdOrKey: string,
+      options?: { apiBase?: string; channel?: "chat" | "embed" }
+    ) => {
       if (!text.trim() || isStreaming) return;
 
       const userMessageId = `user-${Date.now()}`;
@@ -79,9 +83,29 @@ export function useCompanyChat() {
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
+      const channel = options?.channel ?? "chat";
+      const streamFn =
+        channel === "embed"
+          ? (
+              payload: { message: string; conversationId?: string },
+              callbacks: Parameters<typeof apiClient.chat.stream>[2],
+              signal?: AbortSignal
+            ) =>
+              apiClient.embed.streamChat(
+                companyIdOrKey,
+                payload,
+                callbacks,
+                signal,
+                options?.apiBase
+              )
+          : (
+              payload: { message: string; conversationId?: string },
+              callbacks: Parameters<typeof apiClient.chat.stream>[2],
+              signal?: AbortSignal
+            ) => apiClient.chat.stream(companyIdOrKey, payload, callbacks, signal);
+
       try {
-        await apiClient.chat.stream(
-          companyId,
+        await streamFn(
           {
             message: text.trim(),
             conversationId: activeConversationId || undefined,

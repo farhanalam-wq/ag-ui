@@ -18,6 +18,7 @@ interface ChatMessageProps {
   message: ChatMessageType;
   companyName: string;
   brandColor?: string;
+  compact?: boolean;
   onOpenEvidence: (item?: EvidenceItem) => void;
 }
 
@@ -29,6 +30,7 @@ export function ChatMessageItem({
   message,
   companyName,
   brandColor = "#3b82f6",
+  compact = false,
   onOpenEvidence,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
@@ -43,7 +45,7 @@ export function ChatMessageItem({
   if (isUser) {
     return (
       <div className="flex justify-end w-full">
-        <div className="flex items-start gap-3 max-w-2xl">
+        <div className={`flex items-start gap-3 ${compact ? "max-w-full" : "max-w-2xl"}`}>
           <div className="rounded-2xl rounded-tr-sm bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100 shadow-sm">
             <p className="leading-relaxed whitespace-pre-wrap">{message.content}</p>
           </div>
@@ -64,10 +66,12 @@ export function ChatMessageItem({
   // Text-only mode
   return (
     <div className="flex justify-start w-full">
-      <div className="flex items-start gap-3 max-w-3xl w-full">
+      <div className={`flex items-start gap-2.5 w-full ${compact ? "max-w-none" : "max-w-3xl"}`}>
         {/* Company Avatar */}
         <div
-          className="flex items-center justify-center w-8 h-8 rounded-xl font-bold text-xs shrink-0 mt-1 shadow-inner border border-zinc-300 dark:border-zinc-700/60 transition-colors"
+          className={`flex items-center justify-center rounded-xl font-bold text-xs shrink-0 mt-1 shadow-inner border border-zinc-300 dark:border-zinc-700/60 transition-colors ${
+            compact ? "w-6 h-6 text-[10px]" : "w-8 h-8"
+          }`}
           style={{
             backgroundColor: `${brandColor}20`,
             color: brandColor,
@@ -105,7 +109,11 @@ export function ChatMessageItem({
 
           {/* Assistant Answer Body */}
           {message.content && (
-            <div className="rounded-2xl rounded-tl-sm border border-zinc-200 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/40 p-5 text-zinc-900 dark:text-zinc-100 shadow-xl backdrop-blur-sm space-y-3">
+            <div
+              className={`rounded-2xl rounded-tl-sm border border-zinc-200 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/40 text-zinc-900 dark:text-zinc-100 shadow-xl backdrop-blur-sm space-y-3 ${
+                compact ? "p-3 text-[13px]" : "p-5"
+              }`}
+            >
               <div className="prose dark:prose-invert prose-zinc max-w-none text-sm leading-relaxed space-y-2">
                 <ReactMarkdown
                   components={{

@@ -125,6 +125,17 @@ export interface ChatStreamCallbacks {
   onError?: (error: { message: string }) => void;
 }
 
+export interface EmbedConfig {
+  name: string;
+  domain: string;
+  url: string;
+  status: string;
+  ready: boolean;
+  version: number;
+  counts: { docs: number; chunks: number; facts: number };
+  brand: { logoUrl: string | null; tokens: any } | null;
+}
+
 class ApiClient {
   private baseUrl: string;
 
@@ -233,6 +244,117 @@ class ApiClient {
       if (!reader) {
         throw new Error("Response body is not a readable stream");
       }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const blocks = buffer.split("\n\n");
+        buffer = blocks.pop() || "";
+
+        for (const block of blocks) {
+          const trimmed = block.trim();
+          if (!trimmed) continue;
+
+          let eventType = "message";
+          let eventDataString = "";
+
+          const lines = trimmed.split("\n");
+          for (const line of lines) {
+            if (line.startsWith("event:")) {
+              eventType = line.replace("event:", "").trim();
+            } else if (line.startsWith("data:")) {
+              eventDataString = line.replace("data:", "").trim();
+            }
+          }
+
+          if (!eventDataString) continue;
+
+          try {
+            const parsed = JSON.parse(eventDataString);
+            let actualEvent = eventType;
+            let actualData = parsed;
+
+            // Support Elysia generator envelope: { event: "...", data: ... }
+            if (parsed && typeof parsed === "object" && "event" in parsed && "data" in parsed) {
+              actualEvent = parsed.event;
+              actualData = parsed.data;
+            }
+
+            if (actualEvent === "status") {
+              callbacks.onStatus?.(actualData);
+            } else if (actualEvent === "brand") {
+              callbacks.onBrand?.(actualData);
+            } else if (actualEvent === "evidence") {
+              callbacks.onEvidence?.(Array.isArray(actualData) ? actualData : []);
+            } else if (actualEvent === "delta") {
+              callbacks.onDelta?.(actualData);
+            } else if (actualEvent === "done") {
+              callbacks.onDone?.(actualData);
+            } else if (actualEvent === "error") {
+              callbacks.onError?.(actualData);
+            }
+          } catch {
+            // Ignore malformed partial chunks
+          }
+        }
+      }
+    },
+  };
+
+  /**
+   * Embed endpoints (opaque widget-key surface — never company ids)
+   */
+  embed = {
+    baseFor: (customBase?: string): string => {
+      if (customBase && customBase.trim()) return customBase.trim().replace(/\/$/, "");
+      return this.baseUrl;
+    },
+
+    getConfig: async (widgetKey: string, customBase?: string): Promise<EmbedConfig> => {
+      const base = this.embed.baseFor(customBase);
+      const res = await fetch(`${base}/api/embed/${encodeURIComponent(widgetKey)}/config`);
+      if (res.status === 404) throw new Error("Assistant offline — widget key not found");
+      if (res.status === 410) throw new Error("This assistant was disabled");
+      if (!res.ok) throw new Error(`Failed to load assistant: HTTP ${res.status}`);
+      return res.json();
+    },
+
+    streamChat: async (
+      widgetKey: string,
+      payload: ChatStreamPayload,
+      callbacks: ChatStreamCallbacks,
+      signal?: AbortSignal,
+      customBase?: string
+    ): Promise<void> => {
+      const base = this.embed.baseFor(customBase);
+      const res = await fetch(`${base}/api/embed/${encodeURIComponent(widgetKey)}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal,
+      });
+
+      if (res.status === 404) throw new Error("Assistant offline — widget key not found");
+      if (res.status === 410) throw new Error("This assistant was disabled");
+      if (res.status === 409) throw new Error("Company indexing — try again shortly");
+      if (res.status === 429) {
+        const retryAfter = res.headers.get("retry-after");
+        throw new Error(
+          retryAfter ? `Slow down — retry in ${retryAfter}s` : "Slow down — too many requests"
+        );
+      }
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Embed chat failed (${res.status}): ${errText}`);
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("Response body is not a readable stream");
 
       const decoder = new TextDecoder();
       let buffer = "";
