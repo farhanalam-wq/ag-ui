@@ -98,6 +98,9 @@
     "box-shadow:0 24px 70px rgba(0,0,0,.5);background:#09090b;";
   // Allow the embedded app's own scripts while keeping host isolation.
   frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups");
+  // Voice: the iframe needs microphone permission or getUserMedia is denied
+  // inside the panel. Host page must be HTTPS (or localhost) for mic access.
+  frame.setAttribute("allow", "microphone; autoplay");
 
   var srcLoaded = false;
   orb.addEventListener("click", function () {

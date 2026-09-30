@@ -15,6 +15,12 @@ import { Buildings, CircleNotch, WarningCircle } from "@phosphor-icons/react";
 import { useCompanyChat } from "@/hooks/use-company-chat";
 import { ChatMessageItem } from "@/components/chat-message";
 import { apiClient, type EmbedConfig } from "@/lib/api-client";
+import { VoiceSession } from "@/components/voice/voice-session";
+import {
+  VoiceAmplitudeBars,
+  VoiceChatButton,
+  VoiceErrorChip,
+} from "@/components/voice/voice-chat-button";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +55,7 @@ export default function EmbedChatPage() {
     messages,
     isStreaming,
     sendMessage,
+    appendVoiceTranscript,
     openDrawerWithEvidence,
   } = useCompanyChat();
 
@@ -237,7 +244,14 @@ export default function EmbedChatPage() {
           </main>
 
           <div className="shrink-0 p-2 border-t border-zinc-800 bg-zinc-950/90">
-            <PromptInput
+            <VoiceSession
+              key={widgetKey}
+              widgetKey={widgetKey}
+              apiBase={apiBase}
+              onFinalLines={appendVoiceTranscript}
+            >
+              {() => (
+              <PromptInput
               value={input}
               onValueChange={setInput}
               onSubmit={handleSubmit}
@@ -258,13 +272,23 @@ export default function EmbedChatPage() {
                     label={config?.domain || "assistant"}
                     className="bg-zinc-800/80 border-zinc-700/60 text-zinc-300"
                   />
+                  <VoiceErrorChip />
                 </PromptInputTools>
+                <div className="flex items-center gap-1.5">
+                  <VoiceAmplitudeBars />
+                  <VoiceChatButton
+                    disabled={phase !== "chat"}
+                    title={phase !== "chat" ? "Available when Ready" : undefined}
+                  />
                 <PromptInputSubmit
                   className="bg-zinc-100 hover:bg-white text-zinc-950 cursor-pointer"
                   aria-label="Submit prompt"
                 />
+                </div>
               </PromptInputFooter>
-            </PromptInput>
+              </PromptInput>
+              )}
+            </VoiceSession>
           </div>
         </>
       )}
