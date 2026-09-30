@@ -12,7 +12,7 @@ import {
 
 export function NavSettings() {
   return (
-    <SidebarGroup className="mt-auto">
+    <SidebarGroup className="p-0">
       <SidebarGroupLabel className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 px-2 py-1">
         Platform
       </SidebarGroupLabel>

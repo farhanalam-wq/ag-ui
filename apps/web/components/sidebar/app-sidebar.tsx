@@ -20,7 +20,7 @@ interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   selectedCompany: CompanyItem;
   onSelectCompany: (company: CompanyItem) => void;
   onOpenAddCompany: () => void | Promise<void>;
-  onNewChat: () => void;
+  onNewChat: () => void | Promise<void>;
 }
 
 export function AppSidebar({
@@ -74,11 +74,11 @@ export function AppSidebar({
 
       <SidebarContent className="space-y-2 py-2">
         <NavChats onNewChat={onNewChat} />
-        <SidebarSeparator className="bg-zinc-200 dark:bg-zinc-900 mx-2" />
-        <NavSettings />
       </SidebarContent>
 
       <SidebarFooter className="border-t border-zinc-200/80 dark:border-zinc-900/80 p-2 space-y-2">
+        <NavSettings />
+        <SidebarSeparator className="bg-zinc-200 dark:bg-zinc-900 mx-1" />
         <NavUser />
       </SidebarFooter>
 
