@@ -31,11 +31,33 @@ Thumbs.db
 !.vscode/extensions.json
 .idea/
 
-# Docker volumes / scratch
+# Runtime data / Docker volumes / scratch (never commit)
 scratch/
 pgdata/
-docs/
-REFERENCE.md
-UPGRADE_REFERENCE.md
-EMBED_WIDGET_PLAN.md
+storage/
+qdrant_storage/
+*.sqlite
+*.db
+
+# Test / coverage / debug
+coverage/
+.nyc_output/
+test-results/
+*.test.log
+
+# Bun / Node runtime
+.bun/
+bun-debug.log*
+
+# Local agent tooling (machine-specific, never commit)
 .agents/
+
+# Track these docs explicitly (plan files live at root by convention)
+!README.md
+!VOICE_IMPLEMENTATION_PLAN.md
+!.env.example
+
+# Internal Docs
+EMBED_WIDGET_PLAN.md
+VOICE_IMPLEMENTATION_PLAN.md 
+docs/

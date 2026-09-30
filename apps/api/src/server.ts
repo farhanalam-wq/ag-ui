@@ -6,6 +6,7 @@ import { companiesRoutes } from "./routes/companies";
 import { chatRoutes } from "./routes/chat";
 import { crawlerRoutes } from "./routes/crawler";
 import { embedRoutes } from "./routes/embed";
+import { voiceRoutes } from "./routes/voice";
 
 const PORT = parseInt(process.env.PORT || "3001", 10);
 
@@ -36,6 +37,7 @@ export const app = new Elysia()
   .use(chatRoutes)
   .use(crawlerRoutes)
   .use(embedRoutes)
+  .use(voiceRoutes)
   .listen(PORT);
 
 logger.info(`ag-ui Elysia API running at http://localhost:${PORT}`);

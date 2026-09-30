@@ -12,9 +12,9 @@ function rateLimitEnv(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function bucketKey(scope: string, keyHash: string, ip: string): string {
+function bucketKey(namespace: string, window: string, keyHash: string, ip: string): string {
   const ipHash = createHash("sha256").update(ip).digest("hex").slice(0, 32);
-  return `rl:embed:${scope}:${keyHash.slice(0, 32)}:${ipHash}`;
+  return `rl:${namespace}:${window}:${keyHash.slice(0, 32)}:${ipHash}`;
 }
 
 async function checkBucket(
@@ -42,12 +42,16 @@ async function checkBucket(
 }
 
 /**
- * Anonymous embed rate limit, scoped per widget key hash + client IP.
+ * Anonymous rate limit, scoped per namespace + key hash + client IP.
  * Fail-open when Redis is unavailable (logs once via cache layer).
+ *
+ * `scope` namespaces the Redis keys (e.g. "embed" for text chat,
+ * "voice" for voice token mints) so buckets never collide across surfaces.
  */
 export async function checkEmbedRateLimit(
   keyHash: string,
-  ip: string
+  ip: string,
+  scope = "embed"
 ): Promise<EmbedRateLimitResult> {
   const perMin = rateLimitEnv("EMBED_RATE_PER_MIN", 30);
   const perDay = rateLimitEnv("EMBED_RATE_PER_DAY", 200);
@@ -55,9 +59,9 @@ export async function checkEmbedRateLimit(
   if (!r) return { allowed: true, retryAfterSec: 0 };
 
   try {
-    const min = await checkBucket(r, bucketKey("min", keyHash, ip), perMin, 60);
+    const min = await checkBucket(r, bucketKey(scope, "min", keyHash, ip), perMin, 60);
     if (!min.allowed) return min;
-    const day = await checkBucket(r, bucketKey("day", keyHash, ip), perDay, 86400);
+    const day = await checkBucket(r, bucketKey(scope, "day", keyHash, ip), perDay, 86400);
     return day;
   } catch {
     return { allowed: true, retryAfterSec: 0 };
