@@ -6,7 +6,6 @@ import {
   WarningCircle,
   Clock,
   Sparkle,
-  ArrowRight,
   Database,
   Globe,
   Tag,
@@ -63,7 +62,6 @@ interface PipelineTelemetryProps {
   logs: string[];
   result: PipelineResultData | null;
   error: string | null;
-  onLaunchChat: () => void;
   onReset: () => void;
 }
 
@@ -81,7 +79,6 @@ export function PipelineTelemetry({
   logs,
   result,
   error,
-  onLaunchChat,
   onReset,
 }: PipelineTelemetryProps) {
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -262,15 +259,6 @@ export function PipelineTelemetry({
                 Knowledge base fully indexed into PostgreSQL & Qdrant with brand tokens extracted.
               </p>
             </div>
-
-            <button
-              type="button"
-              onClick={onLaunchChat}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-xs font-semibold bg-emerald-500 hover:bg-emerald-400 text-zinc-950 shadow-lg shadow-emerald-500/20 transition-all shrink-0 cursor-pointer"
-            >
-              <span>Launch Intelligence Chat</span>
-              <ArrowRight className="size-3.5" />
-            </button>
           </div>
 
           {/* Timing Breakdown Table */}

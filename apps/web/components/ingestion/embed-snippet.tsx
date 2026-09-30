@@ -191,8 +191,9 @@ export function EmbedSnippet({ result }: EmbedSnippetProps) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* Test opens first-party chat; snippet/preview above remain the embed route */}
             <a
-              href={`${webOrigin}/embed/${encodeURIComponent(raw)}?api=${encodeURIComponent(apiBase)}`}
+              href={`${webOrigin}/?company=${encodeURIComponent(result.companyId)}`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90"

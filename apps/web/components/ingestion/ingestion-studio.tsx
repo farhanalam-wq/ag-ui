@@ -303,29 +303,6 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
     }
   };
 
-  // 3. Hand off company to chat
-  const handleLaunchChat = () => {
-    if (!result) return;
-
-    const brandColor = result.brand?.tokens?.colors?.primary || "#3b82f6";
-    const companyPayload: CompanyItem = {
-      id: result.companyId,
-      name: result.companyName,
-      domain: result.domain,
-      description: `Indexed knowledge base for ${result.companyName} (${result.domain}).`,
-      brandColor,
-      badge: `${result.chunkCount} Chunks • Indexed`,
-      suggestedQueries: [
-        `What are the core products and APIs provided by ${result.companyName}?`,
-        `What are the pricing tiers, limits, and plan options?`,
-        `Where are ${result.companyName} headquarters and contact options?`,
-        `What enterprise security and compliance certifications exist?`,
-      ],
-    };
-
-    onCompanyIndexed(companyPayload);
-  };
-
   const handleReset = () => {
     setStep("input");
     setDiscoveryData(null);
@@ -663,7 +640,6 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
           logs={logs}
           result={result}
           error={pipelineError}
-          onLaunchChat={handleLaunchChat}
           onReset={handleReset}
         />
       )}

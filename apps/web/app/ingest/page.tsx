@@ -86,10 +86,6 @@ export default function IngestRoutePage() {
             }}
             onOpenAddCompany={() => {}}
             onNewChat={() => router.push("/")}
-            chunkCount={selectedCompany.chunkCount ?? 0}
-            documentCount={selectedCompany.docCount ?? 0}
-            factCount={selectedCompany.factCount ?? 0}
-            status={selectedCompany.status ?? "Ready"}
           />
         )}
 
