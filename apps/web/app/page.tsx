@@ -27,6 +27,12 @@ import { useCompanyChat } from "@/hooks/use-company-chat";
 import { ChatMessageItem } from "@/components/chat-message";
 import { EvidenceDrawer } from "@/components/evidence-drawer";
 import { IngestionStudio } from "@/components/ingestion/ingestion-studio";
+import { VoiceSession } from "@/components/voice/voice-session";
+import {
+  VoiceAmplitudeBars,
+  VoiceChatButton,
+  VoiceErrorChip,
+} from "@/components/voice/voice-chat-button";
 import { apiClient } from "@/lib/api-client";
 import {
   SidebarProvider,
@@ -116,6 +122,9 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [workspaceView, setWorkspaceView] = useState<"chat" | "ingest">("chat");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Suppressed voice appends on company switch: partial utterances from the
+  // previous company must never land in the new company's thread.
+  const discardVoiceRef = useRef(false);
 
   const {
     messages,
@@ -124,6 +133,7 @@ export default function Home() {
     activeEvidence,
     sendMessage,
     clearMessages,
+    appendVoiceTranscript,
     isDrawerOpen,
     selectedEvidence,
     openDrawerWithEvidence,
@@ -203,12 +213,14 @@ export default function Home() {
   }, [messages, isStreaming]);
 
   const handleSelectCompany = (company: CompanyItem) => {
+    discardVoiceRef.current = true;
     setSelectedCompany(company);
     clearMessages();
     setQuery("");
   };
 
   const handleCompanyIndexed = (newCompany: CompanyItem) => {
+    discardVoiceRef.current = true;
     setCompanies((prev) => {
       const exists = prev.some(
         (c) => c.domain.toLowerCase() === newCompany.domain.toLowerCase()
@@ -434,8 +446,20 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Bottom Docked PromptInput */}
-              <div className="w-full sticky bottom-4 z-20 pt-2">
+              {/* Bottom Docked PromptInput + Voice Call */}
+              <VoiceSession
+                key={selectedCompany.id}
+                companyId={selectedCompany.id}
+                onFinalLines={(lines) => {
+                  if (discardVoiceRef.current) {
+                    discardVoiceRef.current = false;
+                    return;
+                  }
+                  appendVoiceTranscript(lines);
+                }}
+              >
+                {() => (
+                <div className="w-full sticky bottom-4 z-20 pt-2">
                 <PromptInput
                   value={query}
                   onValueChange={setQuery}
@@ -454,7 +478,7 @@ export default function Home() {
                   <PromptInputFooter>
                     <PromptInputTools>
                       <PromptInputBadge
-                        icon={Buildings}
+                          icon={Buildings}
                         label={selectedCompany.domain}
                         className="bg-zinc-900/90 border-zinc-800 text-zinc-300"
                       />
@@ -463,9 +487,12 @@ export default function Home() {
                         label="Qdrant HNSW"
                         className="hidden sm:inline-flex bg-zinc-900/50 border-zinc-800/80 text-zinc-400"
                       />
+                      <VoiceErrorChip />
                     </PromptInputTools>
 
                     <div className="flex items-center gap-2">
+                      <VoiceAmplitudeBars />
+                      <VoiceChatButton />
                       <span className="hidden sm:inline-block text-[11px] text-zinc-500 font-mono">
                         Return to send
                       </span>
@@ -476,7 +503,9 @@ export default function Home() {
                     </div>
                   </PromptInputFooter>
                 </PromptInput>
-              </div>
+                </div>
+                )}
+              </VoiceSession>
             </main>
           )}
         </SidebarInset>
