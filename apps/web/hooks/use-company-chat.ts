@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef } from "react";
 
 import { apiClient } from "@/lib/api-client";
+import type { VoiceLine } from "@/components/voice/voice-session";
 
 export interface EvidenceItem {
   id: string;
@@ -217,6 +218,27 @@ export function useCompanyChat() {
     setIsDrawerOpen(true);
   }, []);
 
+  /**
+   * Append finalized voice-call utterances as plain text messages (v1).
+   * Local-only: no network, no SSE, no evidence, no persistence —
+   * voice answers never carry citations they were not grounded with.
+   */
+  const appendVoiceTranscript = useCallback((lines: VoiceLine[]) => {
+    const stamp = Date.now();
+    const mapped: ChatMessage[] = lines
+      .filter((l) => l.text.trim().length > 0)
+      .map((l, i) => ({
+        id: `${l.speaker}-voice-${stamp}-${i}`,
+        role: l.speaker === "agent" ? ("assistant" as const) : ("user" as const),
+        content: l.text.trim(),
+        stage: "done" as const,
+        evidence: [],
+        createdAt: new Date(),
+      }));
+    if (mapped.length === 0) return;
+    setMessages((prev) => [...prev, ...mapped]);
+  }, []);
+
   const closeDrawer = useCallback(() => {
     setIsDrawerOpen(false);
     setSelectedEvidence(null);
@@ -231,6 +253,7 @@ export function useCompanyChat() {
     activeConversationId,
     sendMessage,
     clearMessages,
+    appendVoiceTranscript,
     isDrawerOpen,
     selectedEvidence,
     openDrawerWithEvidence,
