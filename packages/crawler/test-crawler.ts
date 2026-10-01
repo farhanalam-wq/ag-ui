@@ -92,17 +92,18 @@ Acme provides cloud infrastructure.
   const clean = extractCleanContent(sampleHtml, "https://example.com/pricing");
   if (
     clean.category === "pricing" &&
+    clean.content.includes("# Enterprise Pricing") &&
     clean.content.includes("Our enterprise tier starts at $99") &&
     !clean.content.includes("Accept cookies")
   ) {
-    console.log(`[PASS] Content cleaned: Category='${clean.category}', Title='${clean.title}'. Boilerplate stripped.\n`);
+    console.log(`[PASS] Content cleaned & Markdown headings preserved: Category='${clean.category}', Title='${clean.title}'.\n`);
   } else {
-    console.error("[FAIL] Content cleaning failed:", clean);
+    console.error("[FAIL] Content cleaning failed or headings missing:", clean);
     process.exit(1);
   }
 
-  // Test 5: Brand Intelligence Extraction
-  console.log("[TEST 5] Verifying Brand Intelligence Extraction...");
+  // Test 5: Brand Intelligence Extraction (Classic Hex)
+  console.log("[TEST 5] Verifying Brand Intelligence Extraction (Classic Hex)...");
   const brandHtml = `
     <html>
       <head>
@@ -119,18 +120,87 @@ Acme provides cloud infrastructure.
       </body>
     </html>
   `;
-  const brand = extractBrandIntelligence(brandHtml, new URL("https://example.com"));
+  const brand = await extractBrandIntelligence(brandHtml, new URL("https://example.com"), { fetchExternalCss: false });
   if (
     brand.tokens.colors.primary === "#10b981" &&
-    brand.logoUrl === "https://example.com/assets/og-logo.png"
+    brand.logoUrl === "https://example.com/assets/og-logo.png" &&
+    brand.tokens.stylesheet &&
+    brand.tokens.stylesheet.includes("--brand-primary: #10b981;")
   ) {
-    console.log(`[PASS] Brand extracted: Primary='${brand.tokens.colors.primary}', Logo='${brand.logoUrl}'.\n`);
+    console.log(`[PASS] Brand extracted: Primary='${brand.tokens.colors.primary}', Logo='${brand.logoUrl}', Stylesheet compiled.\n`);
   } else {
     console.error("[FAIL] Brand extraction failed:", brand);
     process.exit(1);
   }
 
-  console.log("[ALL TESTS PASSED] packages/crawler is fully verified!");
+  // Test 6: Modern Tailwind / shadcn HSL & Dynamic Stylesheet Generation
+  console.log("[TEST 6] Verifying Modern Tailwind HSL & Dynamic Stylesheet Compilation...");
+  const modernBrandHtml = `
+    <html class="light">
+      <head>
+        <style>
+          :root {
+            --primary: 221.2 83.2% 53.3%;
+            --secondary: 217.2 91.2% 59.8%;
+            --background: 0 0% 100%;
+            --foreground: 222.2 84% 4.9%;
+            --radius: 0.75rem;
+          }
+        </style>
+      </head>
+      <body>
+        <h1>Modern SaaS</h1>
+      </body>
+    </html>
+  `;
+  const modernBrand = await extractBrandIntelligence(modernBrandHtml, new URL("https://modern.example.com"), { fetchExternalCss: false });
+  if (
+    modernBrand.tokens.colors.primary &&
+    modernBrand.tokens.colors.primary.startsWith("#") &&
+    modernBrand.tokens.theme === "light" &&
+    modernBrand.tokens.colors.background === "#ffffff" &&
+    modernBrand.tokens.radius === "0.75rem" &&
+    modernBrand.tokens.cssVariables &&
+    modernBrand.tokens.cssVariables["--brand-primary"] === modernBrand.tokens.colors.primary
+  ) {
+    console.log(`[PASS] Tailwind HSL converted to Hex: Primary='${modernBrand.tokens.colors.primary}', Theme='${modernBrand.tokens.theme}', Radius='${modernBrand.tokens.radius}'.\n`);
+  } else {
+    console.error("[FAIL] Modern Tailwind HSL brand extraction failed:", modernBrand);
+    process.exit(1);
+  }
+
+  // Test 7: Dark Mode Detection via Background Luminance
+  console.log("[TEST 7] Verifying Dark Theme Luminance Detection...");
+  const darkBrandHtml = `
+    <html class="dark">
+      <head>
+        <style>
+          :root {
+            --primary: #8b5cf6;
+            --background: #0f172a;
+            --foreground: #f8fafc;
+          }
+        </style>
+      </head>
+      <body>
+        <h1>Dark Console</h1>
+      </body>
+    </html>
+  `;
+  const darkBrand = await extractBrandIntelligence(darkBrandHtml, new URL("https://dark.example.com"), { fetchExternalCss: false });
+  if (
+    darkBrand.tokens.colors.primary === "#8b5cf6" &&
+    darkBrand.tokens.theme === "dark" &&
+    darkBrand.tokens.colors.background === "#0f172a" &&
+    darkBrand.tokens.colors.foreground === "#f8fafc"
+  ) {
+    console.log(`[PASS] Dark theme detected: Theme='${darkBrand.tokens.theme}', Background='${darkBrand.tokens.colors.background}'.\n`);
+  } else {
+    console.error("[FAIL] Dark theme detection failed:", darkBrand);
+    process.exit(1);
+  }
+
+  console.log("[ALL TESTS PASSED] packages/crawler is fully verified with dynamic stylesheets & markdown headings!");
 }
 
 runTests().catch((err) => {

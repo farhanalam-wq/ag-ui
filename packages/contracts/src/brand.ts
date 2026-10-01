@@ -6,6 +6,10 @@ export const BrandTokensSchema = z.object({
     secondary: z.string().optional(),
     background: z.string(),
     foreground: z.string(),
+    muted: z.string().optional(),
+    border: z.string().optional(),
+    card: z.string().optional(),
+    accent: z.string().optional(),
   }),
   typography: z.object({
     headingFont: z.string().optional(),
@@ -13,6 +17,9 @@ export const BrandTokensSchema = z.object({
   }),
   radius: z.string(),
   style: z.enum(["corporate", "playful", "minimal", "technical"]),
+  theme: z.enum(["light", "dark", "auto"]).optional(),
+  cssVariables: z.record(z.string()).optional(),
+  stylesheet: z.string().optional(),
 });
 export type BrandTokens = z.infer<typeof BrandTokensSchema>;
 

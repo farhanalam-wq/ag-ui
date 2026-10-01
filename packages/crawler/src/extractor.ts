@@ -1,6 +1,13 @@
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
 import * as cheerio from "cheerio";
+import TurndownService from "turndown";
+
+const turndownService = new TurndownService({
+  headingStyle: "atx",
+  codeBlockStyle: "fenced",
+  emDelimiter: "*",
+});
 
 export interface ExtractedPageContent {
   title: string;
@@ -61,9 +68,13 @@ export function extractCleanContent(rawHtml: string, pageUrl: string): Extracted
     });
     const article = reader.parse();
 
-    if (article && article.textContent && article.textContent.trim().length > 50) {
+    if (article && (article.content || article.textContent) && (article.textContent?.trim().length || 0) > 50) {
+      const markdown = article.content
+        ? turndownService.turndown(article.content)
+        : article.textContent || "";
+
       // Normalize whitespace
-      const normalizedText = article.textContent
+      const normalizedText = markdown
         .replace(/\n\s*\n\s*\n/g, "\n\n")
         .trim();
 
@@ -82,9 +93,19 @@ export function extractCleanContent(rawHtml: string, pageUrl: string): Extracted
     // Readability fallback to Cheerio text extraction
   }
 
-  // Fallback: Direct text extraction using Cheerio
+  // Fallback: Direct text extraction using Cheerio converted through turndown
   const fallbackTitle = $("title").text().trim() || $("h1").first().text().trim() || "Untitled Document";
-  const bodyText = $("body").text().replace(/\s+/g, " ").trim();
+  const bodyHtml = $("body").html() || "";
+  let bodyText = "";
+  if (bodyHtml) {
+    try {
+      bodyText = turndownService.turndown(bodyHtml).trim();
+    } catch {
+      bodyText = $("body").text().replace(/\s+/g, " ").trim();
+    }
+  } else {
+    bodyText = $("body").text().replace(/\s+/g, " ").trim();
+  }
 
   return {
     title: fallbackTitle,

@@ -29,6 +29,27 @@ export interface BrandTokens {
   logoUrl?: string;
   style?: string;
   radius?: string;
+  tokens?: {
+    colors?: {
+      primary?: string;
+      secondary?: string;
+      background?: string;
+      foreground?: string;
+      muted?: string;
+      border?: string;
+      card?: string;
+      accent?: string;
+    };
+    typography?: {
+      headingFont?: string;
+      bodyFont?: string;
+    };
+    radius?: string;
+    style?: string;
+    theme?: "light" | "dark" | "auto";
+    cssVariables?: Record<string, string>;
+    stylesheet?: string;
+  };
 }
 
 export function useCompanyChat() {
@@ -124,10 +145,30 @@ export function useCompanyChat() {
             },
             onBrand: (data) => {
               setActiveBrand(data);
-              if (data.tokens?.colors?.primary) {
+              const tokens = data.tokens || (data as any);
+
+              // Inject dynamic compiled stylesheet into DOM
+              if (tokens?.stylesheet && typeof document !== "undefined") {
+                let styleEl = document.getElementById("ag-brand-dynamic-theme");
+                if (!styleEl) {
+                  styleEl = document.createElement("style");
+                  styleEl.id = "ag-brand-dynamic-theme";
+                  document.head.appendChild(styleEl);
+                }
+                styleEl.textContent = tokens.stylesheet;
+              }
+
+              // Apply all extracted CSS custom properties
+              if (tokens?.cssVariables && typeof document !== "undefined") {
+                for (const [key, val] of Object.entries(tokens.cssVariables)) {
+                  if (typeof val === "string") {
+                    document.documentElement.style.setProperty(key, val);
+                  }
+                }
+              } else if (tokens?.colors?.primary && typeof document !== "undefined") {
                 document.documentElement.style.setProperty(
                   "--brand-primary",
-                  data.tokens.colors.primary
+                  tokens.colors.primary
                 );
               }
             },

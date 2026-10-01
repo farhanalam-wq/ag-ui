@@ -135,9 +135,9 @@ export class CompanyCrawler {
         if (fetchRes.status >= 200 && fetchRes.status < 300 && fetchRes.html) {
           // Extract brand on root page
           if (current.depth === 0 || current.url === rootNormalized) {
-            brandData = extractBrandIntelligence(fetchRes.html, baseUrl);
+            brandData = await extractBrandIntelligence(fetchRes.html, baseUrl, { fetchExternalCss: true });
             logger.info(
-              `[CRAWLER] Extracted Brand: primary=${brandData.tokens.colors.primary}, logo=${brandData.logoUrl || "none"}`
+              `[CRAWLER] Extracted Brand: primary=${brandData.tokens.colors.primary}, theme=${brandData.tokens.theme || "auto"}, stylesheet=${brandData.tokens.stylesheet ? "yes" : "no"}, logo=${brandData.logoUrl || "none"}`
             );
           }
 

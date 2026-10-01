@@ -136,6 +136,15 @@
     })
     .then(function (cfg) {
       if (!cfg) return;
+      if (cfg && cfg.brand && cfg.brand.tokens && cfg.brand.tokens.stylesheet) {
+        var styleEl = document.getElementById("ag-brand-embed-theme");
+        if (!styleEl) {
+          styleEl = document.createElement("style");
+          styleEl.id = "ag-brand-embed-theme";
+          document.head.appendChild(styleEl);
+        }
+        styleEl.textContent = cfg.brand.tokens.stylesheet;
+      }
       var primary =
         (cfg.brand && cfg.brand.tokens && cfg.brand.tokens.colors && cfg.brand.tokens.colors.primary) ||
         color;

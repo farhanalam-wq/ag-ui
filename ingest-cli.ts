@@ -1108,14 +1108,15 @@ async function populateDb(
   // Brand upsert from root HTML.
   try {
     const brandData = rootHtml
-      ? extractBrandIntelligence(rootHtml, baseUrl)
+      ? await extractBrandIntelligence(rootHtml, baseUrl, { fetchExternalCss: true })
       : {
           logoUrl: undefined as any,
           tokens: {
-            colors: { primary: "#2563eb", background: "#09090b", foreground: "#fafafa" },
+            colors: { primary: "#2563eb", background: "#ffffff", foreground: "#09090b" },
             typography: {},
             radius: "0.5rem",
             style: "corporate",
+            theme: "light",
           } as any,
         };
     const [eb] = await db.select().from(brands).where(eq(brands.companyId, companyId)).limit(1);
@@ -1124,7 +1125,7 @@ async function populateDb(
     } else {
       await db.insert(brands).values({ companyId, logoUrl: (brandData as any).logoUrl, tokens: (brandData as any).tokens });
     }
-    console.log(`[DB] brand upserted (primary=${(brandData as any).tokens?.colors?.primary})`);
+    console.log(`[DB] brand upserted (primary=${(brandData as any).tokens?.colors?.primary}, theme=${(brandData as any).tokens?.theme || "auto"}, stylesheet=${(brandData as any).tokens?.stylesheet ? "yes" : "no"})`);
   } catch (err: any) {
     console.log(`[DB] brand extraction skipped: ${err.message}`);
   }
