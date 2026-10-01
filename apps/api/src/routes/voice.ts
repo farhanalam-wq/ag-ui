@@ -5,6 +5,7 @@ import {
   companySnapshots,
   resolveWidgetKeyByHash,
   checkEmbedRateLimit,
+  getRedisClient,
   eq,
   desc,
 } from "@ag-ui/database";
@@ -13,6 +14,10 @@ import { hashWidgetKey, logger } from "@ag-ui/shared";
 const VOICEKIT_TOKEN_PATH = "/api/web-call/get-token";
 const VOICEKIT_FETCH_TIMEOUT_MS = 15000;
 const PROVIDER_DETAIL_MAX_CHARS = 300;
+const VOICE_ROOM_TTL_SECONDS = 3600;
+
+// In-memory room -> company fallback (Redis is durable path below).
+const roomCompanyMap = new Map<string, string>();
 
 function getClientIp(request: Request): string {
   const forwarded = request.headers.get("x-forwarded-for");
@@ -55,8 +60,13 @@ interface VoiceKitMint {
  * Mint a short-lived LiveKit web-call token from the VoiceKit provider.
  * The provider API key never leaves the server — the browser only
  * receives the LiveKit token, room name, and public LiveKit URL.
+ * `company.id` is always injected server-side so the assistant prompt
+ * can render {{company.id}} and the tool can enforce per-call isolation.
  */
-async function mintVoiceKitToken(metadata?: { customer?: { name?: string } }): Promise<VoiceKitMint> {
+async function mintVoiceKitToken(metadata: {
+  customer?: { name?: string };
+  company: { id: string };
+}): Promise<VoiceKitMint> {
   const baseUrl = (process.env.VOICEKIT_API_URL || "").replace(/\/$/, "");
   const apiKey = process.env.VOICEKIT_API_KEY || "";
   const assistantId = process.env.VOICEKIT_ASSISTANT_ID || "";
@@ -119,7 +129,7 @@ export const voiceRoutes = new Elysia({ prefix: "/api/voice" }).post(
     }
 
     // 1. Resolve identity (company row for both paths).
-    let company: { id: string } | undefined;
+    let company: { id: string; name: string; domain: string } | undefined;
     let rateLimitScopeId: string;
 
     if (widgetKey) {
@@ -133,7 +143,7 @@ export const voiceRoutes = new Elysia({ prefix: "/api/voice" }).post(
         return { error: "Widget key revoked" };
       }
       const [row] = await db
-        .select({ id: companies.id })
+        .select({ id: companies.id, name: companies.name, domain: companies.domain })
         .from(companies)
         .where(eq(companies.id, resolved.row.companyId))
         .limit(1);
@@ -141,7 +151,7 @@ export const voiceRoutes = new Elysia({ prefix: "/api/voice" }).post(
       rateLimitScopeId = resolved.keyHash;
     } else {
       const [row] = await db
-        .select({ id: companies.id })
+        .select({ id: companies.id, name: companies.name, domain: companies.domain })
         .from(companies)
         .where(eq(companies.id, companyId!))
         .limit(1);
@@ -177,12 +187,30 @@ export const voiceRoutes = new Elysia({ prefix: "/api/voice" }).post(
     }
 
     // 4. Mint via the provider (key stays server-side).
+    // Company id is injected server-side — never trust client-sent company.
     const customerName = metadata?.customer?.name?.trim().slice(0, 120);
     try {
-      const minted = await mintVoiceKitToken(
-        customerName ? { customer: { name: customerName } } : undefined
-      );
-      logger.info(`[VOICE] Minted web-call token for company ${company.id}`);
+      const minted = await mintVoiceKitToken({
+        ...(customerName ? { customer: { name: customerName } } : {}),
+        company: { id: company.id },
+      });
+      if (minted.roomName) {
+        roomCompanyMap.set(minted.roomName, company.id);
+        try {
+          const r = await getRedisClient();
+          if (r) {
+            await r.set(
+              `voice:room:${minted.roomName}`,
+              company.id,
+              "EX",
+              VOICE_ROOM_TTL_SECONDS
+            );
+          }
+        } catch {
+          // best-effort: in-memory map above still resolves this process
+        }
+      }
+      logger.info(`[VOICE] Minted web-call token for company ${company.id} (${company.domain}) room ${minted.roomName ?? "unknown"}`);
       return {
         token: minted.token,
         roomName: minted.roomName ?? null,

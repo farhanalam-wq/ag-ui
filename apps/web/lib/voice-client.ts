@@ -12,7 +12,9 @@ export interface VoiceTokenRequest {
   companyId?: string;
   widgetKey?: string;
   apiBase?: string;
-  metadata?: { customer?: { name?: string } };
+  // company is injected server-side at mint; client must never spoof it.
+  // The optional field below exists only for forward-compat typing.
+  metadata?: { customer?: { name?: string }; company?: { id?: string } };
 }
 
 export interface VoiceTokenResponse {
