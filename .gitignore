@@ -60,4 +60,5 @@ bun-debug.log*
 # Internal Docs
 EMBED_WIDGET_PLAN.md
 VOICE_IMPLEMENTATION_PLAN.md 
-docs/
+docs/plan.md
+plan.md

@@ -29,7 +29,7 @@ export function VoiceChatButton({
     <button
       type="button"
       onClick={active ? stop : start}
-      disabled={disabled || busy}
+      disabled={disabled}
       aria-label={active ? "End voice call" : "Start voice call"}
       title={title ?? (active ? "End voice call" : "Start voice call")}
       className={cn(

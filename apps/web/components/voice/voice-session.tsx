@@ -92,6 +92,8 @@ export function VoiceSession({
   const orderRef = useRef<string[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const finalizedRef = useRef(false);
+  const roomRef = useRef<{ disconnect: () => Promise<void> } | null>(null);
+  const intentionalStopRef = useRef(false);
   const onFinalLinesRef = useRef(onFinalLines);
   onFinalLinesRef.current = onFinalLines;
 
@@ -116,13 +118,15 @@ export function VoiceSession({
     setToken(null);
     setLevel(0);
     setAgentSpeaking(false);
+    setError(null);
     setStatus("idle");
     if (lines.length > 0) onFinalLinesRef.current?.(lines);
   }, []);
 
   const stop = useCallback(() => {
-    // Fetching: cancel the mint. Live/connecting: drop the token and let
-    // LiveKitRoom's onDisconnected run finalize exactly once.
+    // Mark intentional so late LiveKit onError events (e.g. DATA_TRACK_LOSSY
+    // close during teardown) are ignored instead of surfacing as errors.
+    intentionalStopRef.current = true;
     if (abortRef.current) {
       abortRef.current.abort();
       abortRef.current = null;
@@ -132,9 +136,25 @@ export function VoiceSession({
       setError(null);
       return;
     }
+    // Explicit disconnect first: unmounting LiveKitRoom by nulling the token
+    // does not reliably fire onDisconnected, which previously left status
+    // stuck at "live" with the X button dead.
+    try {
+      const room = roomRef.current as unknown as {
+        disconnect?: (stopLocal?: boolean) => Promise<void> | void;
+      } | null;
+      if (room && typeof room.disconnect === "function") {
+        Promise.resolve(room.disconnect()).catch(() => undefined);
+      }
+    } catch {
+      // Disconnect is best-effort; finalize below still resets state.
+    }
+    roomRef.current = null;
     if (token) setToken(null);
-    // If the room never connected, onDisconnected may not fire — finalize here.
-    if (status === "connecting" || status === "error") finalize();
+    // finalize is idempotent: onDisconnected firing later is a no-op.
+    // Live + connecting + error all finalize here so X always returns to mic.
+    if (status === "live" || status === "connecting" || status === "error") finalize();
+    else if (!token) setStatus("idle");
   }, [status, token, finalize]);
 
   const start = useCallback(() => {
@@ -145,6 +165,8 @@ export function VoiceSession({
     linesRef.current.clear();
     orderRef.current = [];
     finalizedRef.current = false;
+    intentionalStopRef.current = false;
+    roomRef.current = null;
     setError(null);
     setStatus("fetching");
 
@@ -194,10 +216,25 @@ export function VoiceSession({
           connect
           audio
           video={false}
-          onConnected={() => setStatus("live")}
+          onConnected={() => {
+            // Fresh connect clears any prior intentional-stop flag.
+            intentionalStopRef.current = false;
+            setStatus("live");
+          }}
           onDisconnected={finalize}
           onError={(err: Error) => {
-            setError(err?.message || "Voice connection failed");
+            // Ignore teardown noise: intentional stop or already finalized
+            // (e.g. publisher DATA_TRACK_LOSSY close, empty {} errors).
+            if (intentionalStopRef.current || finalizedRef.current) {
+              console.debug("[VOICE] Ignored LiveKit error after intentional stop:", err);
+              return;
+            }
+            console.error("[VOICE] LiveKit room error:", err);
+            const msg =
+              err && typeof (err as Error).message === "string" && (err as Error).message
+                ? (err as Error).message
+                : "Voice connection failed";
+            setError(msg);
             setStatus("error");
           }}
           onMediaDeviceFailure={(failure?: MediaDeviceFailure) => {
@@ -213,12 +250,32 @@ export function VoiceSession({
           }}
         >
           <RoomAudioRenderer />
+          <RoomCapture roomRef={roomRef} />
           <TranscriptCollector linesRef={linesRef} orderRef={orderRef} />
           <VoiceLevelPublisher onLevel={handleLevel} />
         </LiveKitRoom>
       ) : null}
     </VoiceSessionContext.Provider>
   );
+}
+
+/** Captures the LiveKit Room so stop() can explicitly disconnect before unmount. */
+function RoomCapture({
+  roomRef,
+}: {
+  roomRef: React.MutableRefObject<{ disconnect: () => Promise<void> } | null>;
+}) {
+  const room = useRoomContext();
+  useEffect(() => {
+    roomRef.current = room as unknown as { disconnect: () => Promise<void> };
+    return () => {
+      // Only clear if it still points at this room (avoids StrictMode races).
+      if (roomRef.current === (room as unknown as { disconnect: () => Promise<void> })) {
+        roomRef.current = null;
+      }
+    };
+  }, [room, roomRef]);
+  return null;
 }
 
 /** Silently buffers both sides of the call from lk.transcription (no UI v1). */
