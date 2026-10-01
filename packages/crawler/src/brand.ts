@@ -210,7 +210,7 @@ function extractCssVariables(css: string): Map<string, string> {
   }
 
   // Resolve 1-level pointer aliases: e.g. --color-primary: var(--primary)
-  for (const [key, val] of vars.entries()) {
+  vars.forEach((val, key) => {
     const aliasMatch = val.match(/^var\(\s*--([a-zA-Z0-9_-]+)\s*\)$/i);
     if (aliasMatch) {
       const target = aliasMatch[1].toLowerCase();
@@ -218,7 +218,7 @@ function extractCssVariables(css: string): Map<string, string> {
         vars.set(key, vars.get(target)!);
       }
     }
-  }
+  });
 
   return vars;
 }

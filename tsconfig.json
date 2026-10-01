@@ -3,15 +3,5 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "files": [],
-  "references": [
-    { "path": "./packages/contracts" },
-    { "path": "./packages/shared" },
-    { "path": "./packages/database" },
-    { "path": "./packages/queues" },
-    { "path": "./packages/crawler" },
-    { "path": "./apps/api" },
-    { "path": "./apps/web" },
-    { "path": "./workers/worker" }
-  ]
+  "include": ["*.ts"]
 }

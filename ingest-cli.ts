@@ -1107,18 +1107,21 @@ async function populateDb(
 
   // Brand upsert from root HTML.
   try {
-    const brandData = rootHtml
-      ? await extractBrandIntelligence(rootHtml, baseUrl, { fetchExternalCss: true })
-      : {
-          logoUrl: undefined as any,
-          tokens: {
-            colors: { primary: "#2563eb", background: "#ffffff", foreground: "#09090b" },
-            typography: {},
-            radius: "0.5rem",
-            style: "corporate",
-            theme: "light",
-          } as any,
-        };
+    let brandData: any;
+    if (rootHtml) {
+      brandData = await extractBrandIntelligence(rootHtml, baseUrl, { fetchExternalCss: true });
+    } else {
+      brandData = {
+        logoUrl: undefined,
+        tokens: {
+          colors: { primary: "#2563eb", background: "#ffffff", foreground: "#09090b" },
+          typography: {},
+          radius: "0.5rem",
+          style: "corporate",
+          theme: "light",
+        },
+      };
+    }
     const [eb] = await db.select().from(brands).where(eq(brands.companyId, companyId)).limit(1);
     if (eb) {
       await db.update(brands).set({ logoUrl: (brandData as any).logoUrl, tokens: (brandData as any).tokens }).where(eq(brands.id, eb.id));

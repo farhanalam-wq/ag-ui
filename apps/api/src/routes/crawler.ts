@@ -282,7 +282,7 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
               .where(eq(brands.companyId, result.companyId))
               .limit(1);
             if (brand) {
-              brandData = { logoUrl: brand.logoUrl, tokens: brand.tokens };
+              brandData = { logoUrl: brand.logoUrl, tokens: brand.tokens as any };
             }
           } catch {
             // Non-blocking
