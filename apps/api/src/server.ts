@@ -1,7 +1,11 @@
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
 import { swagger } from "@elysiajs/swagger";
-import { logger } from "@ag-ui/shared";
+import { autoLoadMonorepoEnv, logger } from "@ag-ui/shared";
+
+// Ensure environment variables are loaded from monorepo root
+autoLoadMonorepoEnv();
+
 import { companiesRoutes } from "./routes/companies";
 import { chatRoutes } from "./routes/chat";
 import { crawlerRoutes } from "./routes/crawler";
@@ -42,6 +46,7 @@ export const app = new Elysia()
 
 logger.info(`ag-ui Elysia API running at http://localhost:${PORT}`);
 logger.info(`Swagger docs available at http://localhost:${PORT}/swagger`);
+logger.info(`[API BOOT] OPENAI_API_KEY configured: ${!!process.env.OPENAI_API_KEY}`);
 
 export type App = typeof app;
-// Reload trigger: 2026-09-14T18:20
+// Reload trigger: 2026-10-01T12:35

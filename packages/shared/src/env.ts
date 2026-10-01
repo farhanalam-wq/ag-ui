@@ -3,9 +3,9 @@ import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 
 // Automatically load parent root .env if running from subpackage directory
-function autoLoadMonorepoEnv() {
+export function autoLoadMonorepoEnv() {
   let currentDir = process.cwd();
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 5; i++) {
     const envPath = resolve(currentDir, ".env");
     if (existsSync(envPath)) {
       try {
@@ -21,15 +21,16 @@ function autoLoadMonorepoEnv() {
             if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
               val = val.slice(1, -1);
             }
-            if (process.env[key] === undefined || process.env[key] === "") {
+            if (val && (!process.env[key] || process.env[key] === "")) {
               process.env[key] = val;
             }
           }
         });
       } catch {}
-      break;
     }
-    currentDir = resolve(currentDir, "..");
+    const parent = resolve(currentDir, "..");
+    if (parent === currentDir) break;
+    currentDir = parent;
   }
 }
 

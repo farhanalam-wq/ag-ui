@@ -1,5 +1,6 @@
 import { logger } from "./logger";
 import { EmbedCache, embedCacheKey, getDefaultEmbedCache } from "./embed-cache";
+import { resolveOpenAIKey } from "./llm";
 
 export interface EmbeddingOptions {
   model?: string;
@@ -174,7 +175,7 @@ export async function generateEmbeddings(texts: string[], options?: EmbeddingOpt
     return [];
   }
 
-  const apiKey = options?.apiKey || process.env.OPENAI_API_KEY;
+  const apiKey = resolveOpenAIKey(options?.apiKey);
   const model = options?.model || EMBED_MODEL_DEFAULT;
   const maxItems = options?.batchSize || 100;
   const tokensPerBatch = options?.tokensPerBatch || 6000;
