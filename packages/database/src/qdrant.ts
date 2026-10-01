@@ -62,6 +62,57 @@ function getHeaders(): Record<string, string> {
 }
 
 /**
+ * Ensures a Qdrant collection exists with proper vector dimension, distance, and payload indexes.
+ */
+export async function ensureQdrantCollection(
+  collection = QDRANT_COLLECTION,
+  dims = 1536
+): Promise<void> {
+  const baseUrl = getQdrantUrl();
+  const headers = getHeaders();
+  try {
+    const checkRes = await fetch(`${baseUrl}/collections/${collection}`, { headers });
+    if (checkRes.ok) return;
+
+    if (checkRes.status === 404) {
+      const createRes = await fetch(`${baseUrl}/collections/${collection}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          vectors: {
+            size: dims,
+            distance: "Cosine",
+          },
+          hnsw_config: {
+            ef_construct: 128,
+            m: 16,
+          },
+        }),
+      });
+
+      if (createRes.ok) {
+        const indexes = [
+          { field_name: "company_id", field_schema: "keyword" },
+          { field_name: "snapshot_id", field_schema: "keyword" },
+          { field_name: "document_id", field_schema: "keyword" },
+          { field_name: "category", field_schema: "keyword" },
+          { field_name: "chunk_index", field_schema: "integer" },
+        ];
+        for (const idx of indexes) {
+          await fetch(`${baseUrl}/collections/${collection}/index`, {
+            method: "PUT",
+            headers,
+            body: JSON.stringify(idx),
+          }).catch(() => null);
+        }
+      }
+    }
+  } catch {
+    // Non-blocking best-effort check
+  }
+}
+
+/**
  * Upserts points into Qdrant in batches of 256 to 512.
  * Throws on any terminal failure so snapshots can be marked FAILED without drift.
  */
@@ -71,6 +122,9 @@ export async function upsertChunkPoints(
   collection = QDRANT_COLLECTION
 ): Promise<void> {
   if (points.length === 0) return;
+
+  const dims = points[0]?.vector?.length || 1536;
+  await ensureQdrantCollection(collection, dims);
 
   const url = `${getQdrantUrl()}/collections/${collection}/points?wait=true`;
   const headers = getHeaders();
