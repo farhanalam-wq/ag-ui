@@ -20,6 +20,7 @@ import {
   MagnifyingGlass,
   Lightning,
   Code,
+  CircleNotch,
   ArrowCounterClockwise,
   Sidebar as SidebarIcon,
 } from "@phosphor-icons/react";
@@ -52,73 +53,11 @@ import { AppSidebar } from "@/components/sidebar/app-sidebar";
 import { ModeToggle } from "@/components/mode-toggle";
 import type { CompanyItem } from "@/components/sidebar/company-switcher";
 
-// ============================================================================
-// Fallback / Initial Companies Data
-// ============================================================================
-
-const DEFAULT_COMPANIES: CompanyItem[] = [
-  {
-    id: "f2161db4-a037-4c5f-ba79-cb0db2889ad0",
-    name: "Resend",
-    domain: "resend.com",
-    description: "Email API for developers. Modern delivery platform built for speed and reliability.",
-    brandColor: "#3b82f6",
-    badge: "17 Chunks • Indexed",
-    suggestedQueries: [
-      "What are the pricing tiers and sending limits?",
-      "What SDKs and programming languages are supported?",
-      "How does Resend handle domain verification and DNS records?",
-      "What are the contact options and enterprise support SLA?",
-    ],
-  },
-  {
-    id: "b58fffa6-d53a-40e1-82c0-1952c131a657",
-    name: "Anthropic",
-    domain: "anthropic.com",
-    description: "AI research and safety company behind Claude, dedicated to building reliable AI systems.",
-    brandColor: "#d97706",
-    badge: "66 Chunks • Indexed",
-    suggestedQueries: [
-      "What are Claude 3.5 Sonnet's core capabilities and context limits?",
-      "Where are Anthropic's headquarters and research offices located?",
-      "What are the enterprise security and safety guidelines?",
-      "What are the API pricing rates per million tokens?",
-    ],
-  },
-  {
-    id: "e3952a5c-b6de-4c04-ab4a-5be1497f0fac",
-    name: "Red Hat",
-    domain: "redhat.com",
-    description: "Enterprise open source solutions, Linux platforms, and hybrid cloud infrastructure.",
-    brandColor: "#ef4444",
-    badge: "44 Chunks • Indexed",
-    suggestedQueries: [
-      "What are the main enterprise products and platforms?",
-      "Where is Red Hat headquarters located?",
-      "What open source community projects does Red Hat sponsor?",
-      "How does Red Hat OpenShift pricing and licensing work?",
-    ],
-  },
-  {
-    id: "a23db983-1fb7-4c2d-b1f1-7b9b9501ab64",
-    name: "Stripe",
-    domain: "stripe.com",
-    description: "Financial infrastructure for the internet. Payments, billing, and commerce APIs.",
-    brandColor: "#6366f1",
-    badge: "Verified • Indexed",
-    suggestedQueries: [
-      "What are the processing fees for card transactions and billing?",
-      "What APIs and SDKs are available for subscription management?",
-      "Where are Stripe's dual headquarters located?",
-      "What compliance certifications and fraud protection features exist?",
-    ],
-  },
-];
-
 export default function Home() {
   const router = useRouter();
-  const [companies, setCompanies] = useState<CompanyItem[]>(DEFAULT_COMPANIES);
-  const [selectedCompany, setSelectedCompany] = useState<CompanyItem>(DEFAULT_COMPANIES[0]);
+  const [companies, setCompanies] = useState<CompanyItem[]>([]);
+  const [selectedCompany, setSelectedCompany] = useState<CompanyItem | null>(null);
+  const [isLoadingCompanies, setIsLoadingCompanies] = useState(true);
   const [query, setQuery] = useState("");
   const [workspaceView, setWorkspaceView] = useState<"chat" | "ingest">("chat");
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -140,7 +79,7 @@ export default function Home() {
     closeDrawer,
   } = useCompanyChat();
 
-  // Dynamically resolve real companies from backend API via centralised apiClient
+  // Resolve companies from the backend API — no hardcoded demo data.
   useEffect(() => {
     async function fetchApiCompanies() {
       try {
@@ -148,31 +87,24 @@ export default function Home() {
 
         if (apiList.length > 0) {
           const dynamicList: CompanyItem[] = apiList.map((apiComp) => {
-            const defMatch = DEFAULT_COMPANIES.find(
-              (def) =>
-                def.domain.toLowerCase() === apiComp.domain.toLowerCase() ||
-                def.name.toLowerCase() === apiComp.name.toLowerCase()
-            );
-
-            const brandColor = apiComp.brand?.tokens?.colors?.primary || defMatch?.brandColor || "#3b82f6";
+            const brandColor = apiComp.brand?.tokens?.colors?.primary || "#3b82f6";
             const docCount = apiComp.docCount ?? apiComp.latestSnapshot?.pageCount ?? 0;
             const chunkCount = apiComp.chunkCount ?? 0;
             const factCount = apiComp.factCount ?? 0;
             const status = apiComp.status || apiComp.latestSnapshot?.status || "READY";
 
             return {
-              ...(defMatch || {}),
               id: apiComp.id,
               name: apiComp.name,
               domain: apiComp.domain,
-              description: defMatch?.description || `Indexed knowledge base for ${apiComp.name} (${apiComp.domain}).`,
+              description: `Indexed knowledge base for ${apiComp.name} (${apiComp.domain}).`,
               brandColor,
               badge: `${docCount} Docs • Indexed`,
               docCount,
               chunkCount,
               factCount,
               status,
-              suggestedQueries: defMatch?.suggestedQueries || [
+              suggestedQueries: [
                 `What are the core products and APIs provided by ${apiComp.name}?`,
                 `What are the pricing tiers, limits, and plan options?`,
                 `Where are ${apiComp.name} headquarters and contact options?`,
@@ -194,12 +126,15 @@ export default function Home() {
                 if (target) return target;
               }
             }
+            if (!prev) return dynamicList[0];
             const matchedCurrent = dynamicList.find((m) => m.domain === prev.domain);
             return matchedCurrent || dynamicList[0];
           });
         }
       } catch {
-        // Fallback to DEFAULT_COMPANIES
+        // No fallback: empty state below handles API failure / zero companies.
+      } finally {
+        setIsLoadingCompanies(false);
       }
     }
     fetchApiCompanies();
@@ -238,7 +173,7 @@ export default function Home() {
   };
 
   const handleQuerySubmit = async (submittedText: string) => {
-    if (!submittedText.trim() || isStreaming) return;
+    if (!submittedText.trim() || isStreaming || !selectedCompany) return;
     await sendMessage(submittedText, selectedCompany.id);
   };
 
@@ -256,20 +191,22 @@ export default function Home() {
         className="flex min-h-screen w-full bg-background text-foreground antialiased selection:bg-zinc-200 dark:selection:bg-zinc-800 selection:text-zinc-900 dark:selection:text-zinc-100 transition-colors duration-200"
         style={
           {
-            "--brand-primary": selectedCompany.brandColor,
+            "--brand-primary": selectedCompany?.brandColor ?? "#3b82f6",
           } as React.CSSProperties
         }
       >
         {/* Collapsible Enterprise App Sidebar */}
-        <AppSidebar
-          companies={companies}
-          selectedCompany={selectedCompany}
-          onSelectCompany={(comp) => {
-            handleSelectCompany(comp);
-            setWorkspaceView("chat");
-          }}
-          onOpenAddCompany={() => router.push("/ingest")}
-        />
+        {selectedCompany && (
+          <AppSidebar
+            companies={companies}
+            selectedCompany={selectedCompany}
+            onSelectCompany={(comp) => {
+              handleSelectCompany(comp);
+              setWorkspaceView("chat");
+            }}
+            onOpenAddCompany={() => router.push("/ingest")}
+          />
+        )}
 
         {/* Main Content Area via SidebarInset */}
         <SidebarInset className="flex flex-col bg-background min-h-screen transition-colors duration-200">
@@ -298,7 +235,7 @@ export default function Home() {
                       href="#"
                       className="text-zinc-200 font-medium hover:text-white transition-colors"
                     >
-                      {workspaceView === "ingest" ? "New Ingestion" : selectedCompany.name}
+                      {workspaceView === "ingest" ? "New Ingestion" : (selectedCompany?.name ?? "Companies")}
                     </BreadcrumbLink>
                   </BreadcrumbItem>
                   <BreadcrumbSeparator className="text-zinc-600" />
@@ -347,6 +284,35 @@ export default function Home() {
               onCompanyIndexed={handleCompanyIndexed}
               onCancel={() => setWorkspaceView("chat")}
             />
+          ) : isLoadingCompanies ? (
+            <main className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 w-full">
+              <div className="flex flex-col items-center gap-3 text-zinc-500">
+                <CircleNotch className="size-6 animate-spin text-zinc-400" />
+                <p className="text-xs font-mono">Loading companies…</p>
+              </div>
+            </main>
+          ) : !selectedCompany ? (
+            <main className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 w-full">
+              <div className="w-full max-w-md text-center space-y-4">
+                <div className="mx-auto flex size-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/60">
+                  <Buildings className="size-6 text-zinc-400" />
+                </div>
+                <h1 className="text-xl font-bold tracking-tight text-zinc-100">
+                  No companies yet
+                </h1>
+                <p className="text-sm text-zinc-400 leading-relaxed">
+                  Index your first company to start asking questions grounded in its real content.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceView("ingest")}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-zinc-100 hover:bg-white text-zinc-950 text-sm font-medium transition-colors"
+                >
+                  Index a company
+                  <ArrowRight className="size-4" />
+                </button>
+              </div>
+            </main>
           ) : (
             <main className="flex-1 flex flex-col items-center justify-between p-4 sm:p-6 w-full max-w-4xl mx-auto transition-all">
               {/* When Empty: Hero & Suggested Inquiries */}
