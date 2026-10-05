@@ -27,7 +27,7 @@ export function AppSidebar({
   ...props
 }: AppSidebarProps) {
   // Phase 1 visual-only selection. Phase 2 will derive this from the route.
-  const [activeId, setActiveId] = React.useState("overview");
+  const [activeId, setActiveId] = React.useState("ingest");
 
   return (
     <Sidebar collapsible="icon" {...props}>

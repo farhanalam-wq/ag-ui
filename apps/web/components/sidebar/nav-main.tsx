@@ -73,6 +73,7 @@ export function NavMain({ activeId, onSelect }: NavMainProps) {
           }
 
           const ParentIcon = section.icon ?? section.items[0].icon;
+          const containsActive = section.items.some((i) => i.id === activeId);
           return (
             <Collapsible
               key={section.title}
@@ -82,13 +83,13 @@ export function NavMain({ activeId, onSelect }: NavMainProps) {
             >
               <SidebarMenuItem>
                 <CollapsibleTrigger asChild>
-                  <SidebarMenuButton tooltip={section.title}>
+                  <SidebarMenuButton tooltip={section.title} isActive={containsActive}>
                     <ParentIcon />
                     <span className="capitalize">{section.title.toLowerCase()}</span>
                     <CaretRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
                   </SidebarMenuButton>
                 </CollapsibleTrigger>
-                <CollapsibleContent>
+                <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
                   <SidebarMenuSub>
                     {section.items.map((subItem) => (
                       <SidebarMenuSubItem key={subItem.id}>

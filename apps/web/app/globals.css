@@ -35,7 +35,7 @@
     --sidebar-primary-foreground: 0 0% 98%;
     --sidebar-accent: 240 4.8% 92%;
     --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
 
@@ -120,4 +120,61 @@ body {
 
 .dark * {
   scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+
+/* ==========================================================================
+   Sidebar micro-animations (no animate plugin in this repo, so plain CSS)
+   ========================================================================== */
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes collapsible-down {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: var(--radix-collapsible-content-height);
+    opacity: 1;
+  }
+}
+
+@keyframes collapsible-up {
+  from {
+    height: var(--radix-collapsible-content-height);
+    opacity: 1;
+  }
+  to {
+    height: 0;
+    opacity: 0;
+  }
+}
+
+.animate-menu-in {
+  animation: menu-in 130ms ease-out;
+}
+
+.animate-collapsible-down {
+  animation: collapsible-down 180ms ease-out;
+}
+
+.animate-collapsible-up {
+  animation: collapsible-up 150ms ease-in;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-menu-in,
+  .animate-collapsible-down,
+  .animate-collapsible-up {
+    animation: none;
+  }
 }

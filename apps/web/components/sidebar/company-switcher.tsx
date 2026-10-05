@@ -5,6 +5,7 @@ import {
   CaretUpDown,
   Plus,
   Check,
+  MagnifyingGlass,
 } from "@phosphor-icons/react";
 import {
   DropdownMenu,
@@ -92,57 +93,70 @@ export function CompanySwitcher({
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
-            className="w-[--radix-dropdown-menu-trigger-width] min-w-56 rounded-lg border-sidebar-border"
+            className="w-72 rounded-lg border-sidebar-border p-2 data-[state=open]:animate-menu-in"
             align="start"
             side={isMobile ? "bottom" : "right"}
             sideOffset={4}
           >
-            <DropdownMenuLabel className="text-xs text-muted-foreground">
-              Companies
+            <DropdownMenuLabel className="px-2 py-1.5 text-xs text-muted-foreground">
+              Companies ({companies.length})
             </DropdownMenuLabel>
-            {companies.length > 5 && (
-              <div className="px-2 pb-2">
-                <input
-                  type="text"
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                  placeholder="Filter companies..."
-                  className="w-full h-8 px-2.5 rounded-md border border-sidebar-border bg-transparent text-xs focus:outline-none"
-                />
-              </div>
-            )}
-            {filteredCompanies.length === 0 ? (
-              <div className="py-4 text-center text-xs text-muted-foreground">
-                No matching companies found
-              </div>
-            ) : (
-              filteredCompanies.map((company, index) => {
-                const isSelected = company.id === selectedCompany.id;
-                return (
-                  <DropdownMenuItem
-                    key={company.id}
-                    onClick={() => onSelectCompany(company)}
-                    className="gap-2 p-2"
-                  >
-                    <div
-                      className="flex size-6 items-center justify-center rounded-md border border-sidebar-border font-bold text-[11px] shrink-0"
-                      style={{
-                        backgroundColor: `${company.brandColor}20`,
-                        color: company.brandColor,
-                      }}
+            <div className="relative px-0 pb-2">
+              <MagnifyingGlass className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                // Let Escape bubble so Radix still closes; hold back every
+                // other key so menu typeahead doesn't hijack search typing.
+                onKeyDown={(e) => {
+                  if (e.key !== "Escape") e.stopPropagation();
+                }}
+                placeholder="Search companies..."
+                className="h-8 w-full rounded-md border border-sidebar-border bg-transparent pl-8 pr-2.5 text-xs focus:outline-none placeholder:text-muted-foreground"
+              />
+            </div>
+            <div className="max-h-64 overflow-y-auto pr-1">
+              {filteredCompanies.length === 0 ? (
+                <div className="py-4 text-center text-xs text-muted-foreground">
+                  No matching companies found
+                </div>
+              ) : (
+                filteredCompanies.map((company, index) => {
+                  const isSelected = company.id === selectedCompany.id;
+                  return (
+                    <DropdownMenuItem
+                      key={company.id}
+                      onClick={() => onSelectCompany(company)}
+                      className="gap-2.5 p-2"
                     >
-                      {company.name.slice(0, 2).toUpperCase()}
-                    </div>
-                    {company.name}
-                    {isSelected ? (
-                      <Check className="ml-auto size-3.5 shrink-0" />
-                    ) : (
-                      <DropdownMenuShortcut>⌘{index + 1}</DropdownMenuShortcut>
-                    )}
-                  </DropdownMenuItem>
-                );
-              })
-            )}
+                      <div
+                        className="flex size-7 items-center justify-center rounded-md border border-sidebar-border font-bold text-[11px] shrink-0"
+                        style={{
+                          backgroundColor: `${company.brandColor}20`,
+                          color: company.brandColor,
+                        }}
+                      >
+                        {company.name.slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="flex min-w-0 flex-1 flex-col leading-tight">
+                        <span className="truncate text-sm font-medium">
+                          {company.name}
+                        </span>
+                        <span className="truncate text-[11px] text-muted-foreground">
+                          {company.domain}
+                        </span>
+                      </div>
+                      {isSelected ? (
+                        <Check className="ml-auto size-3.5 shrink-0" />
+                      ) : (
+                        <DropdownMenuShortcut>⌘{index + 1}</DropdownMenuShortcut>
+                      )}
+                    </DropdownMenuItem>
+                  );
+                })
+              )}
+            </div>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onOpenAddDialog} className="gap-2 p-2">
               <div className="flex size-6 items-center justify-center rounded-md border border-sidebar-border bg-transparent">
