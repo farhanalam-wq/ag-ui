@@ -1,5 +1,7 @@
 # Company AI — E2E Technical Architecture & Reference Guide
 
+> Status: CORRECTED to live repo (2026-10-01). Source of truth for voice RAG is `VOICE_RAG_IMPLEMENTATION_PLAN.md` (gitignored root). Aspirational items are labeled `PLANNED`, not active.
+
 ## 1. Architecture Overview
 
 Use a **TypeScript monorepo + modular monolith + asynchronous background workers**.
@@ -42,29 +44,38 @@ Use a **TypeScript monorepo + modular monolith + asynchronous background workers
                          │                     │
                          └──────────┬──────────┘
                                     ▼
-                    ┌─────────────────────────────┐
-                    │       Knowledge Layer       │
-                    │ PostgreSQL + pgvector + S3  │
-                    └──────────────┬──────────────┘
-                                   │
-                           Company Snapshot
-                                   │
-                                   ▼
-                            Hybrid Retrieval
-                        (SQL + Vector + Keyword)
-                                   │
-                                   ▼
-                               LLM Answer
-                                   │
-                    ┌──────────────┼──────────────┐
-                    ▼              ▼              ▼
-                  Text            TTS          VisualSpec
-                                                   │
-                                                   ▼
-                                             Brand System
-                                                   │
-                                                   ▼
-                                                 GenUI
+                     ┌─────────────────────────────┐
+                     │       Knowledge Layer       │
+                     │ PostgreSQL (facts/docs) +   │
+                     │ Qdrant (vectors) + Redis    │
+                     │ (cache/queues) + local      │
+                     │ storage/                    │
+                     └──────────────┬──────────────┘
+                                    │
+                            Company Snapshot
+                                    │
+                                    ▼
+                             Hybrid Retrieval
+                     (SQL facts + Qdrant top-20 +
+                      PG hydration + MMR)
+                                    │
+                                    ▼
+                                LLM Answer
+                                    │
+                     ┌──────────────┼──────────────┐
+                     ▼              ▼              ▼
+                   Text     Voice (external)   VisualSpec
+                         VoiceKit + LiveKit   PLANNED —
+                         web-call + webhook   currently
+                         RAG tool             text-only
+                                                    │
+                                                    ▼
+                                              Brand System
+                                                    │
+                                                    ▼
+                                                  GenUI
+                                          (registry defined,
+                                           not wired to chat)
 ```
 
 ---
@@ -79,16 +90,16 @@ Use a **TypeScript monorepo + modular monolith + asynchronous background workers
 | **UI Components** | **shadcn/ui + Lucide Icons** | Accessible, headless primitives styled with Tailwind; no black-box UI locks. |
 | **Backend API** | **Bun.js + Elysia** | Blazing-fast HTTP/SSE throughput, low memory footprint, native TypeScript. |
 | **Worker Runtime** | **Bun + BullMQ** | High-performance async queue worker running unified on the Bun runtime. |
-| **Database & ORM** | **PostgreSQL + Drizzle ORM** | Native `pgvector` type support, zero query-engine binaries, typed SQL joins, instant cold starts on Bun. |
-| **Vector Engine** | **pgvector (Postgres extension)** | Eliminates dual-database drift (Postgres $\leftrightarrow$ Pinecone/Qdrant); unified ACID transactions. |
-| **Queue / Cache** | **Redis + BullMQ** | Resilient background job management, concurrency throttling, job retry/backoff. |
+| **Database & ORM** | **PostgreSQL + Drizzle ORM** | Typed SQL joins for facts/docs/snapshots/conversations; vectors live in Qdrant, not PG. No `pgvector` column in live schema. |
+| **Vector Engine** | **Qdrant v1.12.1 (HNSW)** | Top-20 candidate search + PG hydration + MMR cap 6 (`packages/database/src/retrieval.ts`). Redis `qemb:v1` 1h / `qctx:v1` 5min cache. |
+| **Queue / Cache** | **Redis + BullMQ** | Resilient background job management, concurrency throttling, job retry/backoff. Also `rl:*` rate-limit buckets + `voice:room:*` 1h TTL. |
 | **Ingestion Engine** | **Playwright + Cheerio + Readability** | Tiered crawler: ultra-fast static fetch (Cheerio) + headless fallback (Playwright). |
-| **Object Storage** | **S3-compatible (MinIO / Cloudflare R2 / AWS S3)** | Immutable storage for logos, assets, raw HTML archives, audio files. |
-| **Realtime / Streaming**| **Server-Sent Events (SSE)** | Unidirectional, HTTP/2 multiplexed, robust streaming for text, audio, and UI specs. |
-| **Validation** | **Zod** | Shared contract validation across API input, worker jobs, LLM function outputs, and GenUI specs. |
-| **AI Adapters** | **Provider-agnostic interface** | Decoupled LLM, STT, and TTS implementations (OpenAI, Anthropic, Gemini, ElevenLabs). |
+| **Object Storage** | **Local `storage/` (no S3 wiring)** | `S3/MinIO/R2` is PLANNED, not active. Logos, assets, raw HTML stay local. |
+| **Realtime / Streaming**| **Server-Sent Events (SSE) + LiveKit WebRTC** | SSE (`status/brand/evidence/delta/done/error`) for text; LiveKit `wss://livekit-vyom...` + VoiceKit web-call for voice audio. |
+| **Validation** | **Zod (+ Elysia `t`)** | Shared contract validation across API input, worker jobs, LLM function outputs, and GenUI specs. |
+| **AI Adapters** | **OpenAI via `packages/shared`** | No `packages/ai` — embeddings + LLM live in `packages/shared/src/embeddings.ts + llm.ts`. Voice STT/LLM/TTS is external VoiceKit (pipeline/cascade), not in-repo. |
 
-> **Architectural Guardrail**: Do **not** introduce microservices, Kafka, Kubernetes, or standalone vector databases at this stage. A clean modular monolith with async workers scales to millions of requests with minimal operational friction.
+> **Architectural Guardrail**: Modular monolith + async workers. Qdrant is the sanctioned vector DB — do not add a second one (no Pinecone, no pgvector dual-write; `QDRANT_DUAL_WRITE` stays `false`).
 
 ---
 
@@ -106,16 +117,14 @@ company-ai/
 │
 ├── packages/
 │   ├── contracts/                   # Shared Zod schemas, API types, GenUI specs
-│   ├── database/                    # Drizzle ORM schema, migrations, DB client, pgvector
+│   ├── database/                    # Drizzle schema + retrieval.ts + cache.ts + rate-limit.ts + qdrant.ts
 │   ├── crawler/                     # Cheerio/Playwright crawl logic, robots/sitemap parsing
-│   ├── knowledge/                   # Chunking, fact extraction, document normalization
-│   ├── retrieval/                   # Hybrid retrieval engine (SQL + pgvector + FTS) + Reranker
-│   ├── ai/                          # Provider-agnostic LLM/STT/TTS adapters
-│   ├── genui/                       # GenUI spec definitions, component schema contracts
-│   ├── brand/                       # Brand token extraction, color normalization, style mapper
+│   ├── genui/                       # GenUI spec definitions (defined, not wired to chat — PLANNED)
 │   ├── queues/                      # BullMQ queue definitions, job types, Redis client
-│   └── shared/                      # Global constants, logger, error types, helpers
+│   └── shared/                      # Logger, env loader, embeddings, LLM, chunker, widget-key helpers
 │
+│   NOTE: There are no `knowledge/`, `retrieval/`, `ai/`, or `brand/` packages.
+│   Retrieval = `packages/database/src/retrieval.ts`; brand extraction lives in the crawler/worker.
 ├── package.json                     # Root package with native Bun "workspaces" field
 ├── turbo.json                       # Turborepo task pipeline definition
 ├── tsconfig.json                    # Shared base TypeScript config
@@ -188,45 +197,34 @@ The packages under `packages/*` are **logical boundaries**, shared directly acro
 
 ## 4. Frontend Architecture (`apps/web`)
 
+Live routes: `/?company=<id>` main chat, `/embed/[key]` widget panel, `/ingest` studio.
+
 ```text
 apps/web/
 │
 ├── app/
 │   ├── layout.tsx
-│   ├── page.tsx                     # Landing & URL input
-│   ├── company/
-│   │   └── [companyId]/             # Company dashboard & snapshot overview
-│   └── chat/
-│       └── [conversationId]/        # Multimodal chat & voice interaction interface
+│   ├── page.tsx                     # Main chat (/?company= deep-link, PromptInput dock, VoiceSession companyId)
+│   ├── embed/[key]/page.tsx         # Compact widget panel (widgetKey + apiBase override, mic gated on Ready)
+│   └── ingest/page.tsx              # IngestionStudio entry
 │
 ├── components/
-│   ├── layout/                      # Navbar, Sidebar, AppShell
-│   ├── company/                     # Ingestion progress, status badges, snapshot history
-│   ├── chat/                        # Message list, streaming bubble, citation viewer
-│   ├── voice/                       # Audio visualizer, voice input controls, TTS player
-│   ├── sources/                     # Verified source drawer, evidence references
-│   └── generative/                  # GenUI Verified Component Registry
-│       ├── Hero.tsx
-│       ├── Stats.tsx
-│       ├── Pricing.tsx
-│       ├── ProductGrid.tsx
-│       ├── Timeline.tsx
-│       ├── Comparison.tsx
-│       ├── People.tsx
-│       ├── Quote.tsx
-│       └── registry.tsx             # Type-safe dynamic component resolver
+│   ├── ai-elements/prompt-input.tsx # PromptInput dock (mic slot in footer)
+│   ├── voice/voice-session.tsx      # Token→LiveKit join→silent lk.transcription buffer→finalize
+│   ├── voice/voice-chat-button.tsx  # Mic/X toggle + AmplitudeBars + error chip
+│   ├── chat-message.tsx             # Text bubbles (voice lines appended as plain text, no evidence)
+│   ├── evidence-drawer.tsx          # Text-chat citations drawer (voice v1 has none by design)
+│   ├── ingestion/ingestion-studio.tsx
+│   └── sidebar/app-sidebar.tsx      # Company switcher (switch discards in-flight voice lines)
 │
 ├── hooks/
-│   ├── use-chat-stream.ts           # SSE stream listener & state builder
-│   ├── use-brand-theme.ts           # Applies extracted BrandTokens via CSS variables
-│   └── use-audio-player.ts          # Queue-based audio playback for TTS
+│   └── use-company-chat.ts          # sendMessage SSE state machine + appendVoiceTranscript (local-only)
 │
 ├── lib/
-│   ├── api.ts                       # Typed fetch client
-│   └── utils.ts
+│   ├── api-client.ts                # chat.stream + embed.streamChat + embed.getConfig, SSE parser
+│   └── voice-client.ts              # fetchVoiceToken POST /api/voice/token (VOICEKIT key never in browser)
 │
-└── stores/
-    └── conversation.store.ts        # Chat and session client state
+└── public/embed.js                  # Loader orb + lazy iframe, allow="microphone; autoplay"
 ```
 
 ### Strict Frontend Responsibilities
@@ -235,7 +233,9 @@ apps/web/
 
 ---
 
-## 5. Generative UI (GenUI) Architecture
+## 5. Generative UI (GenUI) Architecture — PLANNED, NOT ACTIVE
+
+> Chat is text-only today: `chat.ts` + `embed.ts` persist `visualSpec: null` and stream no visual events. The spec below is the future contract; `packages/genui` defines it but nothing renders it.
 
 The LLM does **not** write raw UI code or HTML. The LLM generates a strictly validated **VisualSpec JSON**.
 
@@ -331,33 +331,23 @@ export function GenUIRenderer({ spec, brand }: { spec: VisualSpec; brand: BrandT
 
 ## 6. Backend API Architecture (`apps/api`)
 
-Use a **domain-oriented modular monolith**.
+Live: flat Elysia routes + `server.ts` assembly (no `modules/` / `infrastructure/` / `app.ts`).
 
 ```text
 apps/api/src/
 │
-├── modules/
-│   ├── companies/                   # Company CRUD, snapshot lifecycle
-│   ├── crawling/                    # Ingestion triggers, job status dispatch
-│   ├── knowledge/                   # Document & fact management
-│   ├── retrieval/                   # Query planning & hybrid retrieval service
-│   ├── conversations/               # Thread state & message history
-│   ├── voice/                       # Audio generation & STT/TTS coordination
-│   ├── generative-ui/               # VisualSpec contract validation
-│   └── brand/                       # Brand token delivery & updates
+├── routes/
+│   ├── chat.ts                      # POST /api/companies/:id/chat (SSE, grounded text)
+│   ├── companies.ts                 # Company CRUD + snapshot lifecycle
+│   ├── crawler.ts / companies crawl # Ingestion triggers, job status dispatch
+│   ├── embed.ts                     # Widget keys + GET /:key/config + POST /:key/chat (SSE)
+│   ├── voice.ts                     # POST /api/voice/token (READY-gate + rate-limit + VoiceKit mint, injects metadata.company.id)
+│   └── voice-tool.ts                # POST /api/voice/tool/query (VoiceKit in-call RAG webhook)
 │
-├── infrastructure/
-│   ├── database/                    # Drizzle connection pool & repository helpers
-│   ├── queue/                       # BullMQ producer clients
-│   ├── storage/                     # S3-compatible client (MinIO / R2)
-│   ├── llm/                         # Provider adapters
-│   └── telemetry/                   # Logging, tracing, and health checks
-│
-├── app.ts                           # Elysia app instance & route assembly
-└── server.ts                        # Bun HTTP server entrypoint
+└── server.ts                        # cors + swagger (/swagger) + health (GET /health) + route assembly
 ```
 
-Each module encapsulates its own routes, service layer, repository access, and Zod schemas.
+Each route owns its validation (`t.Object`), READY-gate (`companySnapshots ORDER BY version DESC`), and rate limits (`checkEmbedRateLimit`, scopes `embed` / `voice` / `voice-tool`).
 
 ---
 
@@ -453,30 +443,36 @@ Publish Snapshot Status: "READY"
 
 ## 9. Knowledge Layer & Database Models (Drizzle ORM)
 
-PostgreSQL with the `pgvector` extension serves as the single source of truth.
+PostgreSQL (facts/docs/snapshots) + Qdrant (vectors) + Redis (cache/queues) is the live source of truth. There is no `pgvector` column and no `pages` table.
 
 ```text
-PostgreSQL
+PostgreSQL (packages/database/src/schema.ts)
 ├── companies
 ├── company_snapshots
-├── pages
-├── documents
-├── chunks (contains embedding: vector(1536))
-├── facts
 ├── brands
+├── documents
+├── chunks (id, document_id, content, chunk_index — NO embedding column)
+├── facts
 ├── conversations
-└── messages
+├── messages
+├── crawl_jobs
+└── widget_keys
 
-S3-Compatible Object Store
-├── /logos/
-├── /og-images/
-├── /audio/
-└── /raw-html/
+Qdrant (QDRANT_URL, collection per env)
+└── chunk points {id = chunk UUID, vector 1536-dim, payload {company_id, snapshot_id, title, url}}
+
+Redis
+├── qemb:v1:{queryHash} (1h) / qctx:v1:{company}:{snapshot}:{queryHash}:{limit} (5min)
+├── rl:{embed|voice|voice-tool}:* (rate limits)
+└── voice:room:<roomName> (1h, room→company for voice)
+
+Local storage/
+└── storage/ (no S3 wiring)
 ```
 
-### Core Schema Definition (`packages/database`)
+### Core Schema Definition (`packages/database/src/schema.ts`)
 ```ts
-import { pgTable, uuid, text, timestamp, jsonb, vector, integer, boolean } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, integer, index, boolean } from "drizzle-orm/pg-core";
 
 export const companies = pgTable("companies", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -510,6 +506,10 @@ export const documents = pgTable("documents", {
   title: text("title").notNull(),
   category: text("category").notNull(), // 'about' | 'pricing' | 'product' | 'general'
   content: text("content").notNull(),
+  contentHash: text("content_hash").notNull(),
+  wordCount: integer("word_count").default(0).notNull(),
+  headings: jsonb("headings").default([]).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const chunks = pgTable("chunks", {
@@ -517,7 +517,7 @@ export const chunks = pgTable("chunks", {
   documentId: uuid("document_id").references(() => documents.id).notNull(),
   content: text("content").notNull(),
   chunkIndex: integer("chunk_index").notNull(),
-  embedding: vector("embedding", { dimensions: 1536 }),
+  // NOTE: no embedding column — vectors live in Qdrant keyed by chunk id.
 });
 
 export const facts = pgTable("facts", {
@@ -533,34 +533,37 @@ export const facts = pgTable("facts", {
 
 ---
 
-## 10. Hybrid Retrieval Engine
+## 10. Hybrid Retrieval Engine (live: `packages/database/src/retrieval.ts`)
 
-Never dump the entire crawled website into the LLM context window. Use a **3-pillar hybrid retrieval pipeline**:
+Never dump the whole site into the LLM window. Live pipeline: deterministic SQL facts + Qdrant top-20 + PG hydration + local MMR (lambda 0.7, cap 6) with Redis caches. No Keyword/FTS pillar, no RRF.
 
 ```text
-                     User Question
-                           │
-                           ▼
-                     Query Planner
-                           │
-        ┌──────────────────┼──────────────────┐
-        ▼                  ▼                  ▼
-    1. SQL Facts      2. pgvector       3. Keyword / FTS
-   Exact attribute   Semantic vector    Exact terms, SKUs,
-      lookups           similarity          names
-        │                  │                  │
-        └──────────────────┼──────────────────┘
-                           │
-                           ▼
-                    Reciprocal Rank
-                      Fusion (RRF)
-                           │
-                           ▼
-                      EvidenceSet
-              (Compact citations + context)
-                           │
-                           ▼
-                      LLM Prompt
+                      User Question
+                            │
+                            ▼
+              Company + latest READY snapshot
+                            │
+         ┌──────────────────┼──────────────────┐
+         ▼                  ▼                  ▼
+     1. SQL Facts      2. Qdrant top-20    3. Redis caches
+    Exact attribute   Semantic vectors     qemb 1h (query vec)
+    per snapshot      filtered by          qctx 5min (compiled
+                      company+snapshot     context, cut on READY)
+         │                  │                  │
+         └──────────────────┼──────────────────┘
+                            ▼
+                     PG hydration by
+                     chunk UUIDs + MMR
+                            │
+                            ▼
+                       EvidenceSet
+               (facts + chunks, score 0..1)
+                            │
+                            ▼
+                  compiledPromptContext
+               (text chat) / voice-safe
+               COMPANY/FACTS/EXCERPTS ≤6000
+               chars (voice-tool.ts)
 ```
 
 ### The EvidenceSet Contract
@@ -577,37 +580,32 @@ export type Evidence = {
 
 ---
 
-## 11. Unified Answer Contract & Multimodal Flow
+## 11. Answer Contracts — text SSE (active) vs unified multimodal (PLANNED)
 
-To prevent discrepancies between spoken voice, text answer, and visual UI components, the LLM produces a **single unified answer object**.
+Live text contract: grounded text + evidence, `visualSpec: null`. Voice answers come from the external VoiceKit agent via the RAG webhook, not from this contract's `speech` field.
 
 ```ts
-export type Answer = {
-  text: string;                  // Direct conversational response
+export type TextAnswer = {
+  text: string;                  // Grounded conversational response
   evidence: Evidence[];          // Verified citations used
-  visual?: VisualSpec;           // Optional structured UI spec
-  speech?: {
-    ssml?: string;
-    text: string;                // Spoken script (clean, sans markdown/tables)
-  };
+  visualSpec: null;              // Text-only today; VisualSpec is PLANNED
+};
+
+// Voice RAG webhook (apps/api/src/routes/voice-tool.ts)
+export type VoiceToolResponse = {
+  result: string;                // Voice-safe COMPANY/FACTS/EXCERPTS ≤6000 chars, plain speech
+  evidence_count: number;
+  snapshot_id: string;
 };
 ```
 
-### Coordinated Streaming Flow
+### Live streaming flows
 ```text
-Question submitted
-       │
-       ▼
-Query Planner -> Hybrid Retrieval -> EvidenceSet
-       │
-       ▼
-LLM Generation (Single Pass via Structured Output)
-       │
-       ├─► [Event: message.delta]  ──► Real-time text token stream
-       │
-       ├─► [Event: visual.ready]   ──► Emits validated VisualSpec -> Renders GenUI component
-       │
-       └─► [Event: audio.chunk]    ──► TTS audio stream chunks -> Played in audio player
+TEXT:
+Question → retrieveCompanyContext → systemPrompt+history → SSE status → brand → evidence → delta* → done (+PG persist conversations/messages)
+
+VOICE:
+mic → POST /api/voice/token (READY-gate + voice:* limit + mint metadata.company.id) → LiveKit join → STT text → LLM calls query_company_knowledge {query, company_id} → POST /api/voice/tool/query (401/404/409/429 gates + retrieval + voice-safe result) → grounded spoken answer (<60w) → TTS
 ```
 
 ---
@@ -639,67 +637,74 @@ The frontend uses these tokens to dynamically inject CSS variables into the GenU
 
 ## 13. Queue Architecture (`packages/queues`)
 
-Use **Redis + BullMQ**.
+Use **Redis + BullMQ** for ingestion; Redis doubles as cache + rate limits + voice room map.
 
-### Queue Partitioning
-1. `crawl-queue`: Dispatches URL discovery, page fetch jobs.
-2. `processing-queue`: Content cleaning, Readability parsing, brand extraction.
-3. `embedding-queue`: Batch LLM embedding calls and pgvector upserts.
-4. `voice-queue`: Offloads non-streaming TTS audio rendering when needed.
+### Live Redis uses
+1. Ingest queues (crawl/discovery/processing — see `workers/worker`).
+2. `qemb:v1` / `qctx:v1` retrieval caches.
+3. `rl:{embed|voice|voice-tool}:*` rate-limit buckets (`checkEmbedRateLimit`).
+4. `voice:room:*` 1h TTL (voice mint room→company).
 
-Initially, a single worker process instances listeners for all queues. As load grows, separate worker instances can be dedicated to `crawl-queue` vs `embedding-queue`.
+> `voice-queue` TTS rendering from the old plan is unused — voice audio is external VoiceKit/LiveKit, not BullMQ.
 
 ---
 
-## 14. Server-Sent Events (SSE) Contract
+## 14. Server-Sent Events (SSE) Contract (live)
 
-Stream endpoint: `GET /conversations/:id/stream`
+Text endpoints: `POST /api/companies/:id/chat` and `POST /api/embed/:key/chat`.
 
-### Standard Event Stream
+### Live event stream
 ```text
-event: conversation.started
-data: { "conversationId": "uuid" }
+event: status
+data: { "stage": "retrieving" | "synthesizing", "message": "..." }
 
-event: message.started
-data: { "messageId": "uuid", "role": "assistant" }
+event: brand
+data: { "logoUrl": "...", "tokens": {...} }
 
-event: message.delta
-data: { "text": "Acme Corp provides an enterprise-grade cloud security..." }
+event: evidence
+data: [{ "sourceId": "...", "url": "...", "pageTitle": "...", "snippet": "...", "type": "fact"|"chunk", "score": 0..1 }]
 
-event: evidence.added
-data: [{ "sourceId": "doc-1", "url": "https://acme.com/about", "title": "About Us" }]
+event: delta
+data: { "text": "Acme Corp provides..." }
 
-event: visual.ready
-data: { "type": "stats", "props": { "title": "Platform Scale", "items": [...] } }
+event: done
+data: { "conversationId": "uuid", "messageId": "uuid", "evidenceCount": 3, "hasVisual": false }
 
-event: audio.chunk
-data: { "chunk": "<base64_audio>", "format": "mp3" }
-
-event: message.completed
-data: { "messageId": "uuid", "status": "completed" }
+event: error
+data: { "message": "..." }
 ```
 
+Voice has no SSE — mic goes over LiveKit WebRTC; transcripts buffer `lk.transcription` silently and append as plain-text bubbles post-call (no evidence by design v1).
+
 ---
 
-## 15. Minimal API Surface (`apps/api`)
+## 15. Live API Surface (`apps/api`, see `/swagger`)
 
 ```text
-# Company Ingestion
-POST   /api/companies                  # Submit URL, trigger background crawl
-GET    /api/companies                  # List indexed companies
-GET    /api/companies/:id              # Get company summary & latest snapshot
-GET    /api/companies/:id/status       # Poll active crawl/processing status
-POST   /api/companies/:id/refresh      # Trigger a new snapshot crawl
+# Health / docs
+GET    /health                       # {status, service, timestamp}
+GET    /swagger                      # Elysia swagger UI
 
-# Brand & Sources
-GET    /api/companies/:id/brand        # Get extracted BrandTokens & logo
-GET    /api/companies/:id/sources      # Get browsable document inventory
+# Company ingestion (routes/companies.ts + crawler.ts)
+POST   /api/companies                # Submit URL, trigger background crawl
+GET    /api/companies                # List indexed companies
+GET    /api/companies/:id            # Company summary + latest snapshot
 
-# Conversations & Realtime Chat
-POST   /api/conversations              # Initialize conversation for a company
-GET    /api/conversations/:id          # Fetch conversation history
-POST   /api/conversations/:id/messages # Send message (triggers retrieval & LLM)
-GET    /api/conversations/:id/stream   # SSE endpoint for streaming responses
+# Grounded text chat (SSE: status/brand/evidence/delta/done/error)
+POST   /api/companies/:id/chat       # {message, conversationId?}
+GET    /api/companies/:id/conversations
+GET    /api/conversations/:id/messages
+
+# Embed widget (opaque agw_ keys, READY-gate + 429 + retry-after)
+POST   /api/embed/keys               # Issue/reuse widget key
+GET    /api/embed/keys?companyId=    # List key prefixes
+POST   /api/embed/keys/:keyId/revoke # Revoke (later 410)
+GET    /api/embed/:key/config        # Public config + ready flag
+POST   /api/embed/:key/chat          # Anonymous SSE chat
+
+# Voice (VoiceKit + LiveKit wss://livekit-vyom...)
+POST   /api/voice/token              # {companyId|widgetKey, metadata?} → {token, roomName, livekitUrl}
+POST   /api/voice/tool/query         # VoiceKit tool webhook {company_id uuid, query 1-2000} → {result, evidence_count, snapshot_id}
 ```
 
 ---
@@ -734,21 +739,22 @@ flowchart LR
   * Brand token extractor (colors, logo, typography).
 * Wire up `workers/worker` to process `crawl-queue` and create snapshot records.
 
-### Phase 4: Knowledge Processing & Hybrid Retrieval
-* Implement chunking and fact extraction pipelines in `packages/knowledge`.
-* Implement provider-agnostic vector embedding generator in `packages/ai`.
-* Build the 3-pillar retrieval engine in `packages/retrieval`:
-  * SQL fact queries.
-  * `pgvector` semantic similarity queries.
-  * Full-text search with RRF ranking into `EvidenceSet`.
+### Phase 4: Knowledge Processing & Hybrid Retrieval — DONE (as-built)
+* Chunking + fact extraction run in worker/crawler pipeline.
+* Embeddings via `packages/shared`; Qdrant top-20 + PG hydration + MMR in `packages/database/src/retrieval.ts` (not `packages/retrieval`, no pgvector/FTS/RRF).
+* Redis `qemb` 1h / `qctx` 5min caches with READY invalidation.
 
-### Phase 5: Answer Engine & Generative UI Core
-* Implement LLM provider adapter in `packages/ai` with structured output support.
-* Build the `ConversationService` coordinating Retrieval $\to$ Prompt $\to$ Answer Contract.
-* Define and validate the `VisualSpec` schemas in `packages/genui`.
+### Phase 5: Answer Engine & Generative UI Core — TEXT DONE, GENUI DEFERRED
+* LLM streaming via `packages/shared` + `chat.ts` / `embed.ts` SSE (`status/brand/evidence/delta/done/error`); `visualSpec: null` text-only.
+* `packages/genui` + `packages/contracts` VisualSpec stay defined but unwired (PLANNED).
 
-### Phase 6: Next.js Frontend & SSE Realtime Experience
-* Scaffold Next.js App Router in `apps/web` with Tailwind CSS and shadcn/ui.
-* Build the GenUI Component Registry (`Hero`, `Stats`, `Pricing`, `Timeline`, `Comparison`, etc.).
-* Implement `use-chat-stream` hook to consume SSE events (`message.delta`, `visual.ready`, `audio.chunk`).
-* Apply dynamic brand styling via extracted `BrandTokens`.
+### Phase 6: Next.js Frontend & Streaming — DONE (as-built)
+* `/?company=` main chat + `/embed/[key]/` widget + `/ingest` studio with Tailwind + shadcn + Phosphor icons.
+* `use-company-chat.ts` SSE state machine + `voice-client.ts` token proxy + `voice-session.tsx` LiveKit join + silent transcription buffer.
+* Brand styling via CSS vars (`--brand-primary`).
+
+### Phase 7: Voice RAG via VoiceKit webhook — DONE (see VOICE_RAG_IMPLEMENTATION_PLAN.md)
+* Phase 0 echo probe (during-call `{query, company_id}` + end-call transcript split).
+* Phase 1 `POST /api/voice/tool/query` (Bearer `VOICE_TOOL_SECRET`, 401/404/409/429, `retrieveCompanyContext` chunkLimit 6, voice-safe ≤6000 chars).
+* Phase 2 mint `metadata.company.id` + `voice:room:*` 1h TTL + `{{company.id}}` prompt (single shared assistant, per-call isolation).
+* Dashboard: `query_company_knowledge` webhook (timeout 25) attached + MUST-call prompt.
