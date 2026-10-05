@@ -7,12 +7,10 @@ import {
   CreditCard,
   Key,
   SignOut,
-  Sparkle,
 } from "@phosphor-icons/react";
 import {
   Avatar,
   AvatarFallback,
-  AvatarImage,
 } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -53,10 +51,10 @@ export function NavUser({ user = DEFAULT_USER }: { user?: UserProfile }) {
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
               size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground hover:bg-zinc-200/70 dark:hover:bg-zinc-900 transition-colors"
+              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
-              <Avatar className="h-8 w-8 rounded-lg bg-zinc-200 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700/60">
-                <AvatarFallback className="rounded-lg bg-zinc-100 dark:bg-zinc-900 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+              <Avatar className="h-8 w-8 rounded-lg">
+                <AvatarFallback className="rounded-lg">
                   {user.name
                     .split(" ")
                     .map((n) => n[0])
@@ -64,26 +62,26 @@ export function NavUser({ user = DEFAULT_USER }: { user?: UserProfile }) {
                 </AvatarFallback>
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold text-zinc-900 dark:text-zinc-200">
+                <span className="truncate font-medium">
                   {user.name}
                 </span>
-                <span className="truncate text-xs text-zinc-500 font-mono">
+                <span className="truncate text-xs">
                   {user.email}
                 </span>
               </div>
-              <CaretUpDown className="ml-auto size-4 text-zinc-400" />
+              <CaretUpDown className="ml-auto size-4" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
-            className="w-[--radix-dropdown-menu-trigger-width] min-w-56 rounded-xl border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 shadow-2xl p-1.5"
+            className="w-[--radix-dropdown-menu-trigger-width] min-w-56 rounded-lg"
             side={isMobile ? "bottom" : "right"}
             align="end"
             sideOffset={4}
           >
             <DropdownMenuLabel className="p-0 font-normal">
-              <div className="flex items-center gap-2 px-2 py-1.5 text-left text-sm">
-                <Avatar className="h-8 w-8 rounded-lg bg-zinc-200 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700/60">
-                  <AvatarFallback className="rounded-lg bg-zinc-100 dark:bg-zinc-900 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+              <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
+                <Avatar className="h-8 w-8 rounded-lg">
+                  <AvatarFallback className="rounded-lg">
                     {user.name
                       .split(" ")
                       .map((n) => n[0])
@@ -91,34 +89,34 @@ export function NavUser({ user = DEFAULT_USER }: { user?: UserProfile }) {
                   </AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-semibold text-zinc-900 dark:text-zinc-200">
+                  <span className="truncate font-medium">
                     {user.name}
                   </span>
-                  <span className="truncate text-xs text-zinc-500 font-mono">
+                  <span className="truncate text-xs">
                     {user.email}
                   </span>
                 </div>
               </div>
             </DropdownMenuLabel>
-            <DropdownMenuSeparator className="bg-zinc-200 dark:bg-zinc-800 my-1" />
+            <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem className="gap-2.5 p-2 rounded-lg text-xs cursor-pointer focus:bg-zinc-100 dark:focus:bg-zinc-900 focus:text-zinc-900 dark:focus:text-zinc-100">
-                <User className="size-4 text-zinc-500 dark:text-zinc-400" />
-                <span>Account Profile</span>
+              <DropdownMenuItem>
+                <User />
+                Account Profile
               </DropdownMenuItem>
-              <DropdownMenuItem className="gap-2.5 p-2 rounded-lg text-xs cursor-pointer focus:bg-zinc-100 dark:focus:bg-zinc-900 focus:text-zinc-900 dark:focus:text-zinc-100">
-                <Key className="size-4 text-zinc-500 dark:text-zinc-400" />
-                <span>API Keys & Credentials</span>
+              <DropdownMenuItem>
+                <Key />
+                API Keys & Credentials
               </DropdownMenuItem>
-              <DropdownMenuItem className="gap-2.5 p-2 rounded-lg text-xs cursor-pointer focus:bg-zinc-100 dark:focus:bg-zinc-900 focus:text-zinc-900 dark:focus:text-zinc-100">
-                <CreditCard className="size-4 text-zinc-500 dark:text-zinc-400" />
-                <span>Billing & Usage</span>
+              <DropdownMenuItem>
+                <CreditCard />
+                Billing & Usage
               </DropdownMenuItem>
             </DropdownMenuGroup>
-            <DropdownMenuSeparator className="bg-zinc-200 dark:bg-zinc-800 my-1" />
-            <DropdownMenuItem className="gap-2.5 p-2 rounded-lg text-xs cursor-pointer text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 focus:bg-red-50 dark:focus:bg-red-950/40">
-              <SignOut className="size-4 text-red-500 dark:text-red-400" />
-              <span>Log out</span>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem>
+              <SignOut />
+              Log out
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
