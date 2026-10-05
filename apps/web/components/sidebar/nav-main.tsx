@@ -54,13 +54,12 @@ export function NavMain({ activeId, onSelect }: NavMainProps) {
             );
           }
 
-          // Single-item section (e.g. AGENTS) — label + direct button.
+          // Single-item section (e.g. AGENTS) — direct button, no subgroup.
           if (section.items.length === 1) {
             const item = section.items[0];
             const Icon = item.icon;
             return (
-              <SidebarMenuItem key={section.title}>
-                <SidebarGroupLabel>{section.title}</SidebarGroupLabel>
+              <SidebarMenuItem key={item.id}>
                 <SidebarMenuButton
                   tooltip={item.label}
                   isActive={activeId === item.id}
@@ -96,6 +95,7 @@ export function NavMain({ activeId, onSelect }: NavMainProps) {
                         <SidebarMenuSubButton
                           asChild
                           isActive={activeId === subItem.id}
+                          className="w-full"
                         >
                           <button type="button" onClick={() => onSelect(subItem.id)}>
                             <span>{subItem.label}</span>

@@ -20,6 +20,7 @@ import {
   Crosshair,
   Lightning,
   ChartBar,
+  ChartLine,
   ListBullets,
   WarningCircle,
   Eye,
@@ -104,7 +105,7 @@ export const SIDEBAR_NAV: SidebarNavSection[] = [
   },
   {
     title: "OPERATIONS",
-    icon: ListBullets,
+    icon: ChartLine,
     items: [
       { id: "activity", label: "Activity", icon: ListBullets },
       { id: "errors", label: "Errors", icon: WarningCircle },
