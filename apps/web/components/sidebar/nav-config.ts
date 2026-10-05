@@ -22,9 +22,7 @@ import {
   ChartBar,
   ListBullets,
   WarningCircle,
-  Key,
-  CreditCard,
-  Users,
+  Eye,
 } from "@phosphor-icons/react";
 
 export interface SidebarNavItem {
@@ -93,6 +91,12 @@ export const SIDEBAR_NAV: SidebarNavSection[] = [
       { id: "conversations", label: "Conversations", icon: ChatCircleText },
       { id: "leads", label: "Leads", icon: UserPlus },
       { id: "conversions", label: "Conversions", icon: Target },
+    ],
+  },
+  {
+    title: "INSIGHTS",
+    icon: Eye,
+    items: [
       { id: "intent-radar", label: "Intent Radar", icon: Crosshair },
       { id: "signals", label: "Signals", icon: Lightning },
       { id: "analytics", label: "Analytics", icon: ChartBar },
@@ -104,15 +108,6 @@ export const SIDEBAR_NAV: SidebarNavSection[] = [
     items: [
       { id: "activity", label: "Activity", icon: ListBullets },
       { id: "errors", label: "Errors", icon: WarningCircle },
-    ],
-  },
-  {
-    title: "SETTINGS",
-    icon: Key,
-    items: [
-      { id: "api-webhooks", label: "API & Webhooks", icon: Key },
-      { id: "usage-billing", label: "Usage & Billing", icon: CreditCard },
-      { id: "team", label: "Team", icon: Users },
     ],
   },
 ];

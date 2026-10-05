@@ -9,7 +9,6 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { CompanySwitcher, type CompanyItem } from "./company-switcher";
-import { NavChats } from "./nav-chats";
 import { NavMain } from "./nav-main";
 import { NavUser } from "./nav-user";
 
@@ -18,7 +17,6 @@ interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   selectedCompany: CompanyItem;
   onSelectCompany: (company: CompanyItem) => void;
   onOpenAddCompany: () => void | Promise<void>;
-  onNewChat: () => void | Promise<void>;
 }
 
 export function AppSidebar({
@@ -26,7 +24,6 @@ export function AppSidebar({
   selectedCompany,
   onSelectCompany,
   onOpenAddCompany,
-  onNewChat,
   ...props
 }: AppSidebarProps) {
   // Phase 1 visual-only selection. Phase 2 will derive this from the route.
@@ -43,7 +40,6 @@ export function AppSidebar({
         />
       </SidebarHeader>
       <SidebarContent>
-        <NavChats onNewChat={onNewChat} />
         <NavMain activeId={activeId} onSelect={setActiveId} />
       </SidebarContent>
       <SidebarFooter>

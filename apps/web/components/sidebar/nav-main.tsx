@@ -25,8 +25,10 @@ interface NavMainProps {
 
 /**
  * sidebar-07 NavMain: singleton leaves render as direct menu buttons,
- * titled sections render as collapsible parents with sub-items.
- * Visual-only for now (no routing); active section auto-opens.
+ * multi-item sections render as collapsible parents with sub-items,
+ * single-item sections (e.g. AGENTS) render as a direct button under
+ * their group label. KNOWLEDGE opens by default; the rest start closed.
+ * Visual-only for now (no routing).
  */
 export function NavMain({ activeId, onSelect }: NavMainProps) {
   return (
@@ -52,13 +54,31 @@ export function NavMain({ activeId, onSelect }: NavMainProps) {
             );
           }
 
+          // Single-item section (e.g. AGENTS) — label + direct button.
+          if (section.items.length === 1) {
+            const item = section.items[0];
+            const Icon = item.icon;
+            return (
+              <SidebarMenuItem key={section.title}>
+                <SidebarGroupLabel>{section.title}</SidebarGroupLabel>
+                <SidebarMenuButton
+                  tooltip={item.label}
+                  isActive={activeId === item.id}
+                  onClick={() => onSelect(item.id)}
+                >
+                  <Icon />
+                  <span>{item.label}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            );
+          }
+
           const ParentIcon = section.icon ?? section.items[0].icon;
-          const containsActive = section.items.some((i) => i.id === activeId);
           return (
             <Collapsible
               key={section.title}
               asChild
-              defaultOpen={containsActive}
+              defaultOpen={section.title === "KNOWLEDGE"}
               className="group/collapsible"
             >
               <SidebarMenuItem>

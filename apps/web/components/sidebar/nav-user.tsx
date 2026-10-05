@@ -6,6 +6,7 @@ import {
   User,
   CreditCard,
   Key,
+  Users,
   SignOut,
 } from "@phosphor-icons/react";
 import {
@@ -104,13 +105,20 @@ export function NavUser({ user = DEFAULT_USER }: { user?: UserProfile }) {
                 <User />
                 Account Profile
               </DropdownMenuItem>
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
               <DropdownMenuItem>
                 <Key />
-                API Keys & Credentials
+                API & Webhooks
               </DropdownMenuItem>
               <DropdownMenuItem>
                 <CreditCard />
-                Billing & Usage
+                Usage & Billing
+              </DropdownMenuItem>
+              <DropdownMenuItem>
+                <Users />
+                Team
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />

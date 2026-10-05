@@ -107,7 +107,7 @@ export function CompanySwitcher({
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
                   placeholder="Filter companies..."
-                  className="w-full h-8 px-2.5 rounded-md border bg-transparent text-xs focus:outline-none"
+                  className="w-full h-8 px-2.5 rounded-md border border-sidebar-border bg-transparent text-xs focus:outline-none"
                 />
               </div>
             )}
@@ -125,7 +125,7 @@ export function CompanySwitcher({
                     className="gap-2 p-2"
                   >
                     <div
-                      className="flex size-6 items-center justify-center rounded-md border font-bold text-[11px] shrink-0"
+                      className="flex size-6 items-center justify-center rounded-md border border-sidebar-border font-bold text-[11px] shrink-0"
                       style={{
                         backgroundColor: `${company.brandColor}20`,
                         color: company.brandColor,
@@ -145,7 +145,7 @@ export function CompanySwitcher({
             )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onOpenAddDialog} className="gap-2 p-2">
-              <div className="flex size-6 items-center justify-center rounded-md border bg-transparent">
+              <div className="flex size-6 items-center justify-center rounded-md border border-sidebar-border bg-transparent">
                 <Plus className="size-4" />
               </div>
               <div className="font-medium text-muted-foreground">Ingestion Studio</div>

@@ -269,7 +269,6 @@ export default function Home() {
             setWorkspaceView("chat");
           }}
           onOpenAddCompany={() => router.push("/ingest")}
-          onNewChat={handleNewChat}
         />
 
         {/* Main Content Area via SidebarInset */}
