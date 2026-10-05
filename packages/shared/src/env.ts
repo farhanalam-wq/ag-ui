@@ -28,10 +28,30 @@ export function autoLoadMonorepoEnv() {
         });
       } catch {}
     }
+    // Never ascend above the monorepo root: nearest .env wins for keys it
+    // defines, ancestor .env files fill the rest — but nothing outside the
+    // repo (e.g. C:\Users\<you>\.env) is ever merged in.
+    if (isRepoRoot(currentDir)) break;
     const parent = resolve(currentDir, "..");
     if (parent === currentDir) break;
     currentDir = parent;
   }
+}
+
+/**
+ * A directory is the monorepo root when it owns the workspace definition
+ * (package.json `workspaces`) or the git checkout boundary.
+ */
+function isRepoRoot(dir: string): boolean {
+  try {
+    if (existsSync(resolve(dir, ".git"))) return true;
+    const pkgPath = resolve(dir, "package.json");
+    if (existsSync(pkgPath)) {
+      const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+      if (pkg && pkg.workspaces) return true;
+    }
+  } catch {}
+  return false;
 }
 
 autoLoadMonorepoEnv();

@@ -49,7 +49,7 @@ import {
   extractCleanContent,
   inferCategory,
 } from "./packages/crawler/src/extractor";
-import { extractBrandIntelligence } from "./packages/crawler/src/brand";
+import { extractBrandIntelligence, type ExtractedBrandData } from "./packages/crawler/src/brand";
 import {
   chunkMarkdown,
   generateEmbeddings,
@@ -115,6 +115,7 @@ export interface CliOptions {
   skipEmbed: boolean;
   dryRun: boolean;
   noEmbedCache: boolean;
+  json: boolean;
   onProgress?: (event: PipelineProgressEvent) => void | Promise<void>;
 }
 
@@ -242,8 +243,10 @@ Options:
   --timeout N            Per-page HTTP timeout ms (default 10000)
   --playwright           Enable Playwright fallback for JS shells (default OFF for speed)
   --skip-embed           Parse + insert documents but skip chunk/embed (fast smoke test)
+  --no-embed             Alias for --skip-embed (crawl + parse only, no embedding)
+  --json                 Print crawl + parse + brand results as a delimited JSON block
   --no-embed-cache       Bypass Redis embedding cache for reads and writes (parity tests)
-  --dry-run              Crawl + parse, print stats, skip all DB writes
+  --dry-run              Crawl + parse, print stats, skip all DB writes (add --json for brand output)
   --help                 Show this help
 
 Interactive (no --limit/--all/--select):
@@ -253,6 +256,8 @@ Examples:
   bun ingest-cli.ts https://example.com --discover-only --limit 20
   bun ingest-cli.ts https://example.com --all --yes --fetch-concurrency 20
   bun ingest-cli.ts https://example.com --playwright --fetch-concurrency 10
+  bun ingest-cli.ts https://example.com --dry-run --json --limit 1 --yes
+  bun ingest-cli.ts https://example.com --no-embed --json --limit 5 --yes
 `);
 }
 
@@ -304,9 +309,10 @@ function parseArgs(argv: string[]): { url: string | null; opts: CliOptions } {
       maxSitemaps: Math.max(1, Math.min(25, parseInt(maxSmsRaw ?? "10", 10) || 10)),
       timeoutMs: Math.max(2000, parseInt(timeoutRaw ?? "10000", 10) || 10000),
       usePlaywright: has("--playwright"),
-      skipEmbed: has("--skip-embed"),
+      skipEmbed: has("--skip-embed") || has("--no-embed"),
       dryRun: has("--dry-run"),
       noEmbedCache: has("--no-embed-cache"),
+      json: has("--json"),
     },
   };
 }
@@ -1041,6 +1047,54 @@ async function crawlPages(
   };
 }
 
+// ------------------------------------------------------------ json out ---
+
+/** Builds the --json payload: crawl + parse + brand only, never embeddings. */
+export function buildJsonPayload(args: {
+  mode: "dry-run" | "no-embed" | "full";
+  domain: string;
+  companyName: string;
+  brand: ExtractedBrandData | null;
+  docs: CrawledDoc[];
+  stats: Record<string, any>;
+}) {
+  return {
+    mode: args.mode,
+    domain: args.domain,
+    company: args.companyName,
+    brand: args.brand
+      ? {
+          logoUrl: args.brand.logoUrl ?? null,
+          faviconUrl: args.brand.faviconUrl ?? null,
+          tokens: args.brand.tokens,
+        }
+      : null,
+    documents: args.docs.map((d) => ({
+      url: d.url,
+      title: d.title,
+      category: d.category,
+      chars: d.content.length,
+      wordCount: d.wordCount,
+      headings: d.headings,
+      contentPreview: d.content.slice(0, 1000),
+    })),
+    stats: {
+      docs: args.docs.length,
+      failed: args.stats.failed ?? 0,
+      httpCount: args.stats.httpCount ?? 0,
+      playwrightCount: args.stats.pwCount ?? 0,
+      skippedThin: args.stats.skippedThin ?? 0,
+    },
+  };
+}
+
+/** Prints the payload as one delimited JSON block (stays pipe-safe next to human logs). */
+export function printJsonPayload(payload: unknown) {
+  console.log("---JSON-BEGIN---");
+  console.log(JSON.stringify(payload, null, 2));
+  console.log("---JSON-END---");
+}
+
 // ------------------------------------------------------------ populate ---
 
 async function populateDb(
@@ -1102,12 +1156,13 @@ async function populateDb(
     if (crawlJobId) {
       await db.update(crawlJobs).set({ status: "FAILED", errorSample: crawlStats.deadLetters?.slice(0, 200) ?? [], updatedAt: new Date() }).where(eq(crawlJobs.id, crawlJobId));
     }
-    return { companyId, snapshotId: snapId, version, insertedDocs: 0, chunkCount: 0, factCount: 0, ms: Date.now() - t0 };
+    return { companyId, snapshotId: snapId, version, insertedDocs: 0, chunkCount: 0, factCount: 0, brand: null, ms: Date.now() - t0 };
   }
 
   // Brand upsert from root HTML.
+  let brand: ExtractedBrandData | null = null;
   try {
-    let brandData: any;
+    let brandData: ExtractedBrandData;
     if (rootHtml) {
       brandData = await extractBrandIntelligence(rootHtml, baseUrl, { fetchExternalCss: true });
     } else {
@@ -1117,18 +1172,19 @@ async function populateDb(
           colors: { primary: "#2563eb", background: "#ffffff", foreground: "#09090b" },
           typography: {},
           radius: "0.5rem",
-          style: "corporate",
-          theme: "light",
+          style: "corporate" as const,
+          theme: "light" as const,
         },
       };
     }
     const [eb] = await db.select().from(brands).where(eq(brands.companyId, companyId)).limit(1);
     if (eb) {
-      await db.update(brands).set({ logoUrl: (brandData as any).logoUrl, tokens: (brandData as any).tokens }).where(eq(brands.id, eb.id));
+      await db.update(brands).set({ logoUrl: brandData.logoUrl ?? null, tokens: brandData.tokens }).where(eq(brands.id, eb.id));
     } else {
-      await db.insert(brands).values({ companyId, logoUrl: (brandData as any).logoUrl, tokens: (brandData as any).tokens });
+      await db.insert(brands).values({ companyId, logoUrl: brandData.logoUrl ?? null, tokens: brandData.tokens });
     }
-    console.log(`[DB] brand upserted (primary=${(brandData as any).tokens?.colors?.primary}, theme=${(brandData as any).tokens?.theme || "auto"}, stylesheet=${(brandData as any).tokens?.stylesheet ? "yes" : "no"})`);
+    console.log(`[DB] brand upserted (primary=${brandData.tokens?.colors?.primary}, theme=${brandData.tokens?.theme || "auto"}, stylesheet=${brandData.tokens?.stylesheet ? "yes" : "no"})`);
+    brand = brandData;
   } catch (err: any) {
     console.log(`[DB] brand extraction skipped: ${err.message}`);
   }
@@ -1165,7 +1221,7 @@ async function populateDb(
     if (crawlJobId) {
       await db.update(crawlJobs).set({ status: "READY", docs: docs.length, failed: crawlStats.failed ?? 0, errorSample: crawlStats.deadLetters?.slice(0, 200) ?? [], updatedAt: new Date() }).where(eq(crawlJobs.id, crawlJobId));
     }
-    return { companyId, snapshotId: snapId, version, insertedDocs: inserted.length, chunkCount: 0, factCount: 0, ms: Date.now() - t0 };
+    return { companyId, snapshotId: snapId, version, insertedDocs: inserted.length, chunkCount: 0, factCount: 0, brand, ms: Date.now() - t0 };
   }
 
   const pending: {
@@ -1297,7 +1353,7 @@ async function populateDb(
       updatedAt: new Date(),
     }).where(eq(crawlJobs.id, crawlJobId));
   }
-  return { companyId, snapshotId: snapId, version, insertedDocs: inserted.length, chunkCount, factCount: extracted.length, ms: Date.now() - t0 };
+  return { companyId, snapshotId: snapId, version, insertedDocs: inserted.length, chunkCount, factCount: extracted.length, brand, ms: Date.now() - t0 };
 }
 
 // ---------------------------------------------------------------- main ---
@@ -1345,6 +1401,7 @@ export async function runIngestPipeline(
     skipEmbed: false,
     dryRun: false,
     noEmbedCache: false,
+    json: false,
   };
 
   const opts: CliOptions = { ...defaultOpts, ...userOpts };
@@ -1600,6 +1657,19 @@ export async function runIngestPipeline(
   if (opts.dryRun || docs.length === 0) {
     console.log(`[DRY] ${opts.dryRun ? "--dry-run: skipping DB." : "no docs: skipping DB."} Top docs:`);
     docs.slice(0, 5).forEach((d, i) => console.log(`  ${i + 1}. [${d.category}] ${d.title} (${d.content.length} chars) ${d.url}`));
+    // Brand parse check without any DB writes (only when --json asks for it).
+    let dryBrand: ExtractedBrandData | null = null;
+    if (opts.json && opts.dryRun && rootHtml) {
+      try {
+        dryBrand = await extractBrandIntelligence(rootHtml, baseUrl as URL, { fetchExternalCss: true });
+        console.log(`[DRY] brand extracted (primary=${dryBrand.tokens?.colors?.primary}, theme=${dryBrand.tokens?.theme || "auto"}, stylesheet=${dryBrand.tokens?.stylesheet ? "yes" : "no"})`);
+      } catch (err: any) {
+        console.log(`[DRY] brand extraction skipped: ${err.message}`);
+      }
+    }
+    if (opts.json) {
+      printJsonPayload(buildJsonPayload({ mode: "dry-run", domain, companyName, brand: dryBrand, docs, stats }));
+    }
     return {
       companyId: cId,
       companyName,
@@ -1642,6 +1712,18 @@ export async function runIngestPipeline(
   console.log(`  discovered=${pages.length} selected=${selected.length} docs=${res.insertedDocs} chunks=${res.chunkCount} facts=${res.factCount}`);
   console.log(`  crawl=${elapsedCrawl}s (${pps} docs/s) db=${(res.ms / 1000).toFixed(1)}s`);
   console.log(`==============================================`);
+  if (opts.json) {
+    printJsonPayload(
+      buildJsonPayload({
+        mode: opts.skipEmbed ? "no-embed" : "full",
+        domain,
+        companyName,
+        brand: res.brand,
+        docs,
+        stats,
+      })
+    );
+  }
 
   return {
     companyId: res.companyId,

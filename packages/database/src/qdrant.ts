@@ -34,6 +34,14 @@ export interface QdrantQueryResult {
 
 export const QDRANT_COLLECTION = "company_chunks";
 
+/**
+ * Single source of truth for the embedding dimension. Qdrant collection
+ * dimensions are immutable after creation, so this must never be inferred
+ * from incoming data — one off-size batch would permanently lock the
+ * collection to the wrong width and fail every later upsert.
+ */
+export const QDRANT_VECTOR_DIMS = 1536;
+
 export function getQdrantUrl(): string {
   return (process.env.QDRANT_URL || "http://localhost:6333").replace(/\/+$/, "");
 }
@@ -66,8 +74,13 @@ function getHeaders(): Record<string, string> {
  */
 export async function ensureQdrantCollection(
   collection = QDRANT_COLLECTION,
-  dims = 1536
+  dims = QDRANT_VECTOR_DIMS
 ): Promise<void> {
+  if (dims !== QDRANT_VECTOR_DIMS) {
+    throw new Error(
+      `[QDRANT] Refusing to create collection '${collection}' with dims=${dims}: expected ${QDRANT_VECTOR_DIMS}. Refusing to lock the collection to an off-size width.`
+    );
+  }
   const baseUrl = getQdrantUrl();
   const headers = getHeaders();
   try {
@@ -90,7 +103,15 @@ export async function ensureQdrantCollection(
         }),
       });
 
-      if (createRes.ok) {
+      if (!createRes.ok) {
+        const errText = await createRes.text().catch(() => "");
+        // Throw so callers mark the snapshot FAILED instead of drifting.
+        throw new Error(
+          `[QDRANT] Failed to create collection '${collection}' (HTTP ${createRes.status}): ${errText}`
+        );
+      }
+
+      {
         const indexes = [
           { field_name: "company_id", field_schema: "keyword" },
           { field_name: "snapshot_id", field_schema: "keyword" },
@@ -99,16 +120,29 @@ export async function ensureQdrantCollection(
           { field_name: "chunk_index", field_schema: "integer" },
         ];
         for (const idx of indexes) {
-          await fetch(`${baseUrl}/collections/${collection}/index`, {
-            method: "PUT",
-            headers,
-            body: JSON.stringify(idx),
-          }).catch(() => null);
+          try {
+            const idxRes = await fetch(`${baseUrl}/collections/${collection}/index`, {
+              method: "PUT",
+              headers,
+              body: JSON.stringify(idx),
+            });
+            // 409 = index already exists; anything else non-OK is logged.
+            if (!idxRes.ok && idxRes.status !== 409) {
+              const errText = await idxRes.text().catch(() => "");
+              console.warn(
+                `[QDRANT] Payload index '${idx.field_name}' creation returned HTTP ${idxRes.status}: ${errText}`
+              );
+            }
+          } catch (err: any) {
+            console.warn(`[QDRANT] Payload index '${idx.field_name}' creation failed: ${err?.message || "unknown"}`);
+          }
         }
       }
     }
-  } catch {
-    // Non-blocking best-effort check
+  } catch (err: any) {
+    // Preserve explicit creation failures; only the best-effort existence
+    // check itself is non-blocking.
+    if (err?.message?.startsWith("[QDRANT] Failed to create collection")) throw err;
   }
 }
 
@@ -123,8 +157,14 @@ export async function upsertChunkPoints(
 ): Promise<void> {
   if (points.length === 0) return;
 
-  const dims = points[0]?.vector?.length || 1536;
-  await ensureQdrantCollection(collection, dims);
+  for (const p of points) {
+    if (!p.vector || p.vector.length !== QDRANT_VECTOR_DIMS) {
+      throw new Error(
+        `[QDRANT] Refusing upsert: point ${p.id} has dims=${p.vector?.length ?? 0}, expected ${QDRANT_VECTOR_DIMS}.`
+      );
+    }
+  }
+  await ensureQdrantCollection(collection, QDRANT_VECTOR_DIMS);
 
   const url = `${getQdrantUrl()}/collections/${collection}/points?wait=true`;
   const headers = getHeaders();

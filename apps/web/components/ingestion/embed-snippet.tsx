@@ -93,7 +93,7 @@ export function EmbedSnippet({ result }: EmbedSnippetProps) {
 
   const raw = state.kind === "ready" ? state.raw : null;
   const snippet = raw
-    ? `<script src="${webOrigin}/embed.js"\n  data-widget-key="${raw}"\n  data-api-base="${apiBase}"\n  data-title="${result.companyName} Help"></script>`
+    ? `<script defer src="${webOrigin}/embed.js"\n  data-widget-key="${raw}"\n  data-api-base="${apiBase}"\n  data-title="${result.companyName} Help"></script>`
     : null;
 
   const handleCopy = useCallback(async () => {

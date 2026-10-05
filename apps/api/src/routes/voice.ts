@@ -9,7 +9,7 @@ import {
   eq,
   desc,
 } from "@ag-ui/database";
-import { hashWidgetKey, logger } from "@ag-ui/shared";
+import { hashWidgetKey, logger, getClientIp } from "@ag-ui/shared";
 
 const VOICEKIT_TOKEN_PATH = "/api/web-call/get-token";
 const VOICEKIT_FETCH_TIMEOUT_MS = 15000;
@@ -19,12 +19,28 @@ const VOICE_ROOM_TTL_SECONDS = 3600;
 // In-memory room -> company fallback (Redis is durable path below).
 const roomCompanyMap = new Map<string, string>();
 
-function getClientIp(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  const realIp = request.headers.get("x-real-ip");
-  if (realIp) return realIp.trim();
-  return "unknown";
+/**
+ * Resolves the company bound to a voice room at mint time.
+ * In-memory map first (same-process fast path), then the durable
+ * `voice:room:*` Redis key so any API replica can enforce the binding.
+ * Returns null when the room is unknown or its TTL has expired.
+ */
+export async function resolveRoomCompany(roomName: string): Promise<string | null> {
+  const mem = roomCompanyMap.get(roomName);
+  if (mem) return mem;
+  try {
+    const r = await getRedisClient();
+    if (r) {
+      const v = await r.get(`voice:room:${roomName}`);
+      if (typeof v === "string" && v) {
+        roomCompanyMap.set(roomName, v);
+        return v;
+      }
+    }
+  } catch {
+    // best-effort: fall through to null
+  }
+  return null;
 }
 
 async function resolveActiveKey(rawKey: string) {

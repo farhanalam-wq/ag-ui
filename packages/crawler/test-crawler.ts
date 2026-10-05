@@ -200,7 +200,55 @@ Acme provides cloud infrastructure.
     process.exit(1);
   }
 
-  console.log("[ALL TESTS PASSED] packages/crawler is fully verified with dynamic stylesheets & markdown headings!");
+  // Test 8: Untrusted font/radius sanitization (CSS breakout must be neutralized)
+  console.log("[TEST 8] Verifying Font/Radius Sanitization...");
+  const evilBrandHtml = `
+    <html>
+      <head>
+        <link href="https://fonts.googleapis.com/css?family=Evil%3B%7D+body%7Bdisplay%3Anone%7D+%23z%7B" rel="stylesheet">
+        <style>
+          :root { --radius: 0px; } body{display:none} #z{color:red} }
+        </style>
+      </head>
+      <body>
+        <h1> evil site</h1>
+      </body>
+    </html>
+  `;
+  const evilBrand = await extractBrandIntelligence(evilBrandHtml, new URL("https://evil.example.com"), { fetchExternalCss: false });
+  const evilCss = evilBrand.tokens.stylesheet || "";
+  const evilFontOk =
+    !evilBrand.tokens.typography.headingFont || /^[A-Za-z][A-Za-z0-9 \-]{0,48}$/.test(evilBrand.tokens.typography.headingFont);
+  if (
+    evilFontOk &&
+    !/body\s*\{\s*display\s*:\s*none/i.test(evilCss) &&
+    !/@import|url\(|expression|javascript:/i.test(evilCss)
+  ) {
+    console.log(`[PASS] Malicious font payload neutralized: headingFont='${evilBrand.tokens.typography.headingFont}'. No breakout in compiled stylesheet.\n`);
+  } else {
+    console.error("[FAIL] Font sanitization failed:", evilBrand.tokens.typography, evilCss.slice(0, 500));
+    process.exit(1);
+  }
+
+  // Test 9: Legit Google Fonts with weight suffix still resolve
+  console.log("[TEST 9] Verifying Legit Weighted Font Preserved...");
+  const goodFontHtml = `
+    <html>
+      <head>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+      </head>
+      <body><h1>Good SaaS</h1></body>
+    </html>
+  `;
+  const goodBrand = await extractBrandIntelligence(goodFontHtml, new URL("https://good.example.com"), { fetchExternalCss: false });
+  if (goodBrand.tokens.typography.headingFont === "Inter") {
+    console.log(`[PASS] Weighted font suffix stripped, family preserved: '${goodBrand.tokens.typography.headingFont}'.\n`);
+  } else {
+    console.error("[FAIL] Legit font handling failed:", goodBrand.tokens.typography);
+    process.exit(1);
+  }
+
+  console.log("[ALL TESTS PASSED] packages/crawler is fully verified with dynamic stylesheets, markdown headings & sanitization!");
 }
 
 runTests().catch((err) => {

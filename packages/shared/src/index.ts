@@ -1,5 +1,6 @@
 export * from "./logger";
 export * from "./env";
+export * from "./http";
 export * from "./storage";
 export * from "./chunker";
 export * from "./embed-cache";

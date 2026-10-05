@@ -127,7 +127,8 @@ company-ai/
 │   Retrieval = `packages/database/src/retrieval.ts`; brand extraction lives in the crawler/worker.
 ├── package.json                     # Root package with native Bun "workspaces" field
 ├── turbo.json                       # Turborepo task pipeline definition
-├── tsconfig.json                    # Shared base TypeScript config
+├── tsconfig.base.json               # Shared base TypeScript config (strict, ESM, bundler resolution)
+├── tsconfig.json                    # Root noEmit config covering root-level `*.ts` CLIs only
 └── .env.example
 ```
 
@@ -464,7 +465,7 @@ Qdrant (QDRANT_URL, collection per env)
 Redis
 ├── qemb:v1:{queryHash} (1h) / qctx:v1:{company}:{snapshot}:{queryHash}:{limit} (5min)
 ├── rl:{embed|voice|voice-tool}:* (rate limits)
-└── voice:room:<roomName> (1h, room→company for voice)
+└── voice:room:<roomName> (1h, room→company for voice; ENFORCED by /api/voice/tool/query — 403 on mismatch, 409 on unknown/expired room)
 
 Local storage/
 └── storage/ (no S3 wiring)
@@ -605,7 +606,7 @@ TEXT:
 Question → retrieveCompanyContext → systemPrompt+history → SSE status → brand → evidence → delta* → done (+PG persist conversations/messages)
 
 VOICE:
-mic → POST /api/voice/token (READY-gate + voice:* limit + mint metadata.company.id) → LiveKit join → STT text → LLM calls query_company_knowledge {query, company_id} → POST /api/voice/tool/query (401/404/409/429 gates + retrieval + voice-safe result) → grounded spoken answer (<60w) → TTS
+mic → POST /api/voice/token (READY-gate + voice:* limit + mint metadata.company.id) → LiveKit join → STT text → LLM calls query_company_knowledge {query, company_id, room_name} → POST /api/voice/tool/query (401/403/404/409/429 gates + room→company binding check + retrieval + voice-safe result) → grounded spoken answer (<60w) → TTS
 ```
 
 ---
@@ -628,8 +629,15 @@ export type BrandTokens = {
   };
   radius: string;          // Extracted border-radius style ('0rem' | '0.375rem' | '0.75rem' | '9999px')
   style: "corporate" | "playful" | "minimal" | "technical";
+  theme?: "light" | "dark" | "auto";
+  cssVariables?: Record<string, string>;  // compiled --brand-* dictionary
+  stylesheet?: string;                    // compiled :root template (NOT raw site CSS)
 };
 ```
+
+Untrusted-input hardening: font names (`sanitizeFontName`, allowlist + Google-Fonts weight-suffix
+stripping) and radius (`sanitizeRadius`, allowlist) are sanitized at extraction; clients only apply
+`--brand-*` variables and reject stylesheets containing `@import|url(|expression|behavior|javascript:`.
 
 The frontend uses these tokens to dynamically inject CSS variables into the GenUI wrapper, making rendered components (Pricing cards, Hero, Stats) look natively branded for each company.
 
@@ -704,7 +712,7 @@ POST   /api/embed/:key/chat          # Anonymous SSE chat
 
 # Voice (VoiceKit + LiveKit wss://livekit-vyom...)
 POST   /api/voice/token              # {companyId|widgetKey, metadata?} → {token, roomName, livekitUrl}
-POST   /api/voice/tool/query         # VoiceKit tool webhook {company_id uuid, query 1-2000} → {result, evidence_count, snapshot_id}
+POST   /api/voice/tool/query         # VoiceKit tool webhook {company_id uuid, room_name 1-128, query 1-2000} → {result, evidence_count, snapshot_id} (room_name must equal the LiveKit room minted for company_id)
 ```
 
 ---
@@ -735,7 +743,9 @@ flowchart LR
 * Implement crawler in `packages/crawler`:
   * Fast Cheerio fetcher + Playwright dynamic fallback.
   * Security guards (SSRF check, depth/page limits).
-  * Mozilla Readability document extractor.
+  * Mozilla Readability document extractor → turndown Markdown (`extractCleanContent` returns
+    Markdown, not plaintext — re-ingest existing snapshots after this change so the vector
+    store never mixes formats; chunking is Markdown-aware via `chunkMarkdown`).
   * Brand token extractor (colors, logo, typography).
 * Wire up `workers/worker` to process `crawl-queue` and create snapshot records.
 
@@ -755,6 +765,7 @@ flowchart LR
 
 ### Phase 7: Voice RAG via VoiceKit webhook — DONE (see VOICE_RAG_IMPLEMENTATION_PLAN.md)
 * Phase 0 echo probe (during-call `{query, company_id}` + end-call transcript split).
-* Phase 1 `POST /api/voice/tool/query` (Bearer `VOICE_TOOL_SECRET`, 401/404/409/429, `retrieveCompanyContext` chunkLimit 6, voice-safe ≤6000 chars).
-* Phase 2 mint `metadata.company.id` + `voice:room:*` 1h TTL + `{{company.id}}` prompt (single shared assistant, per-call isolation).
-* Dashboard: `query_company_knowledge` webhook (timeout 25) attached + MUST-call prompt.
+* Phase 1 `POST /api/voice/tool/query` (Bearer `VOICE_TOOL_SECRET`, 401/403/404/409/429, room→company binding via required `room_name`, `retrieveCompanyContext` chunkLimit 6, voice-safe ≤6000 chars with Markdown link/fence stripping).
+* Phase 2 mint `metadata.company.id` + `voice:room:*` 1h TTL + `{{company.id}}` prompt (single shared assistant, per-call isolation ENFORCED server-side).
+* Dashboard: `query_company_knowledge` webhook (timeout 25) with required params `{company_id, room_name, query}` + MUST-call prompt.
+* Required env: `VOICEKIT_API_URL`, `VOICEKIT_API_KEY`, `VOICEKIT_ASSISTANT_ID` (token mint), `VOICE_TOOL_SECRET` (webhook bearer, `openssl rand -hex 32`), `LIVEKIT_URL` (or `NEXT_PUBLIC_LIVEKIT_URL`), `TRUSTED_PROXY=1` when behind a proxy so rate-limit IPs use the trusted rightmost XFF hop.

@@ -52,6 +52,23 @@ export interface BrandTokens {
   };
 }
 
+export type NestedBrandTokens = NonNullable<BrandTokens["tokens"]>;
+
+/**
+ * The SSE onBrand payload is usually { ..., tokens: {...} }, but older
+ * snapshots stream the tokens object itself. Normalize both shapes to the
+ * nested tokens — without `any`, so future shape drift is a type error
+ * instead of a silent runtime break.
+ */
+function normalizeTokens(data: BrandTokens): NestedBrandTokens | undefined {
+  if (data.tokens && typeof data.tokens === "object") return data.tokens;
+  const flat = data as unknown as Partial<NestedBrandTokens>;
+  if (flat && typeof flat === "object" && (flat.colors || flat.cssVariables || flat.stylesheet)) {
+    return flat as NestedBrandTokens;
+  }
+  return undefined;
+}
+
 export function useCompanyChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -145,23 +162,35 @@ export function useCompanyChat() {
             },
             onBrand: (data) => {
               setActiveBrand(data);
-              const tokens = data.tokens || (data as any);
+              const tokens = normalizeTokens(data);
 
-              // Inject dynamic compiled stylesheet into DOM
+              // Inject dynamic compiled stylesheet into DOM.
+              // Defense in depth: our compiled template never contains these
+              // substrings, so their presence means tampered/foreign data.
               if (tokens?.stylesheet && typeof document !== "undefined") {
-                let styleEl = document.getElementById("ag-brand-dynamic-theme");
-                if (!styleEl) {
-                  styleEl = document.createElement("style");
-                  styleEl.id = "ag-brand-dynamic-theme";
-                  document.head.appendChild(styleEl);
+                const css = String(tokens.stylesheet);
+                const looksDangerous = /@import|url\(|expression|behavior\s*:|javascript:/i.test(css);
+                if (!looksDangerous && css.length <= 20000) {
+                  let styleEl = document.getElementById("ag-brand-dynamic-theme");
+                  if (!styleEl) {
+                    styleEl = document.createElement("style");
+                    styleEl.id = "ag-brand-dynamic-theme";
+                    document.head.appendChild(styleEl);
+                  }
+                  styleEl.textContent = css;
                 }
-                styleEl.textContent = tokens.stylesheet;
               }
 
-              // Apply all extracted CSS custom properties
+              // Apply namespaced brand CSS custom properties only, so a crawled
+              // site can never override arbitrary host-page variables.
               if (tokens?.cssVariables && typeof document !== "undefined") {
-                for (const [key, val] of Object.entries(tokens.cssVariables)) {
-                  if (typeof val === "string") {
+                const entries = Object.entries(tokens.cssVariables).slice(0, 30);
+                for (const [key, val] of entries) {
+                  if (
+                    typeof val === "string" &&
+                    val.length <= 200 &&
+                    /^--brand-[a-z-]+$/.test(key)
+                  ) {
                     document.documentElement.style.setProperty(key, val);
                   }
                 }

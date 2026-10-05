@@ -9,17 +9,10 @@ import {
   eq,
   desc,
 } from "@ag-ui/database";
-import { logger } from "@ag-ui/shared";
+import { logger, getClientIp } from "@ag-ui/shared";
+import { resolveRoomCompany } from "./voice";
 
 const VOICE_SAFE_MAX_CHARS = 6000;
-
-function getClientIp(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  const realIp = request.headers.get("x-real-ip");
-  if (realIp) return realIp.trim();
-  return "unknown";
-}
 
 async function getLatestSnapshot(companyId: string) {
   const [snap] = await db
@@ -49,6 +42,20 @@ function isAuthorized(request: Request): boolean {
 function stripToSpeechSafe(s: string): string {
   return (
     s
+      // fenced code blocks: drop fences, keep code as plain words
+      .replace(/```[\s\S]*?```/g, (m) =>
+        m
+          .replace(/```\w*\n?/g, " ")
+          .replace(/```/g, " ")
+      )
+      // markdown links/images: keep the visible text, drop the URL
+      .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      // bare URLs: never read aloud
+      .replace(/https?:\/\/\S+/g, " ")
+      // inline code + heading markers
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/^#{1,6}\s+/gm, "")
       // drop markdown tables / pipes / heavy formatting, keep words
       .replace(/[|]/g, " ")
       .replace(/[*_#>`]/g, "")
@@ -90,7 +97,8 @@ function buildVoiceSafeContext(
 /**
  * In-call RAG webhook for the VoiceKit assistant tool `query_company_knowledge`.
  * Called per utterance: STT text -> retrieval -> spoken answer.
- * Body is exactly the LLM-generated args {company_id, query}.
+ * Body is the LLM-generated args {company_id, room_name, query}; room_name must
+ * equal the LiveKit room minted for company_id (per-call isolation).
  */
 export const voiceToolRoutes = new Elysia({ prefix: "/api/voice/tool" }).post(
   "/query",
@@ -107,11 +115,25 @@ export const voiceToolRoutes = new Elysia({ prefix: "/api/voice/tool" }).post(
       return { error: "Unauthorized" };
     }
 
-    const { company_id: companyId, query } = body;
+    const { company_id: companyId, query, room_name: roomName } = body;
     const trimmedQuery = query.trim();
     if (!trimmedQuery) {
       set.status = 400;
       return { error: "Query must not be empty" };
+    }
+
+    // (a0) per-call binding: the room named by the assistant must have been
+    // minted for this exact company. The shared bearer secret alone does not
+    // scope callers to a tenant, so a body-only company_id is not trusted.
+    const boundCompanyId = await resolveRoomCompany(roomName);
+    if (!boundCompanyId) {
+      set.status = 409;
+      return { error: "Unknown or expired voice session — start a new call" };
+    }
+    if (boundCompanyId !== companyId) {
+      logger.error(`[VOICE-TOOL] Room/company mismatch: room=${roomName} bound=${boundCompanyId} asked=${companyId}`);
+      set.status = 403;
+      return { error: "Company does not match this voice session" };
     }
 
     // (a) company lookup -> 404
@@ -182,12 +204,13 @@ export const voiceToolRoutes = new Elysia({ prefix: "/api/voice/tool" }).post(
   {
     body: t.Object({
       company_id: t.String({ format: "uuid" }),
+      room_name: t.String({ minLength: 1, maxLength: 128 }),
       query: t.String({ minLength: 1, maxLength: 2000 }),
     }),
     detail: {
       summary: "Voice RAG webhook (query_company_knowledge)",
       description:
-        "In-call retrieval for the VoiceKit assistant. Validates Bearer VOICE_TOOL_SECRET, READY-gate + rate limits, runs retrieveCompanyContext, and returns voice-safe plain-text result.",
+        "In-call retrieval for the VoiceKit assistant. Validates Bearer VOICE_TOOL_SECRET, enforces per-call room->company binding (room_name must match the room minted for company_id), READY-gate + rate limits, runs retrieveCompanyContext, and returns voice-safe plain-text result.",
     },
   }
 );

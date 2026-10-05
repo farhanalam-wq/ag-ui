@@ -110,6 +110,29 @@ export function parseColorToHex(raw: string): string | null {
 }
 
 /**
+ * Allowlist-sanitizes a font family name extracted from untrusted HTML/CSS.
+ * Google Fonts params often carry weight suffixes (e.g. "Inter:wght@400;700"),
+ * which are stripped; anything outside plain font-name characters is rejected
+ * so the value can never break out of its CSS declaration when compiled into
+ * the brand stylesheet injected on widget host pages.
+ */
+export function sanitizeFontName(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  const collapsed = raw.trim().replace(/\s+/g, " ");
+  const base = collapsed.split(/[:@]/)[0].trim();
+  return /^[A-Za-z][A-Za-z0-9 \-]{0,48}$/.test(base) ? base : undefined;
+}
+
+/**
+ * Allowlist-sanitizes a border-radius value extracted from untrusted CSS.
+ */
+export function sanitizeRadius(raw: string | undefined): string {
+  if (!raw) return "0.5rem";
+  const v = raw.trim().toLowerCase();
+  return /^(\d+(\.\d+)?(rem|px|em|%)|9999px|0)$/.test(v) ? v : "0.5rem";
+}
+
+/**
  * Calculates relative luminance of an #rrggbb hex color (0 = black, 1 = white).
  */
 export function calculateLuminance(hex: string): number {
@@ -411,8 +434,8 @@ function parseBrandFromHtmlAndCss(
     const familyMatch = fontLinks.match(/family=([^&:]+)/);
     if (familyMatch && familyMatch[1]) {
       const decoded = decodeURIComponent(familyMatch[1].replace(/\+/g, " "));
-      headingFont = decoded;
-      bodyFont = decoded;
+      headingFont = sanitizeFontName(decoded);
+      bodyFont = sanitizeFontName(decoded);
     }
   }
 
@@ -421,8 +444,8 @@ function parseBrandFromHtmlAndCss(
     const importMatch = cssText.match(/@import\s+(?:url\(['"]?)?https:\/\/fonts\.googleapis\.com\/css2?\?family=([^&'":]+)/i);
     if (importMatch && importMatch[1]) {
       const decoded = decodeURIComponent(importMatch[1].replace(/\+/g, " "));
-      headingFont = decoded;
-      bodyFont = decoded;
+      headingFont = sanitizeFontName(decoded);
+      bodyFont = sanitizeFontName(decoded);
     }
   }
 
@@ -441,7 +464,7 @@ function parseBrandFromHtmlAndCss(
   // 8. Inferred Border Radius & Style Tone
   let radius = "0.5rem";
   if (cssVars.has("radius")) {
-    radius = cssVars.get("radius")!;
+    radius = sanitizeRadius(cssVars.get("radius"));
   } else {
     const combinedStr = (cssText + html).toLowerCase();
     if (combinedStr.includes("rounded-full") || combinedStr.includes("border-radius: 9999px")) {

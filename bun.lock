@@ -90,7 +90,6 @@
         "@ag-ui/contracts": "workspace:*",
         "@ag-ui/shared": "workspace:*",
         "@mozilla/readability": "^0.6.0",
-        "@types/turndown": "^5.0.6",
         "cheerio": "^1.0.0",
         "jsdom": "^26.0.0",
         "playwright": "^1.50.1",
@@ -98,6 +97,7 @@
       },
       "devDependencies": {
         "@types/jsdom": "^21.1.7",
+        "@types/turndown": "^5.0.6",
         "typescript": "^5.7.3",
       },
     },

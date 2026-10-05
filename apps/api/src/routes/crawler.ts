@@ -2,8 +2,27 @@ import { Elysia, t } from "elysia";
 import { validateSafeUrl } from "@ag-ui/crawler";
 import { discoverPages } from "@ag-ui/crawler";
 import { logger } from "@ag-ui/shared";
+import { BrandTokensSchema, type BrandTokens } from "@ag-ui/contracts";
 import { db, brands, companies, companySnapshots, crawlJobs, eq, desc } from "@ag-ui/database";
 import { runIngestPipeline, type PipelineProgressEvent } from "../../../../ingest-cli";
+
+/**
+ * Shapes stored brand rows for API consumers. Tokens come back from the
+ * jsonb column unvalidated, so a single safeParse gate keeps legacy or
+ * hand-edited rows from breaking chat/embed clients — invalid payloads are
+ * omitted (with a warning) instead of crashing downstream code.
+ */
+function toBrandPayload(
+  brand: { logoUrl: string | null; tokens: unknown } | undefined | null
+): { logoUrl: string | null; tokens: BrandTokens } | null {
+  if (!brand) return null;
+  const parsed = BrandTokensSchema.safeParse(brand.tokens);
+  if (!parsed.success) {
+    logger.warn("[API] Stored brand tokens failed validation; omitting brand from response.");
+    return null;
+  }
+  return { logoUrl: brand.logoUrl, tokens: parsed.data };
+}
 
 class AsyncEventQueue<T> {
   private queue: T[] = [];
@@ -200,7 +219,7 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
         company,
         job: latestJob || null,
         snapshot: latestSnapshot || null,
-        brand: brand ? { logoUrl: brand.logoUrl, tokens: brand.tokens } : null,
+        brand: toBrandPayload(brand),
       };
     },
     {
@@ -274,16 +293,14 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
           clearInterval(pingTimer);
 
           // Fetch brand intelligence if available
-          let brandData = null;
+          let brandData: { logoUrl: string | null; tokens: BrandTokens } | null = null;
           try {
             const [brand] = await db
               .select()
               .from(brands)
               .where(eq(brands.companyId, result.companyId))
               .limit(1);
-            if (brand) {
-              brandData = { logoUrl: brand.logoUrl, tokens: brand.tokens as any };
-            }
+            brandData = toBrandPayload(brand);
           } catch {
             // Non-blocking
           }
