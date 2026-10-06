@@ -90,12 +90,21 @@ export const SIDEBAR_NAV: SidebarNavSection[] = [
     ],
   },
   {
-    title: "INSIGHTS",
+    title: "ANALYTICS",
+    icon: ChartBar,
+    items: [
+      { id: "website", label: "Website", icon: Globe, href: "/analytics/website" },
+      { id: "agent", label: "Agent", icon: Robot, href: "/analytics/agent" },
+      { id: "intent", label: "Intent", icon: Crosshair, href: "/analytics/intent" },
+      { id: "analytics-conversions", label: "Conversions", icon: Target, href: "/analytics/conversions" },
+    ],
+  },
+  {
+    title: "INTELLIGENCE",
     icon: Eye,
     items: [
-      { id: "intent-radar", label: "Intent Radar", icon: Crosshair, href: "/insights/intent-radar" },
-      { id: "signals", label: "Signals", icon: Lightning, href: "/insights/signals" },
-      { id: "analytics", label: "Analytics", icon: ChartBar, href: "/insights/analytics" },
+      { id: "intent-radar", label: "Intent Radar", icon: Crosshair, href: "/intelligence/intent-radar" },
+      { id: "signals", label: "Signals", icon: Lightning, href: "/intelligence/signals" },
     ],
   },
   {
