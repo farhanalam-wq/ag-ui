@@ -36,8 +36,7 @@ export function AppSidebar({
 
   const handleSelectItem = (href: string) => {
     if (href === pathname) return;
-    const search = typeof window !== "undefined" ? window.location.search : "";
-    router.push(`${href}${search}`);
+    router.push(href);
   };
 
   return (

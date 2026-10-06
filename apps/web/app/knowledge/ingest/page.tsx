@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   SidebarProvider,
@@ -22,13 +22,15 @@ import { apiClient } from "@/lib/api-client";
 import type { CompanyItem } from "@/components/sidebar/company-switcher";
 import { ModeToggle } from "@/components/mode-toggle";
 import { ArrowLeft, ChatCircleText } from "@phosphor-icons/react";
+import { useCompanyStore, useSelectedCompany } from "@/stores/use-company-store";
 
 export default function IngestRoutePage() {
   const router = useRouter();
-  const [companies, setCompanies] = useState<CompanyItem[]>([]);
-  const [selectedCompany, setSelectedCompany] = useState<CompanyItem | null>(null);
+  const companies = useCompanyStore((s) => s.companies);
+  const selectedCompany = useSelectedCompany();
 
   useEffect(() => {
+    if (useCompanyStore.getState().companies.length > 0) return;
     async function loadCompanies() {
       try {
         const list = await apiClient.companies.list();
@@ -54,8 +56,7 @@ export default function IngestRoutePage() {
               ],
             };
           });
-          setCompanies(dynamicList);
-          setSelectedCompany(dynamicList[0]);
+          useCompanyStore.getState().setCompanies(dynamicList);
         }
       } catch {
         // Non-blocking
@@ -65,12 +66,13 @@ export default function IngestRoutePage() {
   }, []);
 
   const handleCompanyIndexed = (company: CompanyItem) => {
-    // Navigate to chat with this newly indexed company selected
-    router.push(`/?company=${encodeURIComponent(company.id)}`);
+    // Store the newly indexed company and navigate to the playground.
+    useCompanyStore.getState().upsertAndSelect(company);
+    router.push("/playground");
   };
 
   const handleCancel = () => {
-    router.push("/");
+    router.push("/playground");
   };
 
   return (
@@ -81,8 +83,8 @@ export default function IngestRoutePage() {
             companies={companies}
             selectedCompany={selectedCompany}
             onSelectCompany={(comp) => {
-              setSelectedCompany(comp);
-              router.push(`/?company=${encodeURIComponent(comp.id)}`);
+              useCompanyStore.getState().select(comp.id);
+              router.push("/playground");
             }}
             onOpenAddCompany={() => {}}
           />
@@ -97,10 +99,10 @@ export default function IngestRoutePage() {
                 <BreadcrumbList className="text-xs">
                   <BreadcrumbItem>
                     <BreadcrumbLink
-                      href="/"
+                      href="/playground"
                       onClick={(e) => {
                         e.preventDefault();
-                        router.push("/");
+                        router.push("/playground");
                       }}
                       className="text-zinc-400 hover:text-zinc-200 transition-colors flex items-center gap-1.5"
                     >
@@ -121,7 +123,7 @@ export default function IngestRoutePage() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => router.push("/")}
+                onClick={() => router.push("/playground")}
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono rounded-lg border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800 text-zinc-300 hover:text-white transition-colors"
               >
                 <ChatCircleText className="size-3.5" />

@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import React, { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   SidebarProvider,
   SidebarInset,
@@ -20,6 +20,7 @@ import { AppSidebar } from "@/components/sidebar/app-sidebar";
 import type { CompanyItem } from "@/components/sidebar/company-switcher";
 import { ModeToggle } from "@/components/mode-toggle";
 import { apiClient } from "@/lib/api-client";
+import { useCompanyStore, useSelectedCompany } from "@/stores/use-company-store";
 
 export interface Crumb {
   label: string;
@@ -33,17 +34,16 @@ interface StudioShellProps {
 }
 
 /**
- * Shared shell for studio routes (soon-pages): company list fetch honoring
- * `?company=`, switcher-driven company switching that preserves the current
- * pathname, and the standard header. Keeps the ~17 stub pages ~10 lines each.
+ * Shared shell for studio routes: company list from the shared Zustand store
+ * and switcher-driven company switching. Keeps the stub pages ~10 lines each.
  */
 export function StudioShell({ crumbs, children }: StudioShellProps) {
   const router = useRouter();
-  const pathname = usePathname();
-  const [companies, setCompanies] = useState<CompanyItem[]>([]);
-  const [selectedCompany, setSelectedCompany] = useState<CompanyItem | null>(null);
+  const companies = useCompanyStore((s) => s.companies);
+  const selectedCompany = useSelectedCompany();
 
   useEffect(() => {
+    if (useCompanyStore.getState().companies.length > 0) return;
     async function loadCompanies() {
       try {
         const list = await apiClient.companies.list();
@@ -69,23 +69,7 @@ export function StudioShell({ crumbs, children }: StudioShellProps) {
               ],
             };
           });
-          setCompanies(dynamicList);
-          setSelectedCompany((prev) => {
-            if (typeof window !== "undefined") {
-              const companyParam = new URLSearchParams(window.location.search).get("company");
-              if (companyParam) {
-                const target = dynamicList.find(
-                  (c) => c.id === companyParam || c.domain.toLowerCase() === companyParam.toLowerCase()
-                );
-                if (target) return target;
-              }
-            }
-            if (prev) {
-              const match = dynamicList.find((m) => m.id === prev.id);
-              if (match) return match;
-            }
-            return dynamicList[0];
-          });
+          useCompanyStore.getState().setCompanies(dynamicList);
         }
       } catch {
         // Non-blocking: shell renders without a sidebar when list fails.
@@ -102,8 +86,7 @@ export function StudioShell({ crumbs, children }: StudioShellProps) {
             companies={companies}
             selectedCompany={selectedCompany}
             onSelectCompany={(comp) => {
-              setSelectedCompany(comp);
-              router.push(`${pathname}?company=${encodeURIComponent(comp.id)}`);
+              useCompanyStore.getState().select(comp.id);
             }}
             onOpenAddCompany={() => router.push("/knowledge/ingest")}
           />

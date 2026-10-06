@@ -42,7 +42,7 @@ function baseFor(customBase?: string): string {
 
 /**
  * Mint a LiveKit token for a voice call. Exactly one of `companyId`
- * (first-party `/?company=` chat) or `widgetKey` (embed iframe) is required.
+ * (first-party `/playground` chat) or `widgetKey` (embed iframe) is required.
  * Throws an `Error` whose message is display-ready UI copy.
  */
 export async function fetchVoiceToken(

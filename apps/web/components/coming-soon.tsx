@@ -37,7 +37,7 @@ export function ComingSoon({ title, description, icon }: ComingSoonProps) {
         </div>
         <button
           type="button"
-          onClick={() => router.push("/")}
+          onClick={() => router.push("/playground")}
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-sidebar-border bg-sidebar-accent hover:bg-sidebar-accent/70 text-sm font-medium transition-colors"
         >
           <ArrowLeft className="size-4" />
