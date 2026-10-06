@@ -20,17 +20,18 @@ import { SIDEBAR_NAV } from "./nav-config";
 
 interface NavMainProps {
   activeId: string;
-  onSelect: (id: string) => void;
+  onSelectHref: (href: string) => void;
 }
 
 /**
  * sidebar-07 NavMain: singleton leaves render as direct menu buttons,
  * multi-item sections render as collapsible parents with sub-items,
- * single-item sections (e.g. AGENTS) render as a direct button under
- * their group label. KNOWLEDGE opens by default; the rest start closed.
- * Visual-only for now (no routing).
+ * single-item sections (e.g. AGENTS) render as a direct button.
+ * The section containing the active route opens; KNOWLEDGE opens by
+ * default everywhere else. Navigates via href (company param preserved
+ * by the parent sidebar).
  */
-export function NavMain({ activeId, onSelect }: NavMainProps) {
+export function NavMain({ activeId, onSelectHref }: NavMainProps) {
   return (
     <SidebarGroup>
       <SidebarGroupLabel>Platform</SidebarGroupLabel>
@@ -45,7 +46,7 @@ export function NavMain({ activeId, onSelect }: NavMainProps) {
                 <SidebarMenuButton
                   tooltip={item.label}
                   isActive={activeId === item.id}
-                  onClick={() => onSelect(item.id)}
+                  onClick={() => onSelectHref(item.href)}
                 >
                   <Icon />
                   <span>{item.label}</span>
@@ -63,7 +64,7 @@ export function NavMain({ activeId, onSelect }: NavMainProps) {
                 <SidebarMenuButton
                   tooltip={item.label}
                   isActive={activeId === item.id}
-                  onClick={() => onSelect(item.id)}
+                  onClick={() => onSelectHref(item.href)}
                 >
                   <Icon />
                   <span>{item.label}</span>
@@ -78,7 +79,7 @@ export function NavMain({ activeId, onSelect }: NavMainProps) {
             <Collapsible
               key={section.title}
               asChild
-              defaultOpen={section.title === "KNOWLEDGE"}
+              defaultOpen={containsActive || section.title === "KNOWLEDGE"}
               className="group/collapsible"
             >
               <SidebarMenuItem>
@@ -98,7 +99,7 @@ export function NavMain({ activeId, onSelect }: NavMainProps) {
                           isActive={activeId === subItem.id}
                           className="w-full"
                         >
-                          <button type="button" onClick={() => onSelect(subItem.id)}>
+                          <button type="button" onClick={() => onSelectHref(subItem.href)}>
                             <span>{subItem.label}</span>
                           </button>
                         </SidebarMenuSubButton>

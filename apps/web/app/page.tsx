@@ -204,7 +204,7 @@ export default function Home() {
               handleSelectCompany(comp);
               setWorkspaceView("chat");
             }}
-            onOpenAddCompany={() => router.push("/ingest")}
+            onOpenAddCompany={() => router.push("/knowledge/ingest")}
           />
         )}
 

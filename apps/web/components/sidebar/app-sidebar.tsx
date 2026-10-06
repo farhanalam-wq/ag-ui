@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Sidebar,
   SidebarContent,
@@ -11,6 +12,7 @@ import {
 import { CompanySwitcher, type CompanyItem } from "./company-switcher";
 import { NavMain } from "./nav-main";
 import { NavUser } from "./nav-user";
+import { findNavItemByHref } from "./nav-config";
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   companies: CompanyItem[];
@@ -26,8 +28,17 @@ export function AppSidebar({
   onOpenAddCompany,
   ...props
 }: AppSidebarProps) {
-  // Phase 1 visual-only selection. Phase 2 will derive this from the route.
-  const [activeId, setActiveId] = React.useState("overview");
+  const pathname = usePathname();
+  const router = useRouter();
+
+  // Active leaf follows the route (visual fallback: overview).
+  const activeId = findNavItemByHref(pathname)?.id ?? "overview";
+
+  const handleSelectItem = (href: string) => {
+    if (href === pathname) return;
+    const search = typeof window !== "undefined" ? window.location.search : "";
+    router.push(`${href}${search}`);
+  };
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -40,7 +51,7 @@ export function AppSidebar({
         />
       </SidebarHeader>
       <SidebarContent>
-        <NavMain activeId={activeId} onSelect={setActiveId} />
+        <NavMain activeId={activeId} onSelectHref={handleSelectItem} />
       </SidebarContent>
       <SidebarFooter>
         <NavUser />
