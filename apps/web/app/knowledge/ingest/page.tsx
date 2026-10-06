@@ -85,7 +85,6 @@ export default function IngestRoutePage() {
               router.push(`/?company=${encodeURIComponent(comp.id)}`);
             }}
             onOpenAddCompany={() => {}}
-            onNewChat={() => router.push("/")}
           />
         )}
 

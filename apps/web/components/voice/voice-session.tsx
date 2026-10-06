@@ -57,6 +57,28 @@ export function useVoiceSession(): VoiceController {
   return ctx;
 }
 
+/**
+ * Benign publisher data-channel blip emitted by livekit-client during a
+ * healthy call (ICE / renegotiation / agent re-publish), e.g.
+ * `publisher data channel 'DATA_TRACK_LOSSY' closed unexpectedly {}`.
+ * Must never hit `console.error` — Next.js dev turns that into the error-pill
+ * overlay — nor flip status to error while the room is still alive.
+ */
+function isBenignDataTrackClose(err: unknown): boolean {
+  const text =
+    typeof err === "string"
+      ? err
+      : err && typeof err === "object"
+        ? String((err as Record<string, unknown>).message ?? (err as Record<string, unknown>).reason ?? "")
+        : "";
+  if (/DATA_TRACK_(LOSSY|RELIABLE)|closed unexpectedly|publisher data channel/i.test(text))
+    return true;
+  // livekit-client often forwards an empty {} with no message for this case.
+  if (text.trim().length === 0 && err && typeof err === "object" && Object.keys(err).length === 0)
+    return true;
+  return false;
+}
+
 export interface VoiceSessionProps {
   companyId?: string;
   widgetKey?: string;
@@ -106,8 +128,7 @@ export function VoiceSession({
     return () => abortRef.current?.abort();
   }, []);
 
-  const finalize = useCallback(() => {
-    if (finalizedRef.current) return;
+  const finalize = useCallback(() => {    if (finalizedRef.current) return;
     finalizedRef.current = true;
     const lines = orderRef.current
       .map((id) => linesRef.current.get(id))
@@ -227,6 +248,13 @@ export function VoiceSession({
             // (e.g. publisher DATA_TRACK_LOSSY close, empty {} errors).
             if (intentionalStopRef.current || finalizedRef.current) {
               console.debug("[VOICE] Ignored LiveKit error after intentional stop:", err);
+              return;
+            }
+            // Benign data-track blip during a healthy call: never console.error
+            // (Next.js dev promotes it to the error-pill overlay) and never
+            // flip to error UI. Real disconnects still come via onDisconnected.
+            if (isBenignDataTrackClose(err)) {
+              console.debug("[VOICE] Ignored benign data-track close:", err);
               return;
             }
             console.error("[VOICE] LiveKit room error:", err);
