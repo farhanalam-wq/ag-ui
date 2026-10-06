@@ -248,6 +248,134 @@ Acme provides cloud infrastructure.
     process.exit(1);
   }
 
+  // Test 10: Font vote survives reset-stylesheet poisoning + prefers @font-face
+  console.log("[TEST 10] Verifying Font Vote With Reset Poisoning...");
+  const resetFontHtml = `
+    <html>
+      <head>
+        <style>
+          button,input{font-family:sans-serif;font-size:100%;margin:0}
+          @font-face{font-family:Montserrat;font-weight:700;src:url(/fonts/montserrat-bold.ttf) format("truetype")}
+          @font-face{font-family:Montserrat;font-weight:400;src:url(/fonts/montserrat.ttf) format("truetype")}
+          body{font-family:Montserrat;font-weight:400;font-size:1rem}
+          h2{font-family:MotoSans;font-weight:400}
+          .t-action{font-family:Montserrat;font-weight:500}
+        </style>
+      </head>
+      <body><h1>VTEX-style store</h1></body>
+    </html>
+  `;
+  const resetBrand = await extractBrandIntelligence(resetFontHtml, new URL("https://reset.example.com"), { fetchExternalCss: false });
+  if (
+    resetBrand.tokens.typography.headingFont === "Montserrat" &&
+    resetBrand.sources?.font === "fontface"
+  ) {
+    console.log(`[PASS] Reset sans-serif ignored, shipped font wins: '${resetBrand.tokens.typography.headingFont}' (source=${resetBrand.sources?.font}).\n`);
+  } else {
+    console.error("[FAIL] Font vote failed:", resetBrand.tokens.typography, resetBrand.sources);
+    process.exit(1);
+  }
+
+  // Test 11: data: favicon stubs never become the logo
+  console.log("[TEST 11] Verifying data: Icon Rejection...");
+  const dataIconHtml = `
+    <html>
+      <head><link rel="icon" href="data:,"></head>
+      <body><h1>No icon site</h1></body>
+    </html>
+  `;
+  const dataIconBrand = await extractBrandIntelligence(dataIconHtml, new URL("https://noicon.example.com"), { fetchExternalCss: false });
+  if (
+    dataIconBrand.logoUrl !== "data:," &&
+    (dataIconBrand.logoUrl || "").startsWith("https://noicon.example.com/favicon.ico")
+  ) {
+    console.log(`[PASS] data: stub rejected, favicon fallback used: '${dataIconBrand.logoUrl}'.\n`);
+  } else {
+    console.error("[FAIL] data: icon leaked into logoUrl:", dataIconBrand.logoUrl);
+    process.exit(1);
+  }
+
+  // Test 12: Utility-class color mining (VTEX/Tachyons dialect)
+  console.log("[TEST 12] Verifying Utility-Class Color Mining...");
+  const utilityHtml = `
+    <html>
+      <head>
+        <style>
+          .c-link{color:#ff554d}.c-base{color:#001428}.c-on-base{color:#3f3f40}
+          header{background-color:#fbf9f7}.vtex-store__template{background-color:#fff}
+          .promo{color:#ff554d;background-color:#fff}
+        </style>
+      </head>
+      <body><h1>Motorow-ish store</h1></body>
+    </html>
+  `;
+  const utilityBrand = await extractBrandIntelligence(utilityHtml, new URL("https://utility.example.com"), { fetchExternalCss: false });
+  if (
+    utilityBrand.tokens.colors.primary === "#ff554d" &&
+    utilityBrand.sources?.primary === "mined" &&
+    utilityBrand.tokens.colors.background === "#ffffff" &&
+    utilityBrand.sources?.background === "mined"
+  ) {
+    console.log(`[PASS] Mined primary='${utilityBrand.tokens.colors.primary}' secondary='${utilityBrand.tokens.colors.secondary}' background='${utilityBrand.tokens.colors.background}'.\n`);
+  } else {
+    console.error("[FAIL] Utility mining failed:", utilityBrand.tokens.colors, utilityBrand.sources);
+    process.exit(1);
+  }
+
+  // Test 13: Radius without space + most-frequent vote
+  console.log("[TEST 13] Verifying Radius Spacing + Vote...");
+  const radiusHtml = `
+    <html>
+      <head>
+        <style>
+          .br1{border-radius:.125rem}.br2{border-radius:.25rem}.br3{border-radius:.5rem}
+          .card{border-radius:.25rem}.pill{border-radius:0}
+        </style>
+      </head>
+      <body><h1>Radius shop</h1></body>
+    </html>
+  `;
+  const radiusBrand = await extractBrandIntelligence(radiusHtml, new URL("https://radius.example.com"), { fetchExternalCss: false });
+  if (radiusBrand.tokens.radius === ".25rem" && radiusBrand.sources?.radius === "mined") {
+    console.log(`[PASS] Most-frequent radius wins: '${radiusBrand.tokens.radius}'.\n`);
+  } else {
+    console.error("[FAIL] Radius vote failed:", radiusBrand.tokens.radius, radiusBrand.sources);
+    process.exit(1);
+  }
+
+  // Test 14: Signal-free pages return honestly empty values, never fabricated defaults
+  console.log("[TEST 14] Verifying Honest-Empty Contract...");
+  const bareHtml = `
+    <html>
+      <head><title>Bare page</title></head>
+      <body><h1>Nothing to see</h1><p>Plain text, no styles.</p></body>
+    </html>
+  `;
+  const bareBrand = await extractBrandIntelligence(bareHtml, new URL("https://bare.example.com"), { fetchExternalCss: false });
+  const bareCss = bareBrand.tokens.stylesheet || "";
+  const bareVars = bareBrand.tokens.cssVariables || {};
+  if (
+    bareBrand.tokens.colors.primary === "" &&
+    bareBrand.tokens.colors.background === "" &&
+    bareBrand.tokens.colors.foreground === "" &&
+    bareBrand.tokens.colors.muted === undefined &&
+    bareBrand.tokens.colors.border === undefined &&
+    bareBrand.tokens.colors.card === undefined &&
+    bareBrand.tokens.radius === "" &&
+    bareBrand.tokens.typography.headingFont === undefined &&
+    bareBrand.tokens.style === "unknown" &&
+    bareBrand.tokens.theme === "auto" &&
+    !bareCss.includes("--brand-primary: ;") &&
+    !("--brand-primary" in bareVars) &&
+    bareBrand.sources?.primary === "fallback" &&
+    bareBrand.sources?.theme === "fallback"
+  ) {
+    console.log(`[PASS] Empty means empty: primary='', theme='auto', style='unknown', no hollow declarations.\n`);
+  } else {
+    console.error("[FAIL] Honest-empty contract violated:", JSON.stringify(bareBrand.tokens), bareBrand.sources);
+    process.exit(1);
+  }
+
   console.log("[ALL TESTS PASSED] packages/crawler is fully verified with dynamic stylesheets, markdown headings & sanitization!");
 }
 

@@ -638,6 +638,11 @@ export type BrandTokens = {
 Untrusted-input hardening: font names (`sanitizeFontName`, allowlist + Google-Fonts weight-suffix
 stripping) and radius (`sanitizeRadius`, allowlist) are sanitized at extraction; clients only apply
 `--brand-*` variables and reject stylesheets containing `@import|url(|expression|behavior|javascript:`.
+Coverage beyond CSS vars / Google Fonts / meta tags: utility-class color mining (`mineUtilityColors`,
+frequency-ranked chromatic `color:`/`background-color:` declarations for Tailwind/Tachyons/VTEX-style
+sites), full-stylesheet font voting (`detectFontFromCss`, reset-proof, prefers shipped `@font-face`),
+most-frequent radius voting (`voteRadius`), `data:`/`blob:`/`javascript:` logo rejection. Every field
+carries provenance (`sources: cssvar | meta | button | mined | fontface | fontlink | explicit | fallback`).
 
 The frontend uses these tokens to dynamically inject CSS variables into the GenUI wrapper, making rendered components (Pricing cards, Hero, Stats) look natively branded for each company.
 

@@ -1067,6 +1067,7 @@ export function buildJsonPayload(args: {
           logoUrl: args.brand.logoUrl ?? null,
           faviconUrl: args.brand.faviconUrl ?? null,
           tokens: args.brand.tokens,
+          sources: args.brand.sources ?? null,
         }
       : null,
     documents: args.docs.map((d) => ({
@@ -1169,11 +1170,11 @@ async function populateDb(
       brandData = {
         logoUrl: undefined,
         tokens: {
-          colors: { primary: "#2563eb", background: "#ffffff", foreground: "#09090b" },
+          colors: { primary: "", background: "", foreground: "" },
           typography: {},
-          radius: "0.5rem",
-          style: "corporate" as const,
-          theme: "light" as const,
+          radius: "",
+          style: "unknown" as const,
+          theme: "auto" as const,
         },
       };
     }

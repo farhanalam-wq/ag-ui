@@ -16,7 +16,7 @@ export const BrandTokensSchema = z.object({
     bodyFont: z.string().optional(),
   }),
   radius: z.string(),
-  style: z.enum(["corporate", "playful", "minimal", "technical"]),
+  style: z.enum(["corporate", "playful", "minimal", "technical", "unknown"]),
   theme: z.enum(["light", "dark", "auto"]).optional(),
   cssVariables: z.record(z.string()).optional(),
   stylesheet: z.string().optional(),
