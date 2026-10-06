@@ -6,7 +6,7 @@ import { ComingSoon } from "@/components/coming-soon";
 
 export default function IntentRadarPage() {
   return (
-    <StudioShell crumbs={[{ label: "Insights" }, { label: "Intent Radar" }]}>
+    <StudioShell crumbs={[{ label: "Intelligence" }, { label: "Intent Radar" }]}>
       <ComingSoon title="Intent Radar" icon={Crosshair} />
     </StudioShell>
   );

@@ -6,7 +6,7 @@ import { ComingSoon } from "@/components/coming-soon";
 
 export default function SignalsPage() {
   return (
-    <StudioShell crumbs={[{ label: "Insights" }, { label: "Signals" }]}>
+    <StudioShell crumbs={[{ label: "Intelligence" }, { label: "Signals" }]}>
       <ComingSoon title="Signals" icon={Lightning} />
     </StudioShell>
   );
