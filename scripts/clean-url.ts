@@ -5,7 +5,7 @@
  * remove the data. Otherwise just inform the user.
  *
  * Scope (per user choice): Postgres + Qdrant + Redis, whole company/snapshot
- * delete, normalized URL matching, standalone script.
+ * delete, normalized URL matching, standalone scrip                  t.
  *
  * Usage:
  *   bun scripts/clean-url.ts <url> [--yes] [--dry-run] [--verbose]
