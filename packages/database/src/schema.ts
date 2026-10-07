@@ -54,11 +54,17 @@ export const documents = pgTable(
     batchId: uuid("batch_id").references(() => enrichmentBatches.id, {
       onDelete: "set null",
     }),
+    // Tombstone batch that removed this doc, if any. Set = invisible
+    // everywhere (retrieval, evidence, Sources). Restored by clearing.
+    deletedBatchId: uuid("deleted_batch_id").references(() => enrichmentBatches.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
     index("documents_content_hash_idx").on(table.contentHash),
     index("documents_batch_id_idx").on(table.batchId),
+    index("documents_deleted_batch_idx").on(table.deletedBatchId),
   ]
 );
 

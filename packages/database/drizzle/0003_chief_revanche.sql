@@ -1,0 +1,3 @@
+ALTER TABLE "documents" ADD COLUMN "deleted_batch_id" uuid;--> statement-breakpoint
+ALTER TABLE "documents" ADD CONSTRAINT "documents_deleted_batch_id_enrichment_batches_id_fk" FOREIGN KEY ("deleted_batch_id") REFERENCES "public"."enrichment_batches"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "documents_deleted_batch_idx" ON "documents" USING btree ("deleted_batch_id");

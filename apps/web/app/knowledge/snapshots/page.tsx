@@ -11,6 +11,7 @@ import {
   CircleNotch,
   CaretDown,
   CaretRight,
+  ArrowCounterClockwise,
   Buildings,
   ArrowRight,
 } from "@phosphor-icons/react";
@@ -65,6 +66,8 @@ export default function SnapshotsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [confirmRollback, setConfirmRollback] = useState<string | null>(null);
+  const [rollingBack, setRollingBack] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!selectedCompany) return;
@@ -92,6 +95,48 @@ export default function SnapshotsPage() {
       return next;
     });
   };
+
+  const handleRollback = useCallback(
+    async (key: string, major: number, minor: number) => {
+      if (!selectedCompany) return;
+      if (confirmRollback !== key) {
+        setConfirmRollback(key);
+        return;
+      }
+      setConfirmRollback(null);
+      setRollingBack(true);
+      try {
+        await apiClient.uploads.rollback(selectedCompany.id, major, minor);
+        await refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Rollback failed");
+      } finally {
+        setRollingBack(false);
+      }
+    },
+    [confirmRollback, selectedCompany, refresh]
+  );
+
+  const rollbackButton = (key: string, label: string, major: number, minor: number) => (
+    <button
+      type="button"
+      disabled={rollingBack}
+      onClick={() => void handleRollback(key, major, minor)}
+      title={
+        confirmRollback === key
+          ? `Click again to roll back to ${label}`
+          : `Roll back to ${label} (compensating batch)`
+      }
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono border transition-colors disabled:opacity-50 ${
+        confirmRollback === key
+          ? "border-amber-400 text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40"
+          : "border-zinc-200 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
+      }`}
+    >
+      <ArrowCounterClockwise className="size-3" />
+      {confirmRollback === key ? "Confirm" : label}
+    </button>
+  );
 
   const urlList = (label: string, entries?: { url: string; title: string }[]) => {
     if (!entries || entries.length === 0) return null;
@@ -175,6 +220,7 @@ export default function SnapshotsPage() {
                           <span className="text-[11px] font-mono text-zinc-500">
                             {new Date(v.createdAt).toLocaleString()}
                           </span>
+                          {rollbackButton(`major-${v.id}`, `Restore v${v.version}.0`, v.version, 0)}
                         </div>
                         <p className="text-xs text-zinc-600 dark:text-zinc-300">{majorBrief(v)}</p>
 
@@ -197,6 +243,13 @@ export default function SnapshotsPage() {
                                       }`
                                     : `${b.fileCount} files`}
                                 </span>
+                                {b.status === "READY" &&
+                                  rollbackButton(
+                                    `minor-${b.id}`,
+                                    `Restore v${v.version}.${b.minor}`,
+                                    v.version,
+                                    b.minor
+                                  )}
                               </div>
                             ))}
                           </div>

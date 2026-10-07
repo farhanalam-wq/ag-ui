@@ -15,6 +15,7 @@ import {
   FileCode,
   FileText,
   Eye,
+  Trash,
   X,
   CheckCircle,
   XCircle,
@@ -103,6 +104,8 @@ export default function SourcesPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<SourceDocument | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!selectedCompany) return;
@@ -147,6 +150,27 @@ export default function SourcesPage() {
   const uploaded = useMemo(() => docs.filter((d) => d.sourceKind !== "crawl"), [docs]);
   const batchById = useMemo(() => new Map(batches.map((b) => [b.id, b])), [batches]);
 
+  const handleDelete = useCallback(
+    async (docId: string) => {
+      if (!selectedCompany) return;
+      if (confirmDelete !== docId) {
+        setConfirmDelete(docId);
+        return;
+      }
+      setConfirmDelete(null);
+      setDeleting(true);
+      try {
+        await apiClient.uploads.deleteDocuments(selectedCompany.id, [docId]);
+        await refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Delete failed");
+      } finally {
+        setDeleting(false);
+      }
+    },
+    [confirmDelete, selectedCompany, refresh]
+  );
+
   const docRow = (doc: SourceDocument) => {
     const Icon = kindIcon(doc.originName || doc.url, doc.sourceKind);
     const batch = doc.batchId ? batchById.get(doc.batchId) : undefined;
@@ -183,6 +207,19 @@ export default function SourcesPage() {
           className="p-1.5 rounded text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors shrink-0"
         >
           <Eye className="size-4" />
+        </button>
+        <button
+          type="button"
+          disabled={deleting}
+          onClick={() => void handleDelete(doc.id)}
+          title={confirmDelete === doc.id ? "Click again to confirm delete" : "Delete (tombstoned, restorable)"}
+          className={`p-1.5 rounded transition-colors shrink-0 disabled:opacity-50 ${
+            confirmDelete === doc.id
+              ? "text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-950/50"
+              : "text-zinc-500 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-zinc-200 dark:hover:bg-zinc-800"
+          }`}
+        >
+          <Trash className="size-4" />
         </button>
       </div>
     );

@@ -18,6 +18,8 @@ import {
   checkEmbedRateLimit,
   eq,
   desc,
+  and,
+  isNull,
   inArray,
   count,
 } from "@ag-ui/database";
@@ -189,7 +191,12 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
           const [docRes] = await db
             .select({ count: count() })
             .from(documents)
-            .where(eq(documents.snapshotId, snapshot.id));
+            .where(
+              and(
+                eq(documents.snapshotId, snapshot.id),
+                isNull(documents.deletedBatchId)
+              )
+            );
           docCount = docRes?.count ?? 0;
           const [factRes] = await db
             .select({ count: count() })
@@ -199,7 +206,12 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
           const docRows = await db
             .select({ id: documents.id })
             .from(documents)
-            .where(eq(documents.snapshotId, snapshot.id));
+            .where(
+              and(
+                eq(documents.snapshotId, snapshot.id),
+                isNull(documents.deletedBatchId)
+              )
+            );
           if (docRows.length > 0) {
             const [chunkRes] = await db
               .select({ count: count() })

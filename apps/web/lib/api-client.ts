@@ -404,6 +404,57 @@ class ApiClient {
       }
       return res.json();
     },
+
+    deleteDocuments: async (
+      companyId: string,
+      documentIds: string[]
+    ): Promise<{ batchId: string; status: string; minor: number; removed: number }> => {
+      const res = await fetch(
+        `${this.baseUrl}/api/companies/${encodeURIComponent(companyId)}/uploads/documents/delete`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ documentIds }),
+        }
+      );
+      if (res.status === 404) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error || "No matching live documents");
+      }
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Delete failed (${res.status}): ${errText}`);
+      }
+      return res.json();
+    },
+
+    rollback: async (
+      companyId: string,
+      targetMajor: number,
+      targetMinor?: number
+    ): Promise<{ batchId: string; status: string; minor: number; restored: number; tombstoned: number }> => {
+      const res = await fetch(
+        `${this.baseUrl}/api/companies/${encodeURIComponent(companyId)}/uploads/rollback`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ targetMajor, targetMinor }),
+        }
+      );
+      if (res.status === 404) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error || "Target version not found");
+      }
+      if (res.status === 409) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error || "Nothing to change");
+      }
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Rollback failed (${res.status}): ${errText}`);
+      }
+      return res.json();
+    },
   };
 
   /**

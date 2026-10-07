@@ -10,6 +10,9 @@ import {
   enrichmentBatches,
   eq,
   desc,
+  and,
+  or,
+  isNull,
   inArray,
   count,
 } from "@ag-ui/database";
@@ -160,19 +163,35 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
               const [docRes] = await db
                 .select({ count: count() })
                 .from(documents)
-                .where(eq(documents.snapshotId, latestSnapshot.id));
+                .where(
+                  and(
+                    eq(documents.snapshotId, latestSnapshot.id),
+                    isNull(documents.deletedBatchId)
+                  )
+                );
               if (docRes && docRes.count > 0) docCount = docRes.count;
 
               const [factRes] = await db
                 .select({ count: count() })
                 .from(facts)
-                .where(eq(facts.snapshotId, latestSnapshot.id));
+                .leftJoin(documents, eq(facts.documentId, documents.id))
+                .where(
+                  and(
+                    eq(facts.snapshotId, latestSnapshot.id),
+                    or(isNull(facts.documentId), isNull(documents.deletedBatchId))
+                  )
+                );
               if (factRes) factCount = factRes.count;
 
               const docRows = await db
                 .select({ id: documents.id })
                 .from(documents)
-                .where(eq(documents.snapshotId, latestSnapshot.id));
+                .where(
+                  and(
+                    eq(documents.snapshotId, latestSnapshot.id),
+                    isNull(documents.deletedBatchId)
+                  )
+                );
               if (docRows.length > 0) {
                 const docIds = docRows.map((d) => d.id);
                 const [chunkRes] = await db
@@ -362,7 +381,12 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
           createdAt: documents.createdAt,
         })
         .from(documents)
-        .where(eq(documents.snapshotId, latestSnapshot.id));
+        .where(
+          and(
+            eq(documents.snapshotId, latestSnapshot.id),
+            isNull(documents.deletedBatchId)
+          )
+        );
 
       return {
         companyId: company.id,

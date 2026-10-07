@@ -17,6 +17,8 @@ export interface QdrantChunkPayload {
   url: string;
   title: string;
   category: string;
+  /** Soft tombstone: set on doc delete, cleared on restore. Never true at insert. */
+  tombstoned?: boolean;
 }
 
 export interface QdrantPoint {
@@ -132,6 +134,8 @@ export async function queryChunkPoints(
     vector,
     filter: {
       must: mustFilters,
+      // Tombstoned docs stay in the collection for rollback; never served.
+      must_not: [{ key: "tombstoned", match: { value: true } }],
     },
     limit,
     with_payload: true,
@@ -163,6 +167,42 @@ export async function queryChunkPoints(
     payload: hit.payload as QdrantChunkPayload,
     vector: Array.isArray(hit.vector) ? hit.vector : undefined,
   }));
+}
+
+/**
+ * Soft tombstones (or restores) all points of the given documents via
+ * payload update — no re-embedding on restore. Throws on terminal failure.
+ */
+export async function setPointsTombstoned(
+  documentIds: string[],
+  tombstoned: boolean,
+  collection = QDRANT_COLLECTION
+): Promise<void> {
+  if (documentIds.length === 0) return;
+
+  const url = `${getQdrantUrl()}/collections/${collection}/points/payload?wait=true`;
+  const headers = getHeaders();
+
+  const body = {
+    payload: { tombstoned },
+    filter: {
+      must: [{ key: "document_id", match: { any: documentIds } }],
+    },
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+  } catch (err: unknown) {
+    throw new Error(
+      `[QDRANT] Network error setting tombstone flag: ${err instanceof Error ? err.message : err}`
+    );
+  }
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`[QDRANT] Failed to set tombstone flag (HTTP ${res.status}): ${errText}`);
+  }
 }
 
 /**

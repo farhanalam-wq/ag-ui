@@ -12,8 +12,8 @@
  */
 
 import { db } from "./index";
-import { companies, companySnapshots, brands, chunks, facts } from "./schema";
-import { eq, desc, inArray } from "drizzle-orm";
+import { companies, companySnapshots, brands, chunks, documents, facts } from "./schema";
+import { eq, desc, inArray, and, or, isNull } from "drizzle-orm";
 import { generateEmbeddings, logger } from "@ag-ui/shared";
 import type { Evidence } from "@ag-ui/contracts";
 import { queryChunkPoints, mmrDiversify } from "./qdrant";
@@ -110,11 +110,24 @@ export async function retrieveCompanyContext(
     return cachedContext;
   }
 
-  // 3. Query Deterministic SQL Facts
+  // 3. Query Deterministic SQL Facts (tombstoned docs excluded; shared
+  // facts with no document link are always kept).
   const factRecords = await db
-    .select()
+    .select({
+      id: facts.id,
+      subject: facts.subject,
+      predicate: facts.predicate,
+      value: facts.value,
+      confidence: facts.confidence,
+    })
     .from(facts)
-    .where(eq(facts.snapshotId, latestSnapshot.id));
+    .leftJoin(documents, eq(facts.documentId, documents.id))
+    .where(
+      and(
+        eq(facts.snapshotId, latestSnapshot.id),
+        or(isNull(facts.documentId), isNull(documents.deletedBatchId))
+      )
+    );
 
   // 4. Query Embedding (Redis Cache with 1h TTL)
   let queryVector = await getCachedQueryEmbedding(query);
@@ -149,12 +162,17 @@ export async function retrieveCompanyContext(
       );
 
       if (candidates.length > 0) {
-        // Hydrate chunk content from PostgreSQL by chunk UUID
+        // Hydrate chunk content from PostgreSQL by chunk UUID, skipping
+        // chunks of tombstoned documents (Qdrant already filtered them,
+        // this guards stale payloads).
         const chunkIds = candidates.map((c) => c.id);
         const chunkRows = await db
           .select({ id: chunks.id, content: chunks.content })
           .from(chunks)
-          .where(inArray(chunks.id, chunkIds));
+          .innerJoin(documents, eq(chunks.documentId, documents.id))
+          .where(
+            and(inArray(chunks.id, chunkIds), isNull(documents.deletedBatchId))
+          );
 
         const contentMap = new Map(chunkRows.map((r) => [r.id, r.content]));
 
