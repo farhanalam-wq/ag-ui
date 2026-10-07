@@ -26,7 +26,7 @@ Anti-goal: run-of-the-mill AI slop — purple glows, centered heroes, 3-equal-ca
 ## 2. Stack & Source of Truth
 
 - Framework: Next.js 15 App Router, React 19, RSC by default. Interactivity isolated to `"use client"` leaves.
-- Styling: Tailwind CSS 3.4 (`apps/web/tailwind.config.ts`), CSS variables in `apps/web/app/globals.css`. Dark default (`class="dark"` in `apps/web/app/layout.tsx`).
+- Styling: Tailwind CSS 3.4 (`apps/web/tailwind.config.ts`), CSS variables in `apps/web/app/globals.css` as single source (`:root` = Light, `.dark` = Dark). Theme via `next-themes` `ThemeProvider` + `ModeToggle` in shell header. Default follows system (`enableSystem`, `defaultTheme="system"` intent — never hard-lock `class="dark"` for ship), with manual toggle persisted. One page = one theme lock — sections never invert mid-scroll. Do not mix `dark:` utilities and CSS-var theming in the same file; prefer CSS vars (current approach).
 - Components: shadcn/ui (Zinc, CSS variables) + Radix primitives in `apps/web/components/ui/`. You own the code — never ship default state unstyled.
 - State: Zustand (`apps/web/stores/`), `useState` for local only. Never `useState` for pointer/scroll physics — use `useMotionValue` if needed (rare here).
 - Icons: `@phosphor-icons/react` ONLY. `lucide-react` is legacy — do not add new Lucide usage. One family per tree.
@@ -62,23 +62,26 @@ Base: Zinc neutrals. Accent: Electric Blue. Status hues are reserved — never u
 
 No pure `#000000` / `#FFFFFF`. Off-black `zinc-950`, off-white `zinc-50`.
 
-### 3.2 Semantic (light / dark)
+### 3.2 Semantic (Light / Dark — both first-class)
 
-| Semantic | Light | Dark | Notes |
+> Light is not an inverted Dark. Both are designed. Assume ~50% of users live in Light (daytime ops, bright offices). Design Light for paper-clarity, Dark for focus-calm. Same information, same hierarchy, same accent — different expression of surface and depth.
+
+| Semantic | Light (`:root`) | Dark (`.dark`) | Contrast / Notes |
 |---|---|---|---|
-| `background` | `zinc-50` | `zinc-950` | `apps/web/app/globals.css:7,43` |
-| `surface` / `card` | `#FFFFFF` | `zinc-900/60` | raised panel, must separate from bg via border OR elevation, not both |
-| `surface-elevated` | `#FFFFFF` + border | `zinc-900` + `border-white/10` + inner highlight | popover, drawer, dropdown |
-| `text-1` | `zinc-950` | `zinc-50` | headings, KPI values. Contrast ≥7:1 target |
-| `text-2` | `zinc-600` | `zinc-400` | body, labels. Contrast ≥4.5:1 mandatory |
-| `text-3` | `zinc-500` | `zinc-500` | captions, timestamps, helper. Never for body |
-| `border-subtle` | `zinc-200` | `white/10` | dividers, card borders |
-| `accent` | `brand-600` | `brand-500` | single accent lock — whole app uses this blue, no per-page accent |
-| `accent-ink` | `#FFFFFF` | `#09090B` | text on accent button. Verify 4.5:1 |
+| `background` | `zinc-50 #FAFAFA` | `zinc-950 #09090B` | App canvas. Content must separate via `surface` + `border-subtle`, not transparency alone. |
+| `surface` / `card` | `#FFFFFF` + `border-zinc-200` | `zinc-900/60` + `border-white/10` | Light: solid white, border mandatory. Dark: translucent allowed + inner highlight. Never transparent-white on `zinc-50` — hierarchy collapses. |
+| `surface-elevated` | `#FFFFFF` + border + `0_1px_2px` shadow | `zinc-900` + `border-white/10` + `inset_0_1px_0_white/6` | Popover, drawer, dropdown, tooltip. Light tooltip = white + border, Dark tooltip = zinc-900. |
+| `text-1` | `zinc-950` | `zinc-50` | Headings, KPI values. Target ≥7:1 in both. |
+| `text-2` | `zinc-600` | `zinc-400` | Body, labels. Mandatory ≥4.5:1 in both. Light `zinc-500` for body = fail. |
+| `text-3` | `zinc-500` | `zinc-500` | Captions, timestamps, axis ticks, helper. Never for body or CTA. Icon meaningful state needs ≥3:1 against adjacent bg in both. |
+| `border-subtle` | `zinc-200 #E4E4E7` | `white/10` | Must be visible in both. Light dividers disappearing on white = fail. Dark borders disappearing on zinc-950 = fail. |
+| `input-bg` / `input-border` | `white` / `zinc-300` | `zinc-900` / `white/15` | Light inputs need stronger border than cards (`300` vs `200`) to read as fields. Placeholder `zinc-400` Light / `zinc-500` Dark, still ≥4.5:1 for label+helper. |
+| `accent` | `brand-600 #2563EB` | `brand-500 #3B82F6` | Single accent lock. Light uses deeper cut for contrast on white; Dark uses lighter cut for pop on black. |
+| `accent-ink` | `#FFFFFF` on `brand-600` | `#09090B` or `#FFFFFF` per token | Verify ≥4.5:1. Light: white on `#2563EB` passes. Dark: check `brand-500` + ink combo, add `font-medium` if borderline. Focus ring `brand-600/30` Light / `brand-500/40` Dark. |
 
 **Color Consistency Lock:** Once Electric Blue is the accent, every CTA, link, active nav, and primary chart series uses it. A rose CTA on one page + blue on another = fail. Status colors never substitute for accent.
 
-### 3.3 Chart palette (ordered, colorblind-safe)
+### 3.3 Chart palette (ordered, colorblind-safe, dual-mode verified)
 
 ```
 --chart-1: #2B62F5 (blue, primary series)
@@ -93,12 +96,27 @@ No pure `#000000` / `#FFFFFF`. Off-black `zinc-950`, off-white `zinc-50`.
 
 Max 4 series per chart. Baseline/comparison always zinc dashed. Positive emerald, negative rose — never invert.
 
-### 3.4 Dark mode protocol
+Per-mode expression (same hue, different surround):
+- Gridlines: Light `zinc-200`, Dark `white/10`. Axis ticks `text-3` mono 12px in both.
+- Area fill: Light `accent/12 + stroke 2px`, Dark `accent/20 + stroke 2px` — Light needs less wash to stay crisp on white.
+- Tooltip: Light `bg-white border-zinc-200 shadow-md`, Dark `bg-zinc-900 border-white/10`. Mono numbers in both.
+- Donut center total: `text-1` in both. Legend `text-2` in both, never `text-3` for legend labels.
 
-- Dual-mode from start. `dark:` variant OR CSS vars — pick vars (current approach). Do not mix strategies per file.
-- Hierarchy parity: if CTA pops in light, it pops in dark. Borders visible in both (`zinc-200` ↔ `white/10`).
-- Scrim: `black/60` + `backdrop-blur-md`. Measure composed result for legibility.
-- Test both modes before ship. Never ship seen-in-one-mode-only.
+### 3.4 Light / Dark Parity Protocol (replaces dark-only thinking)
+
+Per `ui-ux-pro-max` Light/Dark + `web-design-guidelines` + `ui-styling` theming:
+
+- **Token-driven, never hardcoded.** All surfaces/text/icons/borders/charts via semantic tokens mapped per theme (`:root` ↔ `.dark`). No per-screen hex. No `bg-white dark:bg-gray-800` ad-hoc pairs — use `bg-card border-border-subtle`.
+- **Surface readability:**
+  - Light: cards `#FFF` on `zinc-50` MUST have `border-zinc-200` + `shadow-[0_1px_2px_rgba(0,0,0,0.04)]`. Overly transparent surfaces that blur hierarchy = fail. Sticky table header `bg-white/85 backdrop-blur`, not translucent zinc.
+  - Dark: cards `zinc-900/60` on `zinc-950` MUST have `border-white/10` + inner highlight. No pure-black shadows, no neon outer glows.
+- **Text contrast:** Body `text-2` ≥4.5:1 in both modes. Test Light and Dark independently — never assume Dark values work in Light. Large display ≥3:1 minimum, body target AAA where possible.
+- **Border/divider visibility:** Separators visible in both. Audit: Light dividers on white, Dark dividers on zinc-950, focus/disabled/hover states equally distinguishable in both. Defining states for one theme only = fail.
+- **State parity:** Pressed/focused/disabled/selected/skeleton have explicit Light + Dark values. Focus ring always visible: Light `ring-2 ring-brand-600/30 + border-brand-600`, Dark `ring-brand-500/40`.
+- **Scrim + modal legibility:** Measure composed result. Light: `black/40 + backdrop-blur-md` over white content still isolates drawer. Dark: `black/60 + backdrop-blur-md`. Reusing one opacity without checking real bg = fail.
+- **No pure values:** No `#000000` / `#FFFFFF` as theme bg. Off-black `zinc-950`, off-white `zinc-50` / `#FFF` surface only.
+- **Theme behavior:** Respect `prefers-color-scheme` via `enableSystem`. Manual `ModeToggle` persists override. Sidebar/header/main all swap together — never light sidebar + dark main.
+- **Ship gate:** Open every archetype in both modes during dev. Never ship seen-in-one-mode-only. Screenshot Light + Dark for PageHeader, KPI row, one chart, one table, one drawer before marking done.
 
 ---
 
@@ -163,11 +181,12 @@ drawer/modal: rounded-l-xl / rounded-xl
 
 Mixed systems allowed only with documented rule above. Round buttons on square cards = fail.
 
-### 5.3 Elevation
+### 5.3 Elevation (Light paper vs Dark depth)
 
-- Light: `border border-border-subtle` + `shadow-[0_1px_2px_rgba(0,0,0,0.04)]`. Tint shadows to bg hue, never pure-black `rgba(0,0,0,.1)` blobs.
-- Dark: `border-white/10` + `shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]`. No outer neon glows.
-- Cards only when elevation = hierarchy. Otherwise group with `border-t` / `divide-y` / whitespace. For density 7, prefer plain layout + 1px dividers over card boxes.
+- Light (paper-clarity for daytime Light users): `bg-white border-zinc-200` + `shadow-[0_1px_2px_rgba(16,24,40,0.05)]`. Borders do the separation, shadow is whisper. Never pure-black `rgba(0,0,0,.1)` blobs, never gradient washes. Table header `bg-white/85 backdrop-blur`, sidebar `bg-white`, header `bg-white/80 backdrop-blur-md`.
+- Dark (focus-calm): `border-white/10` + `shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]`. No outer neon glows. Sidebar `zinc-950`, header `zinc-950/80 backdrop-blur-md`.
+- Cards only when elevation = hierarchy. Otherwise group with `border-t` / `divide-y` / whitespace. For density 7, prefer plain layout + 1px dividers over card boxes — especially in Light where 6 white cards on zinc-50 quickly reads as clutter; use dividers after 6.
+- Light-specific trap: white cards on `zinc-50` with `border-transparent` or shadow-only = invisible hierarchy. If border is removed, elevation must increase — never remove both.
 
 ### 5.4 Z-index scale (never arbitrary `z-50`)
 
@@ -287,13 +306,13 @@ New route? Pick nearest archetype. No new archetype without updating this file.
 
 One system per chart. No Nivo + Recharts + ECharts mixing on same page. Check `apps/web/package.json` before import — output install command if missing.
 
-### 8.2 Every chart ships with
+### 8.2 Every chart ships with (dual-mode)
 
-1. **Title + InsightCaption:** `Trend` + `Pricing Evaluation +32% WoW, driven by /pricing after widget open.` No caption = incomplete.
-2. **Axes:** mono `12px text-3`, `tabular-nums`, human units (`1.2k`, `3m 12s`, `p95 820ms`). No raw ms dumps.
-3. **Legend:** top-right, zinc, max 4 items. Direct-label lines when only 1–2 series.
-4. **States:** loading skeleton matching chart shape (never spinner), empty with CTA, error inline with fix. Table fallback via `<details>` for SR + export.
-5. **Tooltips:** dark elevated card, mono numbers, `%` + absolute, timestamp + source. No truncation.
+1. **Title + InsightCaption:** `Trend` + `Pricing Evaluation +32% WoW, driven by /pricing after widget open.` No caption = incomplete. Caption `text-2` Light + Dark, never `text-3` for insight.
+2. **Axes / Grid:** mono `12px text-3`, `tabular-nums`, human units (`1.2k`, `3m 12s`, `p95 820ms`). Grid Light `zinc-200`, Dark `white/10`. No raw ms dumps. Light axis on white must still hit 4.5:1 — use `zinc-500`, not `zinc-300`.
+3. **Legend:** top-right, `text-2`, max 4 items. Direct-label lines when only 1–2 series.
+4. **States:** loading skeleton matching chart shape (Light `bg-zinc-200/70`, Dark `bg-white/10`, never spinner), empty with CTA, error inline with fix. Table fallback via `<details>` for SR + export.
+5. **Tooltips:** elevated card per §3.4 (Light white, Dark zinc-900), mono numbers, `%` + absolute, timestamp + source. No truncation. Tooltip text `text-1`/`text-2`, never low-contrast `text-3` for values.
 
 ```tsx
 <Card>
@@ -302,6 +321,7 @@ One system per chart. No Nivo + Recharts + ECharts mixing on same page. Check `a
   <CardContent><ChartContainer config={config}><AreaChart …/></ChartContainer></CardContent>
 </Card>
 ```
+// ChartContainer reads CSS vars — no hardcoded stroke/fill per theme. Grid/axis colors come from tokens so Light/Dark swap automatically.
 
 ### 8.3 KPI card spec
 
@@ -331,17 +351,17 @@ Deltas always vs prior equivalent period, with tooltip `vs prior 7d`. Positive-g
 
 Build from `apps/web/components/ui/*`. Never hand-roll dialog/popover/tooltip/table — use Radix-backed shadcn.
 
-| Component | Spec |
+| Component | Spec (Light / Dark parity) |
 |---|---|
-| `Button` | `h-9 px-4 text-sm font-medium rounded-lg`. Primary: `bg-brand-600 text-white hover:bg-brand-500 active:scale-[0.98]`. Secondary: `border`. Ghost: text-only. Disabled: `opacity-50 pointer-events-none` + reason tooltip. Contrast AA min. |
-| `Card` | `rounded-xl border bg-card p-5`. Title `16 semibold`, sub `13 text-2`. No nested cards. If >6 cards on page, switch to dividers. |
-| `Input/Select/Slider` | Label above, helper in markup (optional), error below. `h-9 rounded-lg border-input`. No placeholder-as-label. Focus: `ring-2 ring-brand-600/30 border-brand-600`. |
-| `Badge/Chip` | `rounded-full px-2.5 py-0.5 text-xs font-medium`. Status: dot + label. `READY emerald, CRAWLING blue pulse (once), FAILED rose, DRAFT zinc`. |
-| `Tabs` | Underline style for archetype switching, pill only for filters. Content `mt-4`. |
-| `Drawer/Sheet` | Right `w-[480px]`, header + scroll body + footer actions. Used for transcript, dossier, diff, chunk inspector. |
-| `Empty` | Centered icon (Phosphor 24 zinc) + title + 1-line why + primary CTA. E.g. “No conversions yet — Configure trigger.” |
-| `Error` | Inline rose border + what + how to fix + Retry. Toasts only for transient (saved, copied). |
-| `Skeleton` | Shape-matched (`h-[180px] rounded-xl`), never spinner for charts/tables. |
+| `Button` | `h-9 px-4 text-sm font-medium rounded-lg`. Primary: Light `bg-brand-600 text-white hover:bg-brand-500`, Dark `bg-brand-500 text-zinc-950 or white per contrast + hover brighter`, `active:scale-[0.98]`. Secondary: `border-border-subtle bg-surface`. Ghost: text-only. Disabled: `opacity-50 pointer-events-none` + reason tooltip in both. Contrast AA min in both — audit white-on-blue Light and ink-on-blue Dark separately. |
+| `Card` | `rounded-xl border bg-card p-5`. Light `bg-white border-zinc-200`, Dark `bg-card border-white/10`. Title `16 semibold text-1`, sub `13 text-2`. No nested cards. If >6 cards on page, switch to dividers (critical in Light). |
+| `Input/Select/Slider` | Label above (`text-2`), helper in markup (optional), error below (rose-600 Light / rose-400 Dark). `h-9 rounded-lg`. Light `bg-white border-zinc-300`, Dark `bg-zinc-900 border-white/15`. No placeholder-as-label. Focus: Light `ring-2 ring-brand-600/30 border-brand-600`, Dark `ring-brand-500/40 border-brand-500`. Placeholder contrast still readable in Light. |
+| `Badge/Chip` | `rounded-full px-2.5 py-0.5 text-xs font-medium`. Status: dot + label (never color alone). Light fills `emerald-50/blue-50/rose-50/zinc-100` with `700` text; Dark fills `emerald-500/15` etc with `300` text. `READY emerald, CRAWLING blue pulse (once, respects reduced-motion), FAILED rose, DRAFT zinc`. |
+| `Tabs` | Underline style for archetype switching, pill only for filters. Active tab `text-1 + accent underline`, inactive `text-2`. Content `mt-4`. |
+| `Drawer/Sheet` | Right `w-[480px]`, Light `bg-white`, Dark `bg-zinc-900`, header + scroll body + footer actions. Scrim per §3.4. Used for transcript, dossier, diff, chunk inspector. |
+| `Empty` | Centered icon (Phosphor 24, `text-3`) + title `text-1` + 1-line why `text-2` + primary CTA. E.g. “No conversions yet — Configure trigger.” Same in both, icon never `zinc-300` in Light (fails 3:1). |
+| `Error` | Inline rose border + what + how to fix + Retry. Light `border-rose-200 bg-rose-50 text-rose-900`, Dark `border-rose-500/30 bg-rose-500/10 text-rose-200`. Toasts only for transient (saved, copied). |
+| `Skeleton` | Shape-matched (`h-[180px] rounded-xl`), Light `bg-zinc-200/70`, Dark `bg-white/10`, never spinner for charts/tables. |
 
 Form a11y: `<label>`, `aria-describedby` helper, `aria-invalid` + error role, color never sole indicator.
 
@@ -386,11 +406,13 @@ Self-audit before ship: re-read every string. Kill broken grammar, unclear refer
 3. **Build:** shadcn primitives only, semantic tokens only, Phosphor only, `shadcn Chart` default / ECharts only for radar/graph/funnel-large. `min-h-[100dvh]` never `h-screen`, Grid never flex-math, `max-w-[1400px] mx-auto`.
 4. **Critique:** If plan reads as generic default for any SaaS (test: would same plan fit a different brief?) — revise that part, state what changed + why.
 5. **Pre-flight (fail = don't ship):**
-   - [ ] No hardcoded hex, no second accent, no mixed icon libs
+   - [ ] No hardcoded hex, no second accent, no mixed icon libs — tokens only (`:root` Light + `.dark`)
    - [ ] Eyebrows ≤1 per 3 sections, no 3-equal-cards, no split-header-as-default
-   - [ ] Every chart has InsightCaption + empty/loading/error + table fallback
-   - [ ] Buttons contrast AA, one line, one label per intent
-   - [ ] Both themes checked, 375px + desktop, focus visible, reduced-motion collapses
+   - [ ] Every chart has InsightCaption + empty/loading/error + table fallback, grid/axis/tooltip verified Light + Dark
+   - [ ] Buttons/inputs/badges contrast AA in Light AND Dark (checked separately), one line CTA, one label per intent
+   - [ ] Light checked: white cards separate from zinc-50 via border, dividers visible, placeholder/helper ≥4.5:1, tooltip legible on white
+   - [ ] Dark checked: borders/inner highlight visible on zinc-950, text-2 ≥4.5:1, scrim isolates drawer
+   - [ ] 375px + desktop, focus visible in both, reduced-motion collapses, `prefers-color-scheme` respected + ModeToggle persists
    - [ ] Numbers mono tabular-nums, human units, funnel order consistent
 
 **Banned (AI tells):** AI-purple glow, warm-cream `#F4F1EA` + terracotta `#D97757`, near-black `#0B0B0B` as black, all-caps eyebrow per section, `A · B · C` meta strings, `WORD — fragment` labels, `→` on every button, mono for small labels-as-decoration, gradient text headers, custom cursors, hand-rolled div-screenshots, text-only page claiming minimalism.
