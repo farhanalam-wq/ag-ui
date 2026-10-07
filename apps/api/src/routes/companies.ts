@@ -301,6 +301,10 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
           title: documents.title,
           category: documents.category,
           contentLength: documents.content,
+          sourceKind: documents.sourceKind,
+          originName: documents.originName,
+          wordCount: documents.wordCount,
+          batchId: documents.batchId,
           createdAt: documents.createdAt,
         })
         .from(documents)

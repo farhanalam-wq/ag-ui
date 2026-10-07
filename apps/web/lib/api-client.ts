@@ -153,6 +153,67 @@ export interface WidgetKeyListItem {
   createdAt: string;
 }
 
+export interface SourceDocument {
+  id: string;
+  url: string;
+  title: string;
+  category: string;
+  contentLength: number;
+  preview: string;
+  sourceKind: "crawl" | "upload" | "manual" | string;
+  originName: string | null;
+  wordCount: number;
+  batchId: string | null;
+  createdAt: string;
+}
+
+export interface DocumentsResponse {
+  companyId: string;
+  snapshotId: string;
+  snapshotStatus: string;
+  documents: SourceDocument[];
+}
+
+export interface UploadManifestEntry {
+  filename: string;
+  mime?: string;
+  size: number;
+  title?: string;
+  wordCount?: number;
+  preview?: string;
+  urls?: string[];
+  dropped?: number;
+  error?: string;
+}
+
+export interface UploadDraft {
+  batchId: string;
+  status: string;
+  fileCount: number;
+  manifest: UploadManifestEntry[];
+}
+
+export interface EnrichmentBatch {
+  id: string;
+  companyId: string;
+  snapshotId: string;
+  minor: number;
+  status: "DRAFT" | "PROCESSING" | "READY" | "FAILED" | "CANCELLED" | string;
+  fileCount: number;
+  docs: number;
+  failed: number;
+  manifest: UploadManifestEntry[];
+  summary: {
+    kind: string;
+    added?: string[];
+    pendingUrls?: string[];
+    counts?: { docs: number; chunks: number; facts: number; failed: number };
+  } | null;
+  errorSample?: { message?: string } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 class ApiClient {
   private baseUrl: string;
 
@@ -230,6 +291,86 @@ class ApiClient {
       }
       const data = await res.json();
       return data.chunks || [];
+    },
+
+    getDocuments: async (id: string): Promise<DocumentsResponse> => {
+      const res = await fetch(`${this.baseUrl}/api/companies/${id}/documents`);
+      if (res.status === 404) throw new Error("Company not found");
+      if (!res.ok) {
+        throw new Error(`Failed to get company documents: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+  };
+
+  /**
+   * Enrichment upload endpoints (Knowledge -> Sources)
+   */
+  uploads = {
+    list: async (companyId: string): Promise<EnrichmentBatch[]> => {
+      const res = await fetch(
+        `${this.baseUrl}/api/companies/${encodeURIComponent(companyId)}/uploads`
+      );
+      if (res.status === 404) throw new Error("Company not found");
+      if (!res.ok) {
+        throw new Error(`Failed to list upload batches: HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      return data.batches || [];
+    },
+
+    create: async (companyId: string, files: File[]): Promise<UploadDraft> => {
+      const form = new FormData();
+      for (const file of files) form.append("files", file);
+      const res = await fetch(
+        `${this.baseUrl}/api/companies/${encodeURIComponent(companyId)}/uploads`,
+        { method: "POST", body: form }
+      );
+      if (res.status === 404) throw new Error("Company not found");
+      if (res.status === 409) throw new Error("Company indexing — try again shortly");
+      if (res.status === 429) {
+        const retryAfter = res.headers.get("retry-after");
+        throw new Error(
+          retryAfter ? `Slow down — retry in ${retryAfter}s` : "Slow down — too many requests"
+        );
+      }
+      if (res.status === 413) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error || "Files exceed size limits");
+      }
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Upload failed (${res.status}): ${errText}`);
+      }
+      return res.json();
+    },
+
+    confirm: async (companyId: string, batchId: string): Promise<{ batchId: string; status: string }> => {
+      const res = await fetch(
+        `${this.baseUrl}/api/companies/${encodeURIComponent(companyId)}/uploads/${encodeURIComponent(batchId)}/confirm`,
+        { method: "POST" }
+      );
+      if (res.status === 404) throw new Error("Batch not found");
+      if (res.status === 409) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error || "Batch is no longer processable");
+      }
+      if (!res.ok) {
+        throw new Error(`Failed to confirm batch: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+
+    cancel: async (companyId: string, batchId: string): Promise<{ batchId: string; status: string }> => {
+      const res = await fetch(
+        `${this.baseUrl}/api/companies/${encodeURIComponent(companyId)}/uploads/${encodeURIComponent(batchId)}`,
+        { method: "DELETE" }
+      );
+      if (res.status === 404) throw new Error("Batch not found");
+      if (!res.ok) {
+        throw new Error(`Failed to cancel batch: HTTP ${res.status}`);
+      }
+      return res.json();
     },
   };
 
