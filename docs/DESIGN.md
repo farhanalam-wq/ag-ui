@@ -26,11 +26,11 @@ Anti-goal: run-of-the-mill AI slop — purple glows, centered heroes, 3-equal-ca
 ## 2. Stack & Source of Truth
 
 - Framework: Next.js 15 App Router, React 19, RSC by default. Interactivity isolated to `"use client"` leaves.
-- Styling: Tailwind CSS 3.4 (`apps/web/tailwind.config.ts`), CSS variables in `apps/web/app/globals.css` as single source (`:root` = Light, `.dark` = Dark). Theme via `next-themes` `ThemeProvider` + `ModeToggle` in shell header. Default follows system (`enableSystem`, `defaultTheme="system"` intent — never hard-lock `class="dark"` for ship), with manual toggle persisted. One page = one theme lock — sections never invert mid-scroll. Do not mix `dark:` utilities and CSS-var theming in the same file; prefer CSS vars (current approach).
+- Styling: Tailwind CSS 3.4 (`apps/web/tailwind.config.ts`), CSS variables in `apps/web/app/globals.css` as single source (`:root` = Light, `.dark` = Dark). Color theming via CSS vars ONLY (`bg-card text-foreground border-border`). `dark:` variant allowed ONLY for non-color tweaks (e.g. `dark:backdrop-blur-md`, layout). Never `dark:bg-gray-800 / dark:text-white` for color — use `bg-card / text-foreground`. Theme via `next-themes` `ThemeProvider` + `ModeToggle` in shell header. Ship intent: `enableSystem + defaultTheme="system"` with persisted override (current `class="dark"` hard-lock in `layout.tsx` is dev-only, remove before ship). One page = one theme lock — sections never invert mid-scroll.
 - Components: shadcn/ui is PRIMARY (Zinc, CSS variables) + Radix primitives in `apps/web/components/ui/`. ai-elements is PRIMARY for AI surfaces in `@/components/ai-elements/`. Rule: if shadcn or ai-elements has it, use it — never hand-roll. You own the code (copy-paste distribution) — never ship default state unstyled. Run `bunx --bun shadcn@latest` / `bunx --bun ai-elements@latest` per packageManager `bun@1.4.2`; check `components.json` aliases (`@/components`, `@/lib/utils`) and `apps/web/package.json` before import.
 - State: Zustand (`apps/web/stores/`), `useState` for local only. Never `useState` for pointer/scroll physics — use `useMotionValue` if needed (rare here).
-- Icons: `@phosphor-icons/react` ONLY. `lucide-react` is legacy — do not add new Lucide usage. One family per tree.
-- Fonts: `next/font` self-hosted, `font-display: swap`. Never `<link>` Google Fonts in production.
+- Icons: `@phosphor-icons/react` ONLY for new code. `lucide-react@1.45 + @thesvg/icons` in `apps/web/package.json` are legacy — do not import in new files; replace on touch with Phosphor equivalent (`Search → MagnifyingGlass`, etc). Keep one weight per hierarchy (`regular 1.5` UI, `bold 2.0` active nav only), sizes `16/20/24`, `aria-hidden` decorative / `aria-label+Tooltip` standalone, target ≥44px.
+- Fonts: `next/font` self-hosted `Geist Sans + Geist Mono`, `font-display: swap`. Install delta (not yet in `package.json`): `bun add geist` then `import { GeistSans } from 'geist/font/sans'`. Fallbacks `Inter Tight + JetBrains Mono`. Never `<link>` Google Fonts. Body `font-sans`, all numbers `font-mono tabular-nums`.
 
 ### 2.1 Token hierarchy (mandatory)
 
@@ -38,9 +38,35 @@ Anti-goal: run-of-the-mill AI slop — purple glows, centered heroes, 3-equal-ca
 Primitive (raw) → Semantic (purpose) → Component (usage)
 ```
 
-**Rule:** No raw hex / no raw Tailwind palette (`bg-blue-500`, `text-slate-500`) in `app/**/page.tsx` or `components/`. Always reference semantic token or Tailwind semantic alias (`bg-primary`, `text-muted-foreground`, `bg-surface`, `text-text-2`, `var(--chart-1)`).
+**Rule:** No raw hex / no raw Tailwind palette (`bg-blue-500`, `text-slate-500`) in `app/**/page.tsx` or `components/`. Always reference semantic token or Tailwind semantic alias (`bg-primary`, `text-muted-foreground`, `bg-card border-border`, `var(--chart-1)`).
 
-Future location: `apps/web/tokens/design-tokens.json` → generates `apps/web/app/tokens.css` → mapped in `tailwind.config.ts`. Until then, `globals.css` `:root` / `.dark` is the source. Validate with: `grep -rn "#[0-9a-fA-F]\{6\}" apps/web/app apps/web/components --include="*.tsx" | grep -v tokens` must be empty.
+Source today: `apps/web/app/globals.css` `:root` = Light, `.dark` = Dark. Future: `apps/web/tokens/design-tokens.json` → `apps/web/app/tokens.css` → mapped in `tailwind.config.ts`. Do not create a second token file until that path exists.
+
+Copy-paste starter (HSL for opacity control, per `design-system` skill):
+```css
+:root {
+  --background: 0 0% 98%; --foreground: 240 10% 3.9%;
+  --card: 0 0% 100%; --card-foreground: 240 10% 3.9%;
+  --muted: 240 4.8% 95.9%; --muted-foreground: 240 3.8% 35%;
+  --border: 220 13% 88%; --input: 220 13% 82%; --ring: 221 83% 53%;
+  --brand-600: 221 83% 53%; --chart-1: 224 86% 51%; --chart-2: 160 84% 39%;
+  --chart-3: 38 92% 50%; --chart-4: 258 90% 66%; --chart-5: 189 94% 43%;
+}
+.dark {
+  --background: 240 10% 3.9%; --foreground: 0 0% 98%;
+  --card: 240 10% 6%; --card-foreground: 0 0% 98%;
+  --muted: 240 3.7% 15.9%; --muted-foreground: 240 5% 64.9%;
+  --border: 0 0% 100% / 0.1; --input: 0 0% 100% / 0.15; --ring: 217 91% 60%;
+  --brand-500: 217 91% 60%;
+}
+```
+Tailwind maps `background/foreground/card/muted/border/input/ring/brand/chart-*` to `hsl(var(--x))`. Add `chart-1..8` to `tailwind.config.ts` once, never per page.
+
+Validate (must be empty outside tokens):
+```bash
+grep -rn "#[0-9a-fA-F]\\{6\\}" apps/web/app apps/web/components --include="*.tsx" | grep -v tokens
+grep -rn "bg-blue-500\\|text-slate-500\\|bg-gray-800" apps/web/app apps/web/components --include="*.tsx"
+```
 
 ---
 
@@ -231,7 +257,7 @@ App is data-product — no stock photos, no gradient blobs as hero. Visuals = ch
 --dur-3: 240ms; /* chart enter */
 ```
 
-Animate `transform` + `opacity` only. Existing `menu-in / collapsible-down/up` in `globals.css:129-172` is canonical. Honor `prefers-reduced-motion: reduce` — collapse to static. No scroll-hijack, no marquee (max 0 per internal page), no infinite pulse on cards.
+Animate `transform` + `opacity` only. Existing `menu-in / collapsible-down/up` in `globals.css:129-172` is canonical. Honor `prefers-reduced-motion: reduce` — collapse to static + disable `CRAWLING` pulse + chart enter animation. Honor `prefers-reduced-transparency` — header/drawer fall back to solid `bg-card` (no `backdrop-blur` / `bg-white/80`). No scroll-hijack, no marquee (max 0 per internal page), no infinite pulse on cards.
 
 ---
 
@@ -301,10 +327,29 @@ New route? Pick nearest archetype. No new archetype without updating this file.
 
 | Need | Library | Why |
 |---|---|---|
-| KPI trend, area/bar/donut, funnel bars, latency p50/p95 | shadcn/ui Chart (Recharts) | Composable, themed, accessible, zero extra bundle |
-| Intent Radar bubble/cluster, funnel flow, Entity Graph node-link, large series (>1k pts) | Apache ECharts via `echarts-for-react` | Perf + clustering + force layout where Recharts janks |
+| KPI trend, area/bar/donut, funnel bars, latency p50/p95 | shadcn/ui Chart (Recharts) via `ChartContainer + ChartTooltip` | Composable, themed via `var(--chart-*)`, accessible, zero extra bundle |
+| Intent Radar bubble/cluster, funnel flow, Entity Graph node-link, large series (>1k pts) | Apache ECharts via `echarts-for-react` + `useEChartsTheme()` wrapper reading CSS vars | Perf + clustering + force layout where Recharts janks |
 
-One system per chart. No Nivo + Recharts + ECharts mixing on same page. Check `apps/web/package.json` before import — output install command if missing.
+One system per chart. No Nivo + Recharts + ECharts mixing on same page. Check `apps/web/package.json` before import — output install command if missing (`bun add recharts echarts echarts-for-react`).
+
+Token-wired example (copy, don't invent colors):
+```tsx
+const config = {
+  assisted: { label: "Assisted", color: "var(--chart-1)" },
+  baseline: { label: "Baseline", color: "var(--chart-7)" },
+} satisfies ChartConfig;
+<ChartContainer config={config}>
+  <AreaChart data={data}>
+    <CartesianGrid stroke="var(--border)" vertical={false} />
+    <XAxis dataKey="d" tickLine={false} axisLine={false} tick={{ fill: "var(--muted-foreground)", fontSize: 12 }} />
+    <ChartTooltip content={<ChartTooltipContent />} />
+    <Area dataKey="assisted" stroke="var(--chart-1)" fill="var(--chart-1)" fillOpacity={0.12} strokeWidth={2} />
+    <Line dataKey="baseline" stroke="var(--chart-7)" strokeDasharray="4 4" dot={false} />
+  </AreaChart>
+</ChartContainer>
+```
+// ECharts: pass `color: [cssVar('--chart-1'), ...]`, `backgroundColor: 'transparent'`, `textStyle: { color: cssVar('--muted-foreground') }`. No hardcoded hex in option.
+Zero-data onboarding: empty chart area shows `Empty` (icon + "No data for range — Run crawl / Adjust dates") + preserves axes skeleton, never blank card.
 
 ### 8.2 Every chart ships with (dual-mode)
 
@@ -390,6 +435,23 @@ Use: `Conversation, Message, MessageContent, MessageResponse, PromptInput, Messa
 
 Form a11y: `<label>`, `aria-describedby` helper, `aria-invalid` + error role, color never sole indicator.
 
+### 9.5 Interaction contracts (no guessing)
+
+- **Table:** shadcn `Table` + header `bg-muted/50 backdrop-blur sticky top-0 z-10`. Props: sortable headers (`aria-sort`), filter `Input` with `SearchIcon data-icon`, pagination (`Pagination + page-size Select`), row `hover:bg-muted/40 focus-visible:ring-2`, selected `bg-accent/8 + left border accent`. Numbers right-aligned mono, text left. >25 rows = pagination + Export CSV. Row → `Sheet` drawer, `Enter` opens, `Esc` closes, focus returns to row.
+- **Drawer (`Sheet`):** `w-[480px] desktop / w-full mobile (max-w-full)`, `SheetTitle` always (sr-only ok), focus-trap + `Esc` + scrim click close, footer actions sticky bottom. Never modal for reading transcripts/diffs/logs.
+- **Header controls:** `DateRange = Popover + Calendar (or Select 7d/30d/90d MVP)` + `AgentSelect = Select + SelectGroup>SelectItem (All agents + list)` + one `Button primary`. Right-aligned `flex gap-2 flex-wrap`, truncates on mobile.
+- **Form error example:**
+```tsx
+<FieldGroup>
+  <Field data-invalid>
+    <FieldLabel htmlFor="url">Root URL</FieldLabel>
+    <Input id="url" aria-invalid placeholder="https://acme.com" />
+    <FieldDescription>Must return 200 + allow robots.</FieldDescription>
+  </Field>
+</FieldGroup>
+```
+- **Chat streaming:** `MessageScroller` container `aria-live="polite"`, input `PromptInput` always labelled, stop-stream `Button` visible during stream, `prefers-reduced-motion` disables auto-scroll animation. Graph/radar bubbles: keyboard-focusable nodes (`tabIndex 0`, `Enter` opens inspector), list fallback table for SR + no-JS.
+
 ---
 
 ## 10. Page-by-Page Guidance (spec v3)
@@ -446,6 +508,14 @@ Self-audit before ship: re-read every string. Kill broken grammar, unclear refer
 
 ---
 
-## 13. Definition of Done
+## 13. Definition of Done (measurable)
 
-Prime, pristine, consistent: one job per page, insight in 5s, tokens only, one accent, one icon family, one radius rule, charts with captions, states for loading/empty/error, a11y + both themes verified. If it looks like it could be any dashboard, it failed — revise toward ag-ui's intelligence-chain story: `Behaviour → Interaction → Intent → Outcome`.
+Prime, pristine, consistent = all boxes ticked. If it looks like it could be any dashboard, it failed — revise toward `Behaviour → Interaction → Intent → Outcome`.
+
+```bash
+# 1. No raw color / no dupe chrome
+grep -rn "#[0-9a-fA-F]\\{6\\}" apps/web/app apps/web/components --include="*.tsx" | grep -v tokens # expect empty
+# 2. Light + Dark screenshots (PageHeader, KPI row, 1 chart, 1 table, 1 drawer) in both modes
+# 3. Contrast: text-1 ≥7:1, text-2 ≥4.5:1, meaningful icon ≥3:1 — checked Light AND Dark separately
+# 4. Keyboard: Tab reaches all actions, Enter opens rows/nodes, Esc closes Sheet/Dialog, focus returns, aria-live announces streaming
+```
