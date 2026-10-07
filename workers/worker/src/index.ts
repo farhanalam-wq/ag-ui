@@ -216,12 +216,71 @@ export const crawlWorker = new Worker<CrawlJobData>(
         logger.info(`[CRAWL WORKER] Successfully saved ${factRows.length} deterministic facts to PostgreSQL`);
       }
 
-      // 8. Mark snapshot as READY & invalidate stale retrieval cache
+      // 8. Diff against the previous major for the Snapshots timeline.
+      // Whitespace-normalized comparison ignores trivial churn; lists cap
+      // at 50 entries with full counts preserved.
+      let crawlSummary: Record<string, unknown> | null = null;
+      try {
+        const previous = await db
+          .select()
+          .from(companySnapshots)
+          .where(eq(companySnapshots.companyId, companyId));
+        const older = previous
+          .filter((s) => s.id !== snapshotId)
+          .sort((a, b) => b.version - a.version)[0];
+        if (!older) {
+          crawlSummary = {
+            kind: "crawl",
+            initial: true,
+            counts: { total: insertedDocs.length },
+          };
+        } else {
+          const prevDocs = await db
+            .select({ url: documents.url, title: documents.title, content: documents.content })
+            .from(documents)
+            .where(eq(documents.snapshotId, older.id));
+          const normHash = (c: string) =>
+            createHash("sha256").update(c.replace(/\s+/g, "")).digest("hex");
+          const prevByUrl = new Map(prevDocs.map((d) => [d.url, d]));
+          const nextByUrl = new Map(insertedDocs.map((d) => [d.url, d]));
+          const added = insertedDocs
+            .filter((d) => !prevByUrl.has(d.url))
+            .map((d) => ({ url: d.url, title: d.title }));
+          const removed = prevDocs
+            .filter((d) => !nextByUrl.has(d.url))
+            .map((d) => ({ url: d.url, title: d.title }));
+          const changed = insertedDocs
+            .filter((d) => {
+              const p = prevByUrl.get(d.url);
+              return p !== undefined && normHash(p.content) !== normHash(d.content);
+            })
+            .map((d) => ({ url: d.url, title: d.title }));
+          const cap = (list: { url: string; title: string }[]) => list.slice(0, 50);
+          crawlSummary = {
+            kind: "crawl",
+            added: cap(added),
+            removed: cap(removed),
+            changed: cap(changed),
+            counts: {
+              added: added.length,
+              removed: removed.length,
+              changed: changed.length,
+              total: insertedDocs.length,
+            },
+          };
+        }
+      } catch (err: unknown) {
+        // Diff is display-only: never fail a good crawl over it.
+        logger.warn(`[CRAWL WORKER] Snapshot diff skipped: ${err instanceof Error ? err.message : err}`);
+      }
+
+      // 9. Mark snapshot as READY & invalidate stale retrieval cache
       await db
         .update(companySnapshots)
         .set({
           status: "READY",
           pageCount: crawlResult.pagesCrawled,
+          summary: crawlSummary,
         })
         .where(eq(companySnapshots.id, snapshotId));
 

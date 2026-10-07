@@ -7,6 +7,7 @@ import {
   documents,
   chunks,
   facts,
+  enrichmentBatches,
   eq,
   desc,
   inArray,
@@ -264,6 +265,59 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
       detail: {
         summary: "Get company by ID",
         description: "Returns company metadata, brand tokens, and snapshot history.",
+      },
+    }
+  )
+
+  // 3b. Version timeline: majors with summaries + their minor batches
+  .get(
+    "/:id/versions",
+    async ({ params, set }) => {
+      const [company] = await db
+        .select()
+        .from(companies)
+        .where(eq(companies.id, params.id))
+        .limit(1);
+
+      if (!company) {
+        set.status = 404;
+        return { error: "Company not found" };
+      }
+
+      const snapshots = await db
+        .select()
+        .from(companySnapshots)
+        .where(eq(companySnapshots.companyId, company.id))
+        .orderBy(desc(companySnapshots.version));
+
+      const batches = await db
+        .select()
+        .from(enrichmentBatches)
+        .where(eq(enrichmentBatches.companyId, company.id))
+        .orderBy(desc(enrichmentBatches.createdAt));
+
+      const bySnapshot = new Map<string, typeof batches>();
+      for (const b of batches) {
+        const list = bySnapshot.get(b.snapshotId) ?? [];
+        list.push(b);
+        bySnapshot.set(b.snapshotId, list);
+      }
+
+      return {
+        companyId: company.id,
+        versions: snapshots.map((s) => ({
+          ...s,
+          batches: (bySnapshot.get(s.id) ?? []).map((b) => ({ ...b })),
+        })),
+      };
+    },
+    {
+      params: t.Object({
+        id: t.String(),
+      }),
+      detail: {
+        summary: "Get version timeline",
+        description: "Returns major snapshots newest-first with summaries and minor batches.",
       },
     }
   )

@@ -214,6 +214,29 @@ export interface EnrichmentBatch {
   updatedAt: string;
 }
 
+export interface CrawlDiffEntry {
+  url: string;
+  title: string;
+}
+
+export interface MajorVersion {
+  id: string;
+  companyId: string;
+  version: number;
+  status: string;
+  pageCount: number;
+  summary: {
+    kind: string;
+    initial?: boolean;
+    added?: CrawlDiffEntry[];
+    removed?: CrawlDiffEntry[];
+    changed?: CrawlDiffEntry[];
+    counts?: { added: number; removed: number; changed: number; total: number };
+  } | null;
+  createdAt: string;
+  batches: EnrichmentBatch[];
+}
+
 class ApiClient {
   private baseUrl: string;
 
@@ -298,6 +321,15 @@ class ApiClient {
       if (res.status === 404) throw new Error("Company not found");
       if (!res.ok) {
         throw new Error(`Failed to get company documents: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+
+    getVersions: async (id: string): Promise<{ companyId: string; versions: MajorVersion[] }> => {
+      const res = await fetch(`${this.baseUrl}/api/companies/${id}/versions`);
+      if (res.status === 404) throw new Error("Company not found");
+      if (!res.ok) {
+        throw new Error(`Failed to get version timeline: HTTP ${res.status}`);
       }
       return res.json();
     },
