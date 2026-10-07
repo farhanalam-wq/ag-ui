@@ -32,32 +32,51 @@ export function normalizeVoiceText(text: string): string {
 
 /**
  * Collapse buffered voice lines to one bubble per utterance:
- * - trims, drops empties
- * - when any line carries final=true, drops non-final interim lines
- * - collapses consecutive same-speaker lines with identical normalized text
- *   (LiveKit/VoiceKit can redeliver the same final segment 2-3x).
+ * - groups redeliveries by (speaker, segment) — same speaker + same
+ *   `lk.segment_id` merge into one entry, preferring the final-marked
+ *   copy, else the longest text (final resends carry the full utterance)
+ * - trims, drops groups with no text (empty final-marker streams only
+ *   contribute their final flag to their segment group)
+ * - collapses consecutive same-speaker entries with identical normalized
+ *   text (LiveKit/VoiceKit can redeliver the same final segment under
+ *   different stream/segment ids).
+ * Never drops one speaker's lines because another speaker has a final.
  */
 export function coalesceVoiceLines(lines: VoiceLine[]): VoiceLine[] {
-  const trimmed = lines
-    .map((l) => ({ ...l, text: l.text.trim() }))
-    .filter((l) => l.text.length > 0);
-  if (trimmed.length === 0) return [];
+  const groups = new Map<string, { firstIndex: number; lines: VoiceLine[] }>();
+  lines.forEach((line, index) => {
+    const key = `${line.speaker}|${line.segmentId ?? line.id}`;
+    const group = groups.get(key);
+    if (group) group.lines.push(line);
+    else groups.set(key, { firstIndex: index, lines: [line] });
+  });
 
-  const hasFinal = trimmed.some((l) => l.final === true);
-  const finalsOnly = hasFinal ? trimmed.filter((l) => l.final !== false) : trimmed;
+  const merged = [...groups.values()]
+    .sort((a, b) => a.firstIndex - b.firstIndex)
+    .map((group) => {
+      // Prefer the longest text (final resends carry the full utterance;
+      // empty final-marker streams contribute only their flag). Ties go to
+      // the final-marked copy.
+      let best = group.lines[0];
+      for (const line of group.lines) {
+        const len = line.text.trim().length;
+        const bestLen = best.text.trim().length;
+        if (len > bestLen || (len === bestLen && line.final === true && best.final !== true)) {
+          best = line;
+        }
+      }
+      return { ...best, text: best.text.trim() };
+    })
+    .filter((l) => l.text.length > 0);
 
   const out: VoiceLine[] = [];
-  for (const line of finalsOnly) {
+  for (const line of merged) {
     const prev = out[out.length - 1];
     if (
       prev &&
       prev.speaker === line.speaker &&
       normalizeVoiceText(prev.text) === normalizeVoiceText(line.text)
     ) {
-      // Prefer the final-marked copy for metadata, keep first position.
-      if (line.final === true && prev.final !== true) {
-        prev.final = true;
-      }
       continue;
     }
     out.push({ ...line });
