@@ -1165,7 +1165,7 @@ async function populateDb(
   try {
     let brandData: ExtractedBrandData;
     if (rootHtml) {
-      brandData = await extractBrandIntelligence(rootHtml, baseUrl, { fetchExternalCss: true });
+      brandData = await extractBrandIntelligence(rootHtml, baseUrl, { fetchExternalCss: true, maxStylesheets: 10, timeoutMs: 8000 });
     } else {
       brandData = {
         logoUrl: undefined,
@@ -1662,7 +1662,7 @@ export async function runIngestPipeline(
     let dryBrand: ExtractedBrandData | null = null;
     if (opts.json && opts.dryRun && rootHtml) {
       try {
-        dryBrand = await extractBrandIntelligence(rootHtml, baseUrl as URL, { fetchExternalCss: true });
+        dryBrand = await extractBrandIntelligence(rootHtml, baseUrl as URL, { fetchExternalCss: true, maxStylesheets: 10, timeoutMs: 8000 });
         console.log(`[DRY] brand extracted (primary=${dryBrand.tokens?.colors?.primary}, theme=${dryBrand.tokens?.theme || "auto"}, stylesheet=${dryBrand.tokens?.stylesheet ? "yes" : "no"})`);
       } catch (err: any) {
         console.log(`[DRY] brand extraction skipped: ${err.message}`);

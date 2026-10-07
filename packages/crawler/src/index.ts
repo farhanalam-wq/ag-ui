@@ -11,7 +11,7 @@ import {
 } from "./discovery";
 import { fetchPage } from "./fetcher";
 import { extractCleanContent, type ExtractedPageContent } from "./extractor";
-import { extractBrandIntelligence, type ExtractedBrandData } from "./brand";
+import { extractBrandIntelligence, type ExtractedBrandData, type ExtractBrandOptions } from "./brand";
 
 export * from "./ssrf";
 export * from "./llms-txt";
@@ -24,6 +24,8 @@ export interface CrawlOptions {
   maxPages?: number;
   maxDepth?: number;
   forcePlaywright?: boolean;
+  /** Forwarded to extractBrandIntelligence (CSS caps, timeouts, onStage diagnostics). */
+  brandOptions?: ExtractBrandOptions;
 }
 
 export interface CrawledDocument extends ExtractedPageContent {
@@ -135,7 +137,7 @@ export class CompanyCrawler {
         if (fetchRes.status >= 200 && fetchRes.status < 300 && fetchRes.html) {
           // Extract brand on root page
           if (current.depth === 0 || current.url === rootNormalized) {
-            brandData = await extractBrandIntelligence(fetchRes.html, baseUrl, { fetchExternalCss: true });
+            brandData = await extractBrandIntelligence(fetchRes.html, baseUrl, { fetchExternalCss: true, maxStylesheets: 10, timeoutMs: 8000, ...options?.brandOptions });
             logger.info(
               `[CRAWLER] Extracted Brand: primary=${brandData.tokens.colors.primary}, theme=${brandData.tokens.theme || "auto"}, stylesheet=${brandData.tokens.stylesheet ? "yes" : "no"}, logo=${brandData.logoUrl || "none"}`
             );

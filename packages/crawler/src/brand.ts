@@ -14,6 +14,33 @@ export interface ExtractBrandOptions {
   fetchExternalCss?: boolean;
   maxStylesheets?: number;
   timeoutMs?: number;
+  /**
+   * Optional diagnostics callback. Receives non-blocking lifecycle events
+   * (stylesheets discovered, per-file fetch outcomes, css byte totals, and
+   * which detector produced the primary color) so callers can attribute
+   * per-URL `fallback` results instead of guessing. Never throws.
+   */
+  onStage?: (ev: BrandDiagEvent) => void;
+}
+
+export interface BrandDiagEvent {
+  type: "stylesheets-found" | "stylesheet-fetch" | "css-bytes" | "primary-source";
+  /** All stylesheet URLs discovered in page HTML (`stylesheets-found`). */
+  urls?: string[];
+  /** Single stylesheet URL (`stylesheet-fetch`). */
+  url?: string;
+  ok?: boolean;
+  bytes?: number;
+  ms?: number;
+  error?: string;
+  /** Combined inline + external CSS bytes fed to extraction (`css-bytes`). */
+  totalBytes?: number;
+  /** Inline CSS bytes portion of `totalBytes`. */
+  inlineBytes?: number;
+  /** Which detector produced the primary color (`primary-source`). */
+  source?: BrandFieldSource;
+  /** Extracted primary value ("" when honestly empty). */
+  primary?: string;
 }
 
 /**
@@ -84,6 +111,100 @@ function rgbToHex(r: number, g: number, b: number): string {
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
 
+function hexToRgb(hex: string): [number, number, number] | null {
+  const m = hex.match(/^#([0-9a-f]{6})$/i);
+  if (!m) return null;
+  return [parseInt(m[1].slice(0, 2), 16), parseInt(m[1].slice(2, 4), 16), parseInt(m[1].slice(4, 6), 16)];
+}
+
+function linearToSrgb(u: number): number {
+  const c = Math.max(0, u);
+  return c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+}
+
+/** OKLab (L 0-1, a, b) to hex via linear sRGB (out-of-gamut clips). */
+function oklabToHex(l: number, a: number, b: number): string {
+  const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+  const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+  const s_ = l - 0.0894841775 * a - 1.2914855480 * b;
+  const l3 = l_ * l_ * l_;
+  const m3 = m_ * m_ * m_;
+  const s3 = s_ * s_ * s_;
+  const r = 4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+  const g = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+  const bl = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3;
+  return rgbToHex(linearToSrgb(r) * 255, linearToSrgb(g) * 255, linearToSrgb(bl) * 255);
+}
+
+/** OKLCH (L 0-1, C, h-deg) to hex. */
+function oklchToHex(l: number, c: number, hDeg: number): string {
+  const h = ((hDeg % 360) + 360) % 360;
+  const rad = (h * Math.PI) / 180;
+  return oklabToHex(l, c * Math.cos(rad), c * Math.sin(rad));
+}
+
+/** CIE Lab (L 0-100, a, b, D65) to hex. */
+function labToHex(l: number, a: number, b: number): string {
+  const fy = (Math.max(0, Math.min(100, l)) + 16) / 116;
+  const fx = fy + a / 500;
+  const fz = fy - b / 200;
+  const f = (t: number) => (t * t * t > 0.008856 ? t * t * t : (116 * t - 16) / 903.3);
+  const x = 0.95047 * f(fx);
+  const y = f(fy);
+  const z = 1.08883 * f(fz);
+  const r = 3.2404542 * x - 1.5371385 * y - 0.4985314 * z;
+  const g = -0.969266 * x + 1.8760108 * y + 0.041556 * z;
+  const bl = 0.0556434 * x - 0.2040259 * y + 1.0572252 * z;
+  return rgbToHex(linearToSrgb(r) * 255, linearToSrgb(g) * 255, linearToSrgb(bl) * 255);
+}
+
+/** CIE LCH (L 0-100, C, h-deg) to hex. */
+function lchToHex(l: number, c: number, hDeg: number): string {
+  const h = ((hDeg % 360) + 360) % 360;
+  const rad = (h * Math.PI) / 180;
+  return labToHex(l, c * Math.cos(rad), c * Math.sin(rad));
+}
+
+/** Common CSS named colors. Signals only — transparent/currentcolor return null. */
+const NAMED_COLORS: Record<string, string> = {
+  black: "#000000", white: "#ffffff", red: "#ff0000", lime: "#00ff00", blue: "#0000ff",
+  yellow: "#ffff00", cyan: "#00ffff", aqua: "#00ffff", magenta: "#ff00ff", fuchsia: "#ff00ff",
+  gray: "#808080", grey: "#808080", darkgray: "#a9a9a9", darkgrey: "#a9a9a9",
+  lightgray: "#d3d3d3", lightgrey: "#d3d3d3", dimgray: "#696969", dimgrey: "#696969",
+  silver: "#c0c0c0", maroon: "#800000", olive: "#808000", green: "#008000", teal: "#008080",
+  navy: "#000080", purple: "#800080", orange: "#ffa500", coral: "#ff7f50", tomato: "#ff6347",
+  orangered: "#ff4500", crimson: "#dc143c", firebrick: "#b22222", darkred: "#8b0000",
+  indianred: "#cd5c5c", salmon: "#fa8072", darksalmon: "#e9967a", lightsalmon: "#ffa07a",
+  gold: "#ffd700", khaki: "#f0e68c", darkkhaki: "#bdb76b", goldenrod: "#daa520",
+  darkgoldenrod: "#b8860b", palegoldenrod: "#eee8aa", yellowgreen: "#9acd32",
+  greenyellow: "#adff2f", chartreuse: "#7fff00", lawngreen: "#7cfc00", limegreen: "#32cd32",
+  darkgreen: "#006400", forestgreen: "#228b22", seagreen: "#2e8b57", mediumseagreen: "#3cb371",
+  springgreen: "#00ff7f", mediumspringgreen: "#00fa9a", lightgreen: "#90ee90",
+  palegreen: "#98fb98", darkseagreen: "#8fbc8f", lightseagreen: "#20b2aa",
+  mediumaquamarine: "#66cdaa", aquamarine: "#7fffd4", turquoise: "#40e0d0",
+  mediumturquoise: "#48d1cc", darkturquoise: "#00ced1", paleturquoise: "#afeeee",
+  cadetblue: "#5f9ea0", steelblue: "#4682b4", lightsteelblue: "#b0c4de",
+  powderblue: "#b0e0e6", lightblue: "#add8e6", skyblue: "#87ceeb", lightskyblue: "#87cefa",
+  deepskyblue: "#00bfff", dodgerblue: "#1e90ff", cornflowerblue: "#6495ed",
+  royalblue: "#4169e1", mediumblue: "#0000cd", darkblue: "#00008b", midnightblue: "#191970",
+  indigo: "#4b0082", darkslateblue: "#483d8b", slateblue: "#6a5acd", mediumslateblue: "#7b68ee",
+  mediumpurple: "#9370db", blueviolet: "#8a2be2", darkviolet: "#9400d3",
+  darkorchid: "#9932cc", mediumorchid: "#ba55d3", orchid: "#da70d6", thistle: "#d8bfd8",
+  plum: "#dda0dd", violet: "#ee82ee", darkmagenta: "#8b008b", mediumvioletred: "#c71585",
+  palevioletred: "#db7093", deeppink: "#ff1493", hotpink: "#ff69b4", lightpink: "#ffb6c1",
+  pink: "#ffc0cb", rosybrown: "#bc8f8f", brown: "#a52a2a", saddlebrown: "#8b4513",
+  sienna: "#a0522d", chocolate: "#d2691e", peru: "#cd853f", sandybrown: "#f4a460",
+  burlywood: "#deb887", tan: "#d2b48c", wheat: "#f5deb3", navajowhite: "#ffdead",
+  bisque: "#ffe4c4", blanchedalmond: "#ffebcd", cornsilk: "#fff8dc", lemonchiffon: "#fffacd",
+  lightgoldenrodyellow: "#fafad2", lightyellow: "#ffffe0", ivory: "#fffff0",
+  beige: "#f5f5dc", linen: "#faf0e6", antiquewhite: "#faebd7", oldlace: "#fdf5e6",
+  floralwhite: "#fffaf0", whitesmoke: "#f5f5f5", lavenderblush: "#fff0f5", mistyrose: "#ffe4e1",
+  seashell: "#fff5ee", snow: "#fffafa", honeydew: "#f0fff0", mintcream: "#f5fffa",
+  azure: "#f0ffff", aliceblue: "#f0f8ff", ghostwhite: "#f8f8ff", lavender: "#e6e6fa",
+  lightcyan: "#e0ffff", papayawhip: "#ffefd5", moccasin: "#ffe4b5",   peachpuff: "#ffdab9",
+  darkorange: "#ff8c00", rebeccapurple: "#663399",
+};
+
 /**
  * Parses any CSS color format (hex, rgb, rgba, hsl, hsla, or Tailwind/shadcn raw HSL channels) into #rrggbb.
  */
@@ -114,6 +235,64 @@ export function parseColorToHex(raw: string): string | null {
   if (twHslMatch) {
     return hslToHex(Number(twHslMatch[1]), Number(twHslMatch[2]), Number(twHslMatch[3]));
   }
+
+  // 5. Bare hex without '#': legacy HTML attributes (BGCOLOR=00CCCC) and sloppy CSS.
+  const bareHex = str.match(/^([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$/);
+  if (bareHex) return normalizeHex("#" + bareHex[1]);
+
+  // 6. Space-separated rgb()/hsl() with optional "/ alpha" (CSS Color 4).
+  //    e.g. "rgb(227 24 55)", "rgb(227 24 55 / 50%)", "hsl(4 80% 50% / 0.5)"
+  const spaceRgb = str.match(/^rgba?\(\s*(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)(?:\s*\/\s*[\d.]+%?)?\s*\)$/i);
+  if (spaceRgb) {
+    return rgbToHex(Number(spaceRgb[1]), Number(spaceRgb[2]), Number(spaceRgb[3]));
+  }
+  const spaceHsl = str.match(/^hsla?\(\s*(\d+(?:\.\d+)?)(?:deg)?\s+(\d+(?:\.\d+)?)%\s+(\d+(?:\.\d+)?)%(?:\s*\/\s*[\d.]+%?)?\s*\)$/i);
+  if (spaceHsl) {
+    return hslToHex(Number(spaceHsl[1]), Number(spaceHsl[2]), Number(spaceHsl[3]));
+  }
+
+  // 7. oklab()/oklch()/lab()/lch() (Tailwind v4 @theme tokens are oklch).
+  const oklchMatch = str.match(/^oklch\(\s*([\d.]+)%?\s+([\d.]+)\s+([\d.]+)(?:deg)?(?:\s*\/\s*[\d.]+%?)?\s*\)$/i);
+  if (oklchMatch) {
+    let l = Number(oklchMatch[1]);
+    if (oklchMatch[0].includes("%") || l > 1) l = l > 1 ? l / 100 : l;
+    return oklchToHex(l, Number(oklchMatch[2]), Number(oklchMatch[3]));
+  }
+  const oklabMatch = str.match(/^oklab\(\s*([\d.]+)%?\s+([-\d.]+)\s+([-\d.]+)(?:\s*\/\s*[\d.]+%?)?\s*\)$/i);
+  if (oklabMatch) {
+    let l = Number(oklabMatch[1]);
+    if (l > 1) l = l / 100;
+    return oklabToHex(l, Number(oklabMatch[2]), Number(oklabMatch[3]));
+  }
+  const lchMatch = str.match(/^lch\(\s*([\d.]+)%?\s+([\d.]+)\s+([\d.]+)(?:deg)?(?:\s*\/\s*[\d.]+%?)?\s*\)$/i);
+  if (lchMatch) {
+    return lchToHex(Number(lchMatch[1]), Number(lchMatch[2]), Number(lchMatch[3]));
+  }
+  const labMatch = str.match(/^lab\(\s*([\d.]+)%?\s+([-\d.]+)\s+([-\d.]+)(?:\s*\/\s*[\d.]+%?)?\s*\)$/i);
+  if (labMatch) {
+    return labToHex(Number(labMatch[1]), Number(labMatch[2]), Number(labMatch[3]));
+  }
+
+  // 8. color-mix(in srgb, A 60%, B) — resolve by mixing endpoints in sRGB.
+  const mixMatch = str.match(/^color-mix\(\s*in\s+[\w-]+\s*,\s*(.+?)\s+([\d.]+)%\s*,\s*(.+?)\)$/i);
+  const mixMatch50 = str.match(/^color-mix\(\s*in\s+[\w-]+\s*,\s*(.+?)\s*,\s*(.+?)\)$/i);
+  const mix = mixMatch ?? (mixMatch50 ? [mixMatch50[0], mixMatch50[1], "50", mixMatch50[2]] : null);
+  if (mix) {
+    const aHex = parseColorToHex(mix[1].trim());
+    const bHex = parseColorToHex(mix[3].trim());
+    if (aHex && bHex) {
+      const w = Math.max(0, Math.min(100, Number(mix[2]))) / 100;
+      const av = hexToRgb(aHex);
+      const bv = hexToRgb(bHex);
+      if (av && bv) {
+        return rgbToHex(av[0] * w + bv[0] * (1 - w), av[1] * w + bv[1] * (1 - w), av[2] * w + bv[2] * (1 - w));
+      }
+    }
+  }
+
+  // 9. CSS named colors (common subset; transparent/currentcolor carry no signal).
+  const named = NAMED_COLORS[str.toLowerCase()];
+  if (named) return named;
 
   return null;
 }
@@ -214,13 +393,33 @@ function extractStylesheetUrls($: cheerio.CheerioAPI, baseUrl: URL): string[] {
 
 /**
  * Fetches external stylesheets in parallel safely with SSRF protection and timeouts.
+ * Returns the joined CSS plus per-file outcomes so callers can diagnose
+ * silent intake loss (caps, timeouts, blocked hosts).
  */
-async function fetchStylesheets(urls: string[], timeoutMs = 3500, maxSheets = 4): Promise<string> {
-  const targetUrls = urls.slice(0, maxSheets);
-  if (targetUrls.length === 0) return "";
+export interface StylesheetFetchResult {
+  url: string;
+  ok: boolean;
+  bytes: number;
+  ms: number;
+  error?: string;
+  skippedByCap?: boolean;
+}
 
-  const results = await Promise.allSettled(
+async function fetchStylesheets(
+  urls: string[],
+  timeoutMs = 3500,
+  maxSheets = 4
+): Promise<{ css: string; results: StylesheetFetchResult[] }> {
+  const results: StylesheetFetchResult[] = [];
+  const targetUrls = urls.slice(0, maxSheets);
+  for (const skipped of urls.slice(maxSheets)) {
+    results.push({ url: skipped, ok: false, bytes: 0, ms: 0, error: `skipped: maxStylesheets=${maxSheets}`, skippedByCap: true });
+  }
+  if (targetUrls.length === 0) return { css: "", results };
+
+  const settled = await Promise.allSettled(
     targetUrls.map(async (urlStr) => {
+      const t0 = Date.now();
       await validateSafeUrl(urlStr);
       const res = await fetch(urlStr, {
         headers: {
@@ -231,17 +430,35 @@ async function fetchStylesheets(urls: string[], timeoutMs = 3500, maxSheets = 4)
         signal: AbortSignal.timeout(timeoutMs),
       });
 
-      if (!res.ok) return "";
+      if (!res.ok) {
+        results.push({ url: urlStr, ok: false, bytes: 0, ms: Date.now() - t0, error: `HTTP ${res.status}` });
+        return "";
+      }
       const text = await res.text();
       // Cap at 500KB per stylesheet to avoid memory bloat
-      return text.slice(0, 500 * 1024);
+      const capped = text.slice(0, 500 * 1024);
+      results.push({ url: urlStr, ok: true, bytes: capped.length, ms: Date.now() - t0 });
+      return capped;
     })
   );
 
-  return results
+  const css = settled
     .filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled")
     .map((r) => r.value)
     .join("\n");
+  // Attach network/SSRF rejections that never produced a result entry.
+  settled.forEach((r, i) => {
+    if (r.status === "rejected" && !results.some((x) => x.url === targetUrls[i])) {
+      results.push({
+        url: targetUrls[i],
+        ok: false,
+        bytes: 0,
+        ms: 0,
+        error: String((r.reason as any)?.message ?? r.reason).slice(0, 200),
+      });
+    }
+  });
+  return { css, results };
 }
 
 /**
@@ -326,11 +543,32 @@ export function mineUtilityColors(cssText: string): MinedColors {
   };
   const colorRe = new RegExp(`(?<![\\w-])color\\s*:\\s*${MINED_COLOR_VALUE}`, "gi");
   const bgRe = new RegExp(`(?<![\\w-])background-color\\s*:\\s*${MINED_COLOR_VALUE}`, "gi");
+  // `background:` shorthand (e.g. `background:#e31837`, `background:#fff url(...)`).
+  // The trailing `\s*:` can't match `background-color:` (a `-` follows `background`
+  // there), so no double counting with bgRe above.
+  const bgShortRe = /(?<![\w-])background\s*:\s*([^;}{!]+)/gi;
+  const colorTokenRe = /#[0-9a-fA-F]{3,8}\b|(?:rgb|hsl|oklab|oklch|lab|lch)a?\([^)]*\)|\b[a-zA-Z]{3,20}\b/g;
+  const SKIP_SHORTHAND_TOKENS = /^(url|var|none|transparent|inherit|initial|unset|scroll|fixed|local|cover|contain|center|repeat|norepeat|borderbox|paddingbox|contentbox|linear|radial|gradient|from|to|at|in|solid|dashed)$/i;
   let m: RegExpExecArray | null;
   while ((m = colorRe.exec(cssText)) !== null) record(counts, m[1]);
   while ((m = bgRe.exec(cssText)) !== null) {
     record(counts, m[1]);
     record(bgCounts, m[1]);
+  }
+  while ((m = bgShortRe.exec(cssText)) !== null) {
+    const val = m[1];
+    if (/^\s*var\(/i.test(val)) continue; // var-backed, handled by the cssvar path
+    colorTokenRe.lastIndex = 0;
+    let t: RegExpExecArray | null;
+    while ((t = colorTokenRe.exec(val)) !== null) {
+      if (SKIP_SHORTHAND_TOKENS.test(t[0])) continue;
+      const hex = parseColorToHex(t[0]);
+      if (hex) {
+        record(counts, t[0]);
+        record(bgCounts, t[0]);
+        break;
+      }
+    }
   }
   const ranked = [...counts.entries()]
     .map(([hex, count]) => ({ hex, count }))
@@ -383,6 +621,9 @@ export function detectFontFromCss(cssText: string): { name: string; fromFontFace
     const first = dm[1].split(",")[0].trim().replace(/^['"]+|['"]+$/g, "");
     const clean = sanitizeFontName(first);
     if (!clean || GENERIC_FONTS.has(clean.toLowerCase())) continue;
+    // Icon/glyph fonts are symbols, never brand typography — skip unless
+    // nothing else exists (handled by the honest-empty fallback downstream).
+    if (/icon|glyph|symbol|emoji|dingbat/i.test(clean)) continue;
     const key = clean.toLowerCase();
     const v = votes.get(key) ?? { name: clean, count: 0 };
     v.count += 1;
@@ -416,6 +657,76 @@ export function voteRadius(cssText: string): string | undefined {
   if (top === "0.5rem") return "0.5rem";
   const checked = sanitizeRadius(top);
   return checked === "0.5rem" ? undefined : checked;
+}
+
+/**
+ * Finds a CSS variable by token list: exact name first, then hyphen-segment
+ * match (catches namespaced/scaled tokens like `--brand-primary`,
+ * `--color-primary-600`, Primer's `--bgColor-accent-emphasis`). Exact hits
+ * keep priority so existing behavior is unchanged when they exist.
+ */
+function findVarBySegments(cssVars: Map<string, string>, tokens: string[]): string | undefined {
+  for (const k of tokens) {
+    if (cssVars.has(k)) return k;
+  }
+  const lowered = tokens.map((t) => t.toLowerCase());
+  for (const name of cssVars.keys()) {
+    const segs = name.toLowerCase().split("-");
+    if (lowered.some((t) => segs.includes(t))) return name;
+  }
+  return undefined;
+}
+
+export interface LegacyAttrColors {
+  /** Chromatic FONT COLOR values ranked by frequency (headings carry brand accents). */
+  chromatic: { hex: string; count: number }[];
+  background?: string;
+  foreground?: string;
+  font?: string;
+}
+
+/**
+ * Last-resort signals for pre-CSS sites (hand-written 90s HTML with zero
+ * stylesheets): BGCOLOR / TEXT / FONT COLOR / FACE attributes. Only consulted
+ * when every modern signal misses, and always labeled "mined" — never a
+ * fabricated default.
+ */
+function mineLegacyAttributes($: cheerio.CheerioAPI): LegacyAttrColors {
+  const fontCounts = new Map<string, number>();
+  $("font[color]").each((_, el) => {
+    const raw = ($(el).attr("color") || "").trim();
+    if (!raw) return;
+    const hex = parseColorToHex(raw.startsWith("#") ? raw : `#${raw}`);
+    if (!hex) return;
+    fontCounts.set(hex, (fontCounts.get(hex) ?? 0) + 1);
+  });
+  const ranked = [...fontCounts.entries()]
+    .map(([hex, count]) => ({ hex, count }))
+    .sort((a, b) => b.count - a.count);
+  const chromatic = ranked.filter((c) => colorSaturation(c.hex) > 0.15);
+
+  const bgCounts = new Map<string, number>();
+  $("body[bgcolor], table[bgcolor], td[bgcolor], tr[bgcolor]").each((_, el) => {
+    const raw = ($(el).attr("bgcolor") || "").trim();
+    if (!raw) return;
+    const hex = parseColorToHex(raw.startsWith("#") ? raw : `#${raw}`);
+    if (hex) bgCounts.set(hex, (bgCounts.get(hex) ?? 0) + 1);
+  });
+  const bgRanked = [...bgCounts.entries()].sort((a, b) => b[1] - a[1]);
+  const lightBg = bgRanked.find(([hex]) => calculateLuminance(hex) >= 0.75);
+
+  let foreground: string | undefined;
+  const textRaw = ($("body").attr("text") || "").trim();
+  if (textRaw) {
+    const hex = parseColorToHex(textRaw.startsWith("#") ? textRaw : `#${textRaw}`);
+    if (hex) foreground = hex;
+  }
+
+  let font: string | undefined;
+  const face = ($("font[face]").first().attr("face") || "").split(",")[0].trim().replace(/^['"]+|['"]+$/g, "");
+  if (face) font = sanitizeFontName(face) ?? undefined;
+
+  return { chromatic, background: lightBg?.[0], foreground, font };
 }
 
 /**
@@ -465,14 +776,12 @@ function parseBrandFromHtmlAndCss(
     "accent",
     "theme-color",
   ];
-  for (const k of primaryKeys) {
-    if (cssVars.has(k)) {
-      const hex = parseColorToHex(cssVars.get(k)!);
-      if (hex) {
-        primaryColor = hex;
-        primarySource = "cssvar";
-        break;
-      }
+  const primaryKey = findVarBySegments(cssVars, primaryKeys);
+  if (primaryKey) {
+    const hex = parseColorToHex(cssVars.get(primaryKey)!);
+    if (hex) {
+      primaryColor = hex;
+      primarySource = "cssvar";
     }
   }
 
@@ -521,6 +830,13 @@ function parseBrandFromHtmlAndCss(
     primarySource = "mined";
   }
 
+  // Pre-CSS legacy attributes when everything modern misses (labeled "mined")
+  const legacy = mineLegacyAttributes($);
+  if (!primaryColor && legacy.chromatic.length > 0) {
+    primaryColor = legacy.chromatic[0].hex;
+    primarySource = "mined";
+  }
+
   // Honestly empty when no brand color found — never a fabricated default,
   // so unauthenticated values are distinguishable from extracted ones.
   if (!primaryColor) {
@@ -538,14 +854,12 @@ function parseBrandFromHtmlAndCss(
     "brand-secondary",
     "highlight",
   ];
-  for (const k of secondaryKeys) {
-    if (cssVars.has(k)) {
-      const hex = parseColorToHex(cssVars.get(k)!);
-      if (hex && hex !== primaryColor) {
-        secondaryColor = hex;
-        secondarySource = "cssvar";
-        break;
-      }
+  const secondaryKey = findVarBySegments(cssVars, secondaryKeys);
+  if (secondaryKey) {
+    const hex = parseColorToHex(cssVars.get(secondaryKey)!);
+    if (hex && hex !== primaryColor) {
+      secondaryColor = hex;
+      secondarySource = "cssvar";
     }
   }
   if (!secondaryColor) {
@@ -553,6 +867,12 @@ function parseBrandFromHtmlAndCss(
     if (runnerUp) {
       secondaryColor = runnerUp.hex;
       secondarySource = "mined";
+    } else {
+      const legacyRunner = legacy.chromatic.find((c) => c.hex !== primaryColor);
+      if (legacyRunner) {
+        secondaryColor = legacyRunner.hex;
+        secondarySource = "mined";
+      }
     }
   }
 
@@ -564,26 +884,22 @@ function parseBrandFromHtmlAndCss(
 
   // Check CSS variables for background/foreground
   const bgKeys = ["background", "bg", "color-bg", "background-color", "surface", "surface-ground"];
-  for (const k of bgKeys) {
-    if (cssVars.has(k)) {
-      const hex = parseColorToHex(cssVars.get(k)!);
-      if (hex) {
-        detectedBackground = hex;
-        backgroundSource = "cssvar";
-        break;
-      }
+  const bgKey = findVarBySegments(cssVars, bgKeys);
+  if (bgKey) {
+    const hex = parseColorToHex(cssVars.get(bgKey)!);
+    if (hex) {
+      detectedBackground = hex;
+      backgroundSource = "cssvar";
     }
   }
 
   const fgKeys = ["foreground", "text", "color-text", "text-color", "foreground-color", "content-color"];
-  for (const k of fgKeys) {
-    if (cssVars.has(k)) {
-      const hex = parseColorToHex(cssVars.get(k)!);
-      if (hex) {
-        detectedForeground = hex;
-        foregroundSource = "cssvar";
-        break;
-      }
+  const fgKey = findVarBySegments(cssVars, fgKeys);
+  if (fgKey) {
+    const hex = parseColorToHex(cssVars.get(fgKey)!);
+    if (hex) {
+      detectedForeground = hex;
+      foregroundSource = "cssvar";
     }
   }
 
@@ -591,8 +907,16 @@ function parseBrandFromHtmlAndCss(
     detectedBackground = mined.background;
     backgroundSource = "mined";
   }
+  if (!detectedBackground && legacy.background) {
+    detectedBackground = legacy.background;
+    backgroundSource = "mined";
+  }
   if (!detectedForeground && mined.foreground) {
     detectedForeground = mined.foreground;
+    foregroundSource = "mined";
+  }
+  if (!detectedForeground && legacy.foreground) {
+    detectedForeground = legacy.foreground;
     foregroundSource = "mined";
   }
 
@@ -676,6 +1000,10 @@ function parseBrandFromHtmlAndCss(
       headingFont = voted.name;
       bodyFont = voted.name;
       fontSource = voted.fromFontFace ? "fontface" : "mined";
+    } else if (legacy.font) {
+      headingFont = legacy.font;
+      bodyFont = legacy.font;
+      fontSource = "mined";
     }
   }
 
@@ -800,19 +1128,34 @@ export async function extractBrandIntelligence(
   baseUrl: URL,
   options?: ExtractBrandOptions
 ): Promise<ExtractedBrandData> {
+  const emit = (ev: BrandDiagEvent) => {
+    try {
+      options?.onStage?.(ev);
+    } catch {
+      // diagnostics must never break extraction
+    }
+  };
   const $ = cheerio.load(html);
   const inlineCss = $("style").text();
 
   let externalCss = "";
   if (options?.fetchExternalCss !== false) {
     const urls = extractStylesheetUrls($, baseUrl);
+    emit({ type: "stylesheets-found", urls });
     if (urls.length > 0) {
-      externalCss = await fetchStylesheets(urls, options?.timeoutMs, options?.maxStylesheets);
+      const fetched = await fetchStylesheets(urls, options?.timeoutMs, options?.maxStylesheets);
+      for (const r of fetched.results) {
+        emit({ type: "stylesheet-fetch", url: r.url, ok: r.ok, bytes: r.bytes, ms: r.ms, error: r.error });
+      }
+      externalCss = fetched.css;
     }
   }
 
   const combinedCss = `${inlineCss}\n${externalCss}`;
-  return parseBrandFromHtmlAndCss(html, baseUrl, combinedCss);
+  emit({ type: "css-bytes", totalBytes: combinedCss.length, inlineBytes: inlineCss.length });
+  const out = parseBrandFromHtmlAndCss(html, baseUrl, combinedCss);
+  emit({ type: "primary-source", source: out.sources?.primary ?? "fallback", primary: out.tokens.colors.primary ?? "" });
+  return out;
 }
 
 /**
