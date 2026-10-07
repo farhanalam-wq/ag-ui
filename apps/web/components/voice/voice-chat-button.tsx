@@ -3,7 +3,7 @@
 import React from "react";
 import { CircleNotch, Microphone, X } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
-import { useVoiceSession } from "./voice-session";
+import { useVoiceSession } from "./voice-context";
 
 const BAR_WEIGHTS = [0.45, 0.75, 1, 0.75, 0.45];
 const BAR_MAX_PX = 18;
