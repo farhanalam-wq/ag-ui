@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
   PromptInput,
@@ -27,7 +28,12 @@ import { useCompanyChat } from "@/hooks/use-company-chat";
 import { ChatMessageItem } from "@/components/chat-message";
 import { EvidenceDrawer } from "@/components/evidence-drawer";
 import { IngestionStudio } from "@/components/ingestion/ingestion-studio";
-import { VoiceSession } from "@/components/voice/voice-session";
+// Heavy LiveKit session loads on demand (client-only) so the initial
+// playground chunk stays light. Same props/behavior once loaded.
+const VoiceSession = dynamic(
+  () => import("@/components/voice/voice-session").then((m) => m.VoiceSession),
+  { ssr: false }
+);
 import {
   VoiceAmplitudeBars,
   VoiceChatButton,
