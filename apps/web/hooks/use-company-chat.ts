@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef } from "react";
 
 import { apiClient } from "@/lib/api-client";
+import { coalesceVoiceLines } from "@/lib/voice-transcript";
 import type { VoiceLine } from "@/components/voice/voice-session";
 
 export interface EvidenceItem {
@@ -224,8 +225,9 @@ export function useCompanyChat() {
    * voice answers never carry citations they were not grounded with.
    */
   const appendVoiceTranscript = useCallback((lines: VoiceLine[]) => {
+    const deduped = coalesceVoiceLines(lines);
     const stamp = Date.now();
-    const mapped: ChatMessage[] = lines
+    const mapped: ChatMessage[] = deduped
       .filter((l) => l.text.trim().length > 0)
       .map((l, i) => ({
         id: `${l.speaker}-voice-${stamp}-${i}`,

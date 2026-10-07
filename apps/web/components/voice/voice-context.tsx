@@ -6,6 +6,10 @@ export interface VoiceLine {
   id: string;
   speaker: "you" | "agent";
   text: string;
+  /** LiveKit segment id when provided (lk.segment_id). Groups interim + final. */
+  segmentId?: string;
+  /** True when the stream was marked final (lk.transcription_final). */
+  final?: boolean;
 }
 
 export type VoiceStatus = "idle" | "fetching" | "connecting" | "live" | "error";

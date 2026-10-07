@@ -25,6 +25,11 @@ import {
   type TextStreamReader,
 } from "livekit-client";
 import { fetchVoiceToken, resolveLivekitUrl } from "@/lib/voice-client";
+import {
+  coalesceVoiceLines,
+  readSegmentId,
+  readTranscriptionFinal,
+} from "@/lib/voice-transcript";
 import { VoiceSessionContext } from "./voice-context";
 import type { VoiceController, VoiceLine, VoiceStatus } from "./voice-context";
 
@@ -106,10 +111,11 @@ export function VoiceSession({
 
   const finalize = useCallback(() => {    if (finalizedRef.current) return;
     finalizedRef.current = true;
-    const lines = orderRef.current
+    const raw = orderRef.current
       .map((id) => linesRef.current.get(id))
       .filter((l): l is VoiceLine => !!l && l.text.trim().length > 0)
       .map((l) => ({ ...l, text: l.text.trim() }));
+    const lines = coalesceVoiceLines(raw);
     linesRef.current.clear();
     orderRef.current = [];
     setToken(null);
@@ -294,16 +300,35 @@ function TranscriptCollector({
 
   useEffect(() => {
     const handler = async (reader: TextStreamReader, from: { identity: string }) => {
-      const id = reader.info.id;
+      const streamId = reader.info.id;
+      const attributes = reader.info.attributes as Record<string, string> | undefined;
+      const segmentId = readSegmentId(attributes) ?? streamId;
+      const streamFinal = readTranscriptionFinal(attributes);
       const speaker = from.identity === room.localParticipant.identity ? "you" : "agent";
-      if (!linesRef.current.has(id)) {
-        linesRef.current.set(id, { id, speaker, text: "" });
-        orderRef.current.push(id);
+      if (!linesRef.current.has(segmentId)) {
+        linesRef.current.set(segmentId, { id: segmentId, speaker, text: "" });
+        orderRef.current.push(segmentId);
       }
-      let text = linesRef.current.get(id)?.text ?? "";
+      const current = linesRef.current.get(segmentId);
+      let text = current?.text ?? "";
+      // A redelivered final segment restarts from its own stream: prefer the
+      // latest stream's full text over concatenating onto a previous copy.
+      const isRedelivery = (current?.text?.length ?? 0) > 0 && text.length > 0;
+      if (isRedelivery) text = "";
       for await (const chunk of reader) {
         text += chunk;
-        linesRef.current.set(id, { id, speaker, text });
+        linesRef.current.set(segmentId, {
+          id: segmentId,
+          speaker,
+          text,
+          segmentId,
+          final: streamFinal ?? current?.final,
+        });
+      }
+      // Empty streams carry only attributes (e.g. final marker): still record them.
+      const existing = linesRef.current.get(segmentId);
+      if (existing && streamFinal !== undefined && existing.final !== true) {
+        linesRef.current.set(segmentId, { ...existing, final: streamFinal });
       }
     };
 

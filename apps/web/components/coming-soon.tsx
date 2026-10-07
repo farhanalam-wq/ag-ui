@@ -9,6 +9,10 @@ interface ComingSoonProps {
   /** Optional one-liner describing planned content. Falls back to generic copy. */
   description?: string;
   icon?: Icon;
+  /** Where the back button navigates. Defaults to "/" (Overview). */
+  backHref?: string;
+  /** Label for the back button. Defaults to "Back to Overview". */
+  backLabel?: string;
 }
 
 /**
@@ -16,7 +20,7 @@ interface ComingSoonProps {
  * Rendered inside every not-ready route; per-leaf blurbs can land via
  * `description` later without touching this component.
  */
-export function ComingSoon({ title, description, icon }: ComingSoonProps) {
+export function ComingSoon({ title, description, icon, backHref = "/", backLabel = "Back to Overview" }: ComingSoonProps) {
   const router = useRouter();
   const Icon = icon ?? Hammer;
 
@@ -37,11 +41,11 @@ export function ComingSoon({ title, description, icon }: ComingSoonProps) {
         </div>
         <button
           type="button"
-          onClick={() => router.push("/playground")}
+          onClick={() => router.push(backHref)}
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-sidebar-border bg-sidebar-accent hover:bg-sidebar-accent/70 text-sm font-medium transition-colors"
         >
           <ArrowLeft className="size-4" />
-          Back to Overview
+          {backLabel}
         </button>
       </div>
     </div>
