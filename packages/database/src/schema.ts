@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, integer, index, boolean } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, integer, index, boolean, unique } from "drizzle-orm/pg-core";
 
 export const companies = pgTable("companies", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -16,6 +16,9 @@ export const companySnapshots = pgTable("company_snapshots", {
   version: integer("version").notNull(),
   status: text("status").notNull(), // 'QUEUED' | 'CRAWLING' | 'PROCESSING' | 'READY' | 'FAILED'
   pageCount: integer("page_count").default(0),
+  // Crawl-diff brief for majors, e.g. { kind: 'crawl', added: [...urls], removed: [...], changed: [...], counts: {...} }.
+  // Null for versions snapshotted before enrichment shipped.
+  summary: jsonb("summary"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -36,17 +39,26 @@ export const documents = pgTable(
     snapshotId: uuid("snapshot_id")
       .references(() => companySnapshots.id, { onDelete: "cascade" })
       .notNull(),
-    url: text("url").notNull(),
+    url: text("url").notNull(), // uploads use the `upload://<filename>` convention
     title: text("title").notNull(),
     category: text("category").notNull(),
     content: text("content").notNull(),
     contentHash: text("content_hash").notNull(),
     wordCount: integer("word_count").default(0).notNull(),
     headings: jsonb("headings").default([]).notNull(),
+    // 'crawl' | 'upload' | 'manual'. Pre-enrichment rows backfill to 'crawl'.
+    sourceKind: text("source_kind").default("crawl").notNull(),
+    // Human label for the origin: filename for uploads, URL for crawls.
+    originName: text("origin_name"),
+    // Enrichment batch that produced this doc, if any.
+    batchId: uuid("batch_id").references(() => enrichmentBatches.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
     index("documents_content_hash_idx").on(table.contentHash),
+    index("documents_batch_id_idx").on(table.batchId),
   ]
 );
 
@@ -121,6 +133,37 @@ export const crawlJobs = pgTable("crawl_jobs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+export const enrichmentBatches = pgTable(
+  "enrichment_batches",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    // Major snapshot this batch extends. Displayed as v<snapshot.version>.<minor>.
+    snapshotId: uuid("snapshot_id")
+      .references(() => companySnapshots.id, { onDelete: "cascade" })
+      .notNull(),
+    // 1-based within the major; assigned transactionally at completion.
+    minor: integer("minor").notNull(),
+    status: text("status").default("DRAFT").notNull(), // 'DRAFT' | 'PROCESSING' | 'READY' | 'FAILED' | 'CANCELLED'
+    fileCount: integer("file_count").default(0).notNull(),
+    docs: integer("docs").default(0).notNull(),
+    failed: integer("failed").default(0).notNull(),
+    // Upload manifest: [{ filename, mime, size, title?, wordCount?, error? }].
+    manifest: jsonb("manifest").default([]).notNull(),
+    // Display summary, e.g. { kind: 'upload', added: ['pricing.pdf', ...], counts: {...} }.
+    summary: jsonb("summary"),
+    errorSample: jsonb("error_sample"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("enrichment_batches_company_idx").on(table.companyId),
+    unique("enrichment_batches_snapshot_minor_unique").on(table.snapshotId, table.minor),
+  ]
+);
 
 export const widgetKeys = pgTable(
   "widget_keys",
