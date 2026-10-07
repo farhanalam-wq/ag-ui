@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "ai-elements": {
+      "source": "vercel/ai-elements",
+      "sourceType": "github",
+      "skillPath": "skills/ai-elements/SKILL.md",
+      "computedHash": "6d7ccc65b98adb04d6c47632746dbfea55528903de9b027f6b39b80983d5aa55"
+    },
     "api-design": {
       "source": "proyecto26/system-design-skills",
       "sourceType": "github",
@@ -98,6 +104,12 @@
       "skillPath": "skills/messaging-streaming/SKILL.md",
       "computedHash": "f2cea539f10896e44fa7af40d8e6984a22a35f42b393b31a243f306fb5069cbe"
     },
+    "migrate-radix-to-base": {
+      "source": "shadcn/ui",
+      "sourceType": "github",
+      "skillPath": "skills/migrate-radix-to-base/SKILL.md",
+      "computedHash": "e1f2030ee5059be3dff0812ca0e4b995ee9fa3132176f049ebe6c90346a6755e"
+    },
     "observability": {
       "source": "proyecto26/system-design-skills",
       "sourceType": "github",
@@ -133,6 +145,12 @@
       "sourceType": "github",
       "skillPath": "skills/service-decomposition/SKILL.md",
       "computedHash": "386cddb393e8754c0359119995b4f4892941113d7426df0a1826292fee1bbcb1"
+    },
+    "shadcn": {
+      "source": "shadcn/ui",
+      "sourceType": "github",
+      "skillPath": "skills/shadcn/SKILL.md",
+      "computedHash": "f615de216e085a84e31593ad0fa9062232adc40cd87b7c7ab2b8e49abf6500be"
     },
     "sharded-counters": {
       "source": "proyecto26/system-design-skills",
