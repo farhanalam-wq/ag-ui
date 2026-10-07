@@ -8,4 +8,5 @@ export * from "./facts";
 export * from "./llm";
 export * from "./widget-key";
 export * from "./openui-prompt";
+export * from "./answer-prompt";
 export * from "./image-resolver";

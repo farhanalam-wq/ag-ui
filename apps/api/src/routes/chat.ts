@@ -8,7 +8,7 @@ import {
   eq,
   desc,
 } from "@ag-ui/database";
-import { streamChatCompletionGenerator, logger } from "@ag-ui/shared";
+import { streamChatCompletionGenerator, buildAnswerSystemPrompt, logger } from "@ag-ui/shared";
 
 export const chatRoutes = new Elysia()
   // 1. Streaming Chat Endpoint (Native Elysia SSE Generator)
@@ -85,17 +85,11 @@ export const chatRoutes = new Elysia()
           },
         };
 
-        const systemPrompt = `You are the official AI representative for ${retrieved.company.name} (${retrieved.company.domain}).
-Your role is to deliver concise, authoritative, and brand-aligned text responses grounded in company documentation.
-
-GUIDELINES:
-1. Ground your answers strictly in the provided company facts and documentation excerpts below. Do not guess or fabricate information.
-2. Always provide a comprehensive and helpful textual response using plain text and clean markdown formatting.
-3. Do NOT emit visual components, OpenUI blocks, or tool calls. Text only.
-4. Keep answers clear, technical, and executive-ready.
-5. CRITICAL RULE: NEVER USE EMOJIS ANYWHERE IN YOUR RESPONSES. Strictly use plain text and clean markdown formatting.
-
-${retrieved.compiledPromptContext}`;
+        const systemPrompt = buildAnswerSystemPrompt({
+          companyName: retrieved.company.name,
+          companyDomain: retrieved.company.domain,
+          compiledPromptContext: retrieved.compiledPromptContext,
+        });
 
         // Fetch recent conversation history for multi-turn context
         const previousMessages = await db

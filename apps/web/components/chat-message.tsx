@@ -13,6 +13,7 @@ import {
   Eye,
 } from "@phosphor-icons/react";
 import type { ChatMessage as ChatMessageType, EvidenceItem } from "@/hooks/use-company-chat";
+import { repairListBreaks } from "@/lib/markdown-format";
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -61,7 +62,7 @@ export function ChatMessageItem({
   const isSynthesizing = message.stage === "synthesizing";
   const isError = message.stage === "error";
 
-  const textContentWithoutOpenUI = extractTextWithoutOpenUI(message.content);
+  const textContentWithoutOpenUI = repairListBreaks(extractTextWithoutOpenUI(message.content));
 
   // Text-only mode
   return (

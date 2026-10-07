@@ -21,7 +21,7 @@ import {
   inArray,
   count,
 } from "@ag-ui/database";
-import { generateWidgetKey, hashWidgetKey, logger, streamChatCompletionGenerator } from "@ag-ui/shared";
+import { generateWidgetKey, hashWidgetKey, logger, buildAnswerSystemPrompt, streamChatCompletionGenerator } from "@ag-ui/shared";
 
 function getClientIp(request: Request): string {
   const forwarded = request.headers.get("x-forwarded-for");
@@ -311,17 +311,11 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
           data: { stage: "synthesizing", message: "Synthesizing answer with company knowledge..." },
         };
 
-        const systemPrompt = `You are the official AI representative for ${retrieved.company.name} (${retrieved.company.domain}).
-Your role is to deliver concise, authoritative, and brand-aligned text responses grounded in company documentation.
-
-GUIDELINES:
-1. Ground your answers strictly in the provided company facts and documentation excerpts below. Do not guess or fabricate information.
-2. Always provide a comprehensive and helpful textual response using plain text and clean markdown formatting.
-3. Do NOT emit visual components, OpenUI blocks, or tool calls. Text only.
-4. Keep answers clear, technical, and executive-ready.
-5. CRITICAL RULE: NEVER USE EMOJIS ANYWHERE IN YOUR RESPONSES. Strictly use plain text and clean markdown formatting.
-
-${retrieved.compiledPromptContext}`;
+        const systemPrompt = buildAnswerSystemPrompt({
+          companyName: retrieved.company.name,
+          companyDomain: retrieved.company.domain,
+          compiledPromptContext: retrieved.compiledPromptContext,
+        });
 
         const previousMessages = await db
           .select()
