@@ -26,8 +26,29 @@ import {
 } from "@phosphor-icons/react";
 import { useCompanyChat } from "@/hooks/use-company-chat";
 import { ChatMessageItem } from "@/components/chat-message";
-import { EvidenceDrawer } from "@/components/evidence-drawer";
-import { IngestionStudio } from "@/components/ingestion/ingestion-studio";
+// Evidence drawer only renders when opened: load on demand. Same props once loaded.
+const EvidenceDrawer = dynamic(
+  () =>
+    import("@/components/evidence-drawer").then((m) => m.EvidenceDrawer),
+  { ssr: false }
+);
+// Ingestion studio is only used in the "ingest" view: load on demand so the
+// default chat view stays light. Same props/behavior once loaded.
+const IngestionStudio = dynamic(
+  () =>
+    import("@/components/ingestion/ingestion-studio").then(
+      (m) => m.IngestionStudio
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex flex-col items-center gap-3 text-zinc-500 py-16">
+        <CircleNotch className="size-6 animate-spin text-zinc-400" />
+        <p className="text-xs font-mono">Loading ingestion studio…</p>
+      </div>
+    ),
+  }
+);
 // Heavy LiveKit session loads on demand (client-only) so the initial
 // playground chunk stays light. Same props/behavior once loaded.
 const VoiceSession = dynamic(
