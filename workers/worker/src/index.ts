@@ -262,3 +262,6 @@ crawlWorker.on("failed", (job, err) => {
 });
 
 logger.info("Background crawl worker listening on Redis queue: crawl-queue");
+
+// Enrichment worker (uploads -> minor versions) runs in the same process.
+import "./enrich-worker";

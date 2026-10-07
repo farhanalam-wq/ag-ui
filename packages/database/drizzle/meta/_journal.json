@@ -15,6 +15,13 @@
       "when": 1791363631526,
       "tag": "0001_demonic_freak",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791365947104,
+      "tag": "0002_great_shooting_star",
+      "breakpoints": true
     }
   ]
 }

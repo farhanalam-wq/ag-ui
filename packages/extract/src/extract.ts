@@ -1,4 +1,5 @@
 import mammoth from "mammoth";
+// @ts-ignore: pdf-parse ships no types (see ./pdf-parse.d.ts for our own build)
 import pdfParse from "pdf-parse";
 import * as XLSX from "xlsx";
 import { extractCleanContent } from "@ag-ui/crawler";

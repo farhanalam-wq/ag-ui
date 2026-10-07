@@ -12,6 +12,7 @@ export const QUEUE_NAMES = {
   PROCESSING: "processing-queue",
   EMBEDDING: "embedding-queue",
   VOICE: "voice-queue",
+  ENRICH: "enrich-queue",
 } as const;
 
 export const crawlQueue = new Queue(QUEUE_NAMES.CRAWL, {
@@ -25,5 +26,13 @@ export const processingQueue = new Queue(QUEUE_NAMES.PROCESSING, {
 export const embeddingQueue = new Queue(QUEUE_NAMES.EMBEDDING, {
   connection: redisConnection,
 });
+
+export const enrichQueue = new Queue(QUEUE_NAMES.ENRICH, {
+  connection: redisConnection,
+});
+
+export interface EnrichJobData {
+  batchId: string;
+}
 
 export { Queue, Worker };

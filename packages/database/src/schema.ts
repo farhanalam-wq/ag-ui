@@ -165,6 +165,23 @@ export const enrichmentBatches = pgTable(
   ]
 );
 
+export const batchFiles = pgTable(
+  "batch_files",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    batchId: uuid("batch_id")
+      .references(() => enrichmentBatches.id, { onDelete: "cascade" })
+      .notNull(),
+    filename: text("filename").notNull(),
+    mime: text("mime"),
+    size: integer("size").default(0).notNull(),
+    // Raw upload bytes for the background worker (job payloads stay tiny).
+    data: text("data").notNull(), // base64-encoded
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("batch_files_batch_idx").on(table.batchId)]
+);
+
 export const widgetKeys = pgTable(
   "widget_keys",
   {
