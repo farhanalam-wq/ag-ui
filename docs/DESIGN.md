@@ -27,7 +27,7 @@ Anti-goal: run-of-the-mill AI slop — purple glows, centered heroes, 3-equal-ca
 
 - Framework: Next.js 15 App Router, React 19, RSC by default. Interactivity isolated to `"use client"` leaves.
 - Styling: Tailwind CSS 3.4 (`apps/web/tailwind.config.ts`), CSS variables in `apps/web/app/globals.css` as single source (`:root` = Light, `.dark` = Dark). Theme via `next-themes` `ThemeProvider` + `ModeToggle` in shell header. Default follows system (`enableSystem`, `defaultTheme="system"` intent — never hard-lock `class="dark"` for ship), with manual toggle persisted. One page = one theme lock — sections never invert mid-scroll. Do not mix `dark:` utilities and CSS-var theming in the same file; prefer CSS vars (current approach).
-- Components: shadcn/ui (Zinc, CSS variables) + Radix primitives in `apps/web/components/ui/`. You own the code — never ship default state unstyled.
+- Components: shadcn/ui is PRIMARY (Zinc, CSS variables) + Radix primitives in `apps/web/components/ui/`. ai-elements is PRIMARY for AI surfaces in `@/components/ai-elements/`. Rule: if shadcn or ai-elements has it, use it — never hand-roll. You own the code (copy-paste distribution) — never ship default state unstyled. Run `bunx --bun shadcn@latest` / `bunx --bun ai-elements@latest` per packageManager `bun@1.4.2`; check `components.json` aliases (`@/components`, `@/lib/utils`) and `apps/web/package.json` before import.
 - State: Zustand (`apps/web/stores/`), `useState` for local only. Never `useState` for pointer/scroll physics — use `useMotionValue` if needed (rare here).
 - Icons: `@phosphor-icons/react` ONLY. `lucide-react` is legacy — do not add new Lucide usage. One family per tree.
 - Fonts: `next/font` self-hosted, `font-display: swap`. Never `<link>` Google Fonts in production.
@@ -347,9 +347,34 @@ Deltas always vs prior equivalent period, with tooltip `vs prior 7d`. Positive-g
 
 ---
 
-## 9. Components (states = design)
+## 9. Components — shadcn PRIMARY, ai-elements for AI (states = design)
 
-Build from `apps/web/components/ui/*`. Never hand-roll dialog/popover/tooltip/table — use Radix-backed shadcn.
+> Source policy (per `shadcn` + `ai-elements` skills): Use existing first. Compose, don't reinvent. If shadcn or ai-elements ships it, import it. Custom `div` chrome for Button/Card Dialog Table Empty Alert Skeleton Chat bubbles = fail.
+
+### 9.1 shadcn/ui — default for all app chrome
+
+Installed today in `apps/web/components/ui/`: `avatar, breadcrumb, button, collapsible, dropdown-menu, input, separator, sheet, sidebar, skeleton, tooltip`. Before writing custom UI: `bunx --bun shadcn@latest search -q "<need>"` then `bunx --bun shadcn@latest docs <component>` + fetch URLs, then `bunx --bun shadcn@latest add <component>`.
+
+Use for: `Button, Card, Table, Badge, Avatar (+AvatarFallback always), Tabs (+TabsList>TabsTrigger), Dialog/Sheet/Drawer (+Title always, sr-only if hidden), Select (+SelectGroup>SelectItem), Input, Textarea, Slider, Switch, Checkbox, RadioGroup, Combobox, Tooltip, HoverCard, Popover, DropdownMenu (+DropdownMenuGroup>Item), Command in Dialog, Alert for callouts, Empty for empty states, Skeleton (never custom pulse div), Separator (never hr/div-border), Sonner toast (Radix base), Chart (Recharts wrapper), Sidebar, Breadcrumb, Pagination, Accordion`.
+
+Rules: variants before custom styles (`variant="outline" size="sm"`). Semantic colors only (`bg-primary text-muted-foreground`). `className` for layout only — never override component color/typography. Spacing `flex gap-*` (never `space-x-*`), equal WH `size-*`, `truncate` shorthand, `cn()` for conditionals, no manual `dark:` color overrides, no manual z-index on overlays. Forms: `FieldGroup+Field` (never raw div grid), `InputGroup+InputGroupInput`, 2–7 options = `ToggleGroup`, grouping = `FieldSet+FieldLegend`, validation `data-invalid + aria-invalid`. Icons in Button: `data-icon="inline-start/end"`, no sizing classes. Loading Button: `Spinner + disabled`, never `isPending` prop.
+
+### 9.2 ai-elements — primary for conversational surfaces only
+
+Install per need: `bunx --bun ai-elements@latest` → code lands in `@/components/ai-elements/` ( respects `components.json`). Use for Lab + Ledger reading: `/playground` chat, `/visitors/conversations` transcript, voice playback, tool/citation displays.
+
+Use: `Conversation, Message, MessageContent, MessageResponse, PromptInput, MessageScroller (+MessageScrollerButton for jump-to-latest, owns streaming follow/anchoring — never custom useStickToBottom), Bubble for surfaces, Attachment for files, Marker for system notes/dividers, ChainOfThought, Tool displays, CodeBlock, AudioPlayer, Artifact/Canvas where needed`. Compose chat primitives — never hand-rolled bubble divs or raw scroll containers. Props extend HTML primitives, style with tokens (Zinc + Electric Blue, Light white / Dark zinc-900) to match §3–§5. Verify `tsconfig @/*` alias + `AI SDK + shadcn` prereqs per skill.
+
+### 9.3 Archetype → source map (mandatory)
+
+| Archetype | shadcn | ai-elements |
+|---|---|---|
+| A. Telemetry | `Card+CardHeader/Title/Description/Content, Chart, Table, Badge, Tooltip` | — |
+| B. Studio | `FieldGroup+Field, Input, Select, Slider, Switch, Tabs, Card, Sheet` for preview | — (Signals drafts use `Card+Tabs`, not chat) |
+| C. Ledger | `Table, Sheet (drawer w-[480px]), Avatar+Fallback, Badge, Input (search), Pagination, Empty, Skeleton` | `AudioPlayer` for session playback, `Marker` for system notes |
+| D. Lab | `Sheet (inspector), Collapsible, Badge (score), Tooltip, Separator` | `Conversation+MessageScroller+Message+Bubble+PromptInput+ChainOfThought+CodeBlock+Tool` |
+
+### 9.4 Spec (Light / Dark parity — built on both libs)
 
 | Component | Spec (Light / Dark parity) |
 |---|---|
@@ -403,9 +428,11 @@ Self-audit before ship: re-read every string. Kill broken grammar, unclear refer
 
 1. **Retrieve:** Read this `MASTER` + check `design-system/ag-ui/pages/<page>.md` if exists — page overrides master. No page file → master exclusively.
 2. **Plan:** Output 1-line Design Read + archetype (A/B/C/D) + token list before code.
-3. **Build:** shadcn primitives only, semantic tokens only, Phosphor only, `shadcn Chart` default / ECharts only for radar/graph/funnel-large. `min-h-[100dvh]` never `h-screen`, Grid never flex-math, `max-w-[1400px] mx-auto`.
+3. **Build:** shadcn PRIMARY (`search → docs → add`, semantic tokens, `FieldGroup+Field`, `gap-*`, `size-*`, `cn()`), ai-elements for chat (`MessageScroller+Message+Bubble+PromptInput`, never custom bubbles), Phosphor only, `shadcn Chart` default / ECharts only for radar/graph/funnel-large. `min-h-[100dvh]` never `h-screen`, Grid never flex-math, `max-w-[1400px] mx-auto`.
 4. **Critique:** If plan reads as generic default for any SaaS (test: would same plan fit a different brief?) — revise that part, state what changed + why.
 5. **Pre-flight (fail = don't ship):**
+   - [ ] shadcn-first: `search` checked, no custom dupe of `Alert/Empty/Skeleton/Badge/Separator/Table/Dialog/Sheet/Tooltip`, full Card composition, Dialog/Sheet Title present, `AvatarFallback` present, `TabsTrigger` in `TabsList`, icons `data-icon` no sizing
+   - [ ] ai-elements where chat: no hand-rolled bubbles/scroll hooks, `MessageScroller` owns scroll, `Attachment/Marker` used correctly
    - [ ] No hardcoded hex, no second accent, no mixed icon libs — tokens only (`:root` Light + `.dark`)
    - [ ] Eyebrows ≤1 per 3 sections, no 3-equal-cards, no split-header-as-default
    - [ ] Every chart has InsightCaption + empty/loading/error + table fallback, grid/axis/tooltip verified Light + Dark
