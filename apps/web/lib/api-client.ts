@@ -86,13 +86,15 @@ export interface IngestStreamCallbacks {
 
 export interface BrandStylesheet {
   id: string;
+  companyId?: string | null;
+  snapshotId?: string | null;
   status: string;
   dtcg: any;
   tailwind: string | null;
-  design_md: string | null;
+  designMd: string | null;
   wcag: any;
   raw: any;
-  screenshot_url: string | null;
+  screenshotUrl: string | null;
   error: string | null;
   createdAt: string;
 }

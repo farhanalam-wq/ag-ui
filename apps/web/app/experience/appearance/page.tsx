@@ -195,8 +195,23 @@ export default function AppearancePage() {
       .slice(0, 12);
   }, [tokenColors, rawColors]);
 
-  const typographyRows: { label: string; family: string; size: string; weight: string }[] = useMemo(() => {
+  const typographyRows: { label: string; family: string; size: string; weight: string; uses?: string }[] = useMemo(() => {
     const typo = asRecord(raw.typography ?? tokens.typography ?? (raw as any)?.fonts);
+    // dembrandt shape: { styles: [{ family, size, weight, context, count, lineHeight, ... }] }
+    const styles = Array.isArray((typo as any).styles) ? (typo as any).styles : null;
+    if (styles) {
+      return styles.slice(0, 12).map((s: any, i: number) => {
+        const r = asRecord(s);
+        if (typeof s === "string") return { label: `style-${i + 1}`, family: s, size: "—", weight: "—" };
+        return {
+          label: String(r.context ?? r.role ?? r.usage ?? `style-${i + 1}`),
+          family: String(r.family ?? r.fontFamily ?? r.font ?? "—"),
+          size: String(r.size ?? r.fontSize ?? "—"),
+          weight: String(r.weight ?? r.fontWeight ?? "—"),
+          uses: r.count != null ? `${r.count}×` : undefined,
+        };
+      });
+    }
     const entries = Object.entries(typo);
     if (entries.length === 0) return [];
     return entries.slice(0, 12).map(([label, v]) => {
@@ -211,28 +226,158 @@ export default function AppearancePage() {
     });
   }, [raw, tokens]);
 
-  const radiusVal = tokens.radius ?? raw.radius ?? (raw as any)?.borderRadius ?? "—";
-  const shadowVal = (tokens as any).shadow ?? raw.shadow ?? raw.shadows ?? (raw as any)?.boxShadow ?? "—";
-  const spacingVal = (tokens as any).spacing ?? raw.spacing ?? "—";
-  const componentCounts = asRecord(raw.components ?? raw.componentCounts ?? (tokens as any)?.components);
+  // ---- Structured shape / elevation / spacing (dembrandt native shapes) ----
+  const radiusRows: { value: string; count: number; elements: string; confidence?: string }[] = useMemo(() => {
+    const br = asRecord(raw.borderRadius ?? raw.radius);
+    const vals = Array.isArray(br.values) ? br.values : Array.isArray(br) ? br : [];
+    return vals
+      .map((e: any) => {
+        if (typeof e === "string" || typeof e === "number") return { value: String(e), count: 0, elements: "—" };
+        const r = asRecord(e);
+        const els = Array.isArray(r.elements) ? r.elements.join(", ") : "—";
+        return {
+          value: String(r.value ?? r.radius ?? "—"),
+          count: typeof r.count === "number" ? r.count : 0,
+          elements: els,
+          confidence: typeof r.confidence === "string" ? r.confidence : undefined,
+        };
+      })
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+  }, [raw]);
 
-  const wcagPairs: { fg: string; bg: string; ratio?: string; pass?: string }[] = useMemo(() => {
+  const shadowRows: { shadow: string; count: number }[] = useMemo(() => {
+    const list = Array.isArray(raw.shadows) ? raw.shadows : Array.isArray(raw.shadow) ? raw.shadow : [];
+    return list
+      .map((e: any) => {
+        if (typeof e === "string") return { shadow: e, count: 0 };
+        const r = asRecord(e);
+        return {
+          shadow: String(r.shadow ?? r.value ?? "—"),
+          count: typeof r.count === "number" ? r.count : 0,
+        };
+      })
+      .filter((r) => r.shadow !== "—")
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6);
+  }, [raw]);
+
+  const spacingInfo: { scaleType: string; rows: { px: string; rem: string; count: number }[] } = useMemo(() => {
+    const sp = asRecord(raw.spacing);
+    const vals = Array.isArray(sp.commonValues) ? sp.commonValues : [];
+    return {
+      scaleType: String(sp.scaleType ?? "—"),
+      rows: vals
+        .map((e: any) => {
+          const r = asRecord(e);
+          return {
+            px: String(r.px ?? r.display ?? r.value ?? "—"),
+            rem: String(r.rem ?? "—"),
+            count: typeof r.count === "number" ? r.count : 0,
+          };
+        })
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 8),
+    };
+  }, [raw]);
+
+  // ---- Structured components (dembrandt native shapes) ----
+  const linkVariants: { color: string; hover: string; weight: string; decoration: string }[] = useMemo(() => {
+    const list = (raw.components as any)?.links;
+    if (!Array.isArray(list)) return [];
+    return list.slice(0, 6).map((e: any) => {
+      const r = asRecord(e);
+      const states = asRecord(r.states);
+      const def = asRecord(states.default);
+      const hov = asRecord(states.hover);
+      return {
+        color: String(r.color ?? def.color ?? "—"),
+        hover: String(hov.color ?? "—"),
+        weight: String(r.fontWeight ?? r.weight ?? "—"),
+        decoration: String(r.textDecoration ?? def.textDecoration ?? "—"),
+      };
+    });
+  }, [raw]);
+
+  const buttonVariants: { label: string; background: string; color: string; radius: string; border: string }[] = useMemo(() => {
+    const list = (raw.components as any)?.buttons;
+    if (!Array.isArray(list)) return [];
+    return list.slice(0, 6).map((e: any, i: number) => {
+      if (typeof e === "string") return { label: `variant-${i + 1}`, background: e, color: "#ffffff", radius: "—", border: "—" };
+      const r = asRecord(e);
+      const states = asRecord(r.states);
+      const def = asRecord(states.default ?? states.rest ?? states.base);
+      return {
+        label: String(r.variant ?? r.name ?? r.kind ?? `variant-${i + 1}`),
+        background: String(r.backgroundColor ?? r.background ?? def.backgroundColor ?? def.background ?? "#3b82f6"),
+        color: String(r.color ?? def.color ?? "#ffffff"),
+        radius: String(r.borderRadius ?? r.radius ?? def.borderRadius ?? "—"),
+        border: String(r.border ?? def.border ?? "—"),
+      };
+    });
+  }, [raw]);
+
+  const inputGroups: { type: string; rows: { border: string; radius: string; padding: string; focus: string }[] }[] = useMemo(() => {
+    const inputs = asRecord((raw.components as any)?.inputs);
+    return Object.entries(inputs)
+      .slice(0, 4)
+      .map(([type, v]) => {
+        const list = Array.isArray(v) ? v.slice(0, 3) : [v];
+        return {
+          type,
+          rows: list.map((e: any) => {
+            const r = asRecord(e);
+            const states = asRecord(r.states);
+            const def = asRecord(states.default);
+            const foc = asRecord(states.focus);
+            return {
+              border: String(def.border ?? def.borderColor ?? "—"),
+              radius: String(def.borderRadius ?? "—"),
+              padding: String(def.padding ?? "—"),
+              focus: String(foc.borderColor ?? foc.outline ?? "—"),
+            };
+          }),
+        };
+      })
+      .filter((g) => g.rows.length > 0);
+  }, [raw]);
+
+  const badgeInfo: { total: number; variants: { name: string; count: number }[] } = useMemo(() => {
+    const badges = asRecord((raw.components as any)?.badges);
+    const all = Array.isArray(badges.all) ? badges.all.length : 0;
+    const byVariant = asRecord(badges.byVariant);
+    const variants = Object.entries(byVariant).map(([name, v]) => ({
+      name,
+      count: Array.isArray(v) ? v.length : 0,
+    }));
+    return { total: all, variants };
+  }, [raw]);
+
+  const hasComponents =
+    linkVariants.length > 0 || buttonVariants.length > 0 || inputGroups.length > 0 || badgeInfo.total > 0 ||
+    badgeInfo.variants.some((v) => v.count > 0);
+
+  const wcagPairs: { fg: string; bg: string; ratio?: string; pass?: string; count?: string }[] = useMemo(() => {
     const wcag = activeSheet?.wcag;
     const arr = Array.isArray(wcag) ? wcag : Array.isArray((wcag as any)?.pairs) ? (wcag as any).pairs : [];
     return arr.slice(0, 20).map((p: any) => {
       if (typeof p === "string") return { fg: p, bg: "—" };
       const r = asRecord(p);
+      // dembrandt emits lowercase aa/passAA plus ratio/count/fontSize
+      const passRaw = r.passAA ?? r.pass ?? r.aa ?? r.AA;
       return {
         fg: String(r.fg ?? r.foreground ?? r.text ?? "—"),
         bg: String(r.bg ?? r.background ?? "—"),
         ratio: r.ratio != null ? String(r.ratio) : undefined,
-        pass: r.pass != null ? String(r.pass) : r.AA != null ? String(r.AA) : undefined,
+        pass: passRaw != null ? String(passRaw) : undefined,
+        count: r.count != null ? String(r.count) : undefined,
       };
     });
   }, [activeSheet]);
 
   const tailwindText = stringifyForCopy(activeSheet?.tailwind);
   const dtcgText = stringifyForCopy(activeSheet?.dtcg);
+  const designMdText = stringifyForCopy(activeSheet?.designMd);
 
   return (
     <StudioShell crumbs={[{ label: "Experience" }, { label: "Appearance" }]}>
@@ -389,19 +534,21 @@ export default function AppearancePage() {
                   <table className="w-full text-xs font-mono">
                     <thead>
                       <tr className="text-left text-zinc-500 border-b border-zinc-800">
-                        <th className="py-1.5 pr-3 font-medium">Token</th>
+                        <th className="py-1.5 pr-3 font-medium">Context</th>
                         <th className="py-1.5 pr-3 font-medium">Family</th>
                         <th className="py-1.5 pr-3 font-medium">Size</th>
-                        <th className="py-1.5 font-medium">Weight</th>
+                        <th className="py-1.5 pr-3 font-medium">Weight</th>
+                        <th className="py-1.5 font-medium">Uses</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-900">
-                      {typographyRows.map((r) => (
-                        <tr key={r.label} className="text-zinc-300">
+                      {typographyRows.map((r, i) => (
+                        <tr key={`${r.label}-${i}`} className="text-zinc-300">
                           <td className="py-1.5 pr-3 text-zinc-400">{r.label}</td>
                           <td className="py-1.5 pr-3">{r.family}</td>
                           <td className="py-1.5 pr-3">{r.size}</td>
-                          <td className="py-1.5">{r.weight}</td>
+                          <td className="py-1.5 pr-3">{r.weight}</td>
+                          <td className="py-1.5 text-zinc-500">{r.uses ?? "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -410,32 +557,156 @@ export default function AppearancePage() {
               )}
             </section>
 
-            {/* Radius / shadow / spacing + components */}
-            <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/40 space-y-2 text-xs font-mono">
-                <h2 className="text-xs font-semibold text-zinc-200 uppercase tracking-wider">Shape &amp; Elevation</h2>
-                <div className="text-zinc-400">
-                  radius: <span className="text-zinc-200">{typeof radiusVal === "string" ? radiusVal : JSON.stringify(radiusVal)}</span>
-                </div>
-                <div className="text-zinc-400">
-                  shadow: <span className="text-zinc-200">{typeof shadowVal === "string" ? shadowVal : JSON.stringify(shadowVal)}</span>
-                </div>
-                <div className="text-zinc-400">
-                  spacing: <span className="text-zinc-200">{typeof spacingVal === "string" ? spacingVal : JSON.stringify(spacingVal)}</span>
-                </div>
-              </div>
-              <div className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/40 space-y-2 text-xs font-mono">
-                <h2 className="text-xs font-semibold text-zinc-200 uppercase tracking-wider">Components</h2>
-                {Object.keys(componentCounts).length === 0 ? (
-                  <p className="text-zinc-500">No component counts yet.</p>
-                ) : (
-                  Object.entries(componentCounts).slice(0, 12).map(([k, v]) => (
-                    <div key={k} className="flex items-center justify-between text-zinc-400">
-                      <span>{k}</span>
-                      <span className="text-zinc-200">{typeof v === "object" ? JSON.stringify(v) : String(v)}</span>
-                    </div>
-                  ))
+            {/* Shape & Elevation */}
+            <section className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/40 space-y-3 text-xs font-mono">
+              <h2 className="text-xs font-semibold text-zinc-200 uppercase tracking-wider">Shape &amp; Elevation</h2>
+                {typeof tokens.radius === "string" && (
+                  <div className="text-zinc-400">
+                    mapped radius: <span className="text-zinc-200">{tokens.radius}</span>
+                  </div>
                 )}
+                {radiusRows.length > 0 && (
+                  <div>
+                    <div className="text-[11px] text-zinc-500 mb-1">border radius</div>
+                    <div className="space-y-1 max-h-40 overflow-auto">
+                      {radiusRows.map((r) => (
+                        <div key={r.value} className="flex items-center gap-2 text-zinc-400">
+                          <span
+                            className="inline-block size-4 shrink-0 border border-zinc-600 bg-zinc-800"
+                            style={{ borderRadius: r.value }}
+                          />
+                          <span className="text-zinc-200">{r.value}</span>
+                          <span className="text-zinc-600">×{r.count}</span>
+                          <span className="truncate text-zinc-500">{r.elements}</span>
+                          {r.confidence && <span className="ml-auto text-zinc-600">{r.confidence}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {shadowRows.length > 0 && (
+                  <div>
+                    <div className="text-[11px] text-zinc-500 mb-1">shadows</div>
+                    <div className="space-y-1.5 max-h-40 overflow-auto">
+                      {shadowRows.map((s, i) => (
+                        <div key={i} className="flex items-center gap-2 text-zinc-400">
+                          <span
+                            className="inline-block size-4 shrink-0 rounded-sm bg-zinc-200"
+                            style={{ boxShadow: s.shadow }}
+                          />
+                          <span className="truncate text-zinc-300">{s.shadow}</span>
+                          {s.count > 0 && <span className="ml-auto shrink-0 text-zinc-600">×{s.count}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {(spacingInfo.rows.length > 0 || spacingInfo.scaleType !== "—") && (
+                  <div>
+                    <div className="text-[11px] text-zinc-500 mb-1">
+                      spacing <span className="text-zinc-400">({spacingInfo.scaleType} grid)</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 max-h-32 overflow-auto">
+                      {spacingInfo.rows.map((s) => (
+                        <span
+                          key={s.px}
+                          title={`${s.px} (${s.rem}) used ${s.count}×`}
+                          className="px-1.5 py-0.5 rounded border border-zinc-800 bg-zinc-950 text-zinc-300"
+                        >
+                          {s.px} <span className="text-zinc-600">×{s.count}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {radiusRows.length === 0 && shadowRows.length === 0 && spacingInfo.rows.length === 0 && (
+                  <p className="text-zinc-500">No shape tokens extracted yet.</p>
+                )}
+            </section>
+
+            {/* Components — full width with inner grid so long values wrap instead of truncating */}
+            <section className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/40 space-y-3 text-xs font-mono">
+              <h2 className="text-xs font-semibold text-zinc-200 uppercase tracking-wider">Components</h2>
+              {!hasComponents && <p className="text-zinc-500">No component variants detected.</p>}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-3 min-w-0">
+                {linkVariants.length > 0 && (
+                  <div>
+                    <div className="text-[11px] text-zinc-500 mb-1">links ({linkVariants.length})</div>
+                    <div className="space-y-1 max-h-48 overflow-auto">
+                      {linkVariants.map((l, i) => (
+                        <div key={`link-${i}`} className="flex items-start gap-2 text-zinc-400">
+                          <span
+                            className="inline-block size-3.5 shrink-0 mt-0.5 rounded-sm border border-zinc-700"
+                            style={{ backgroundColor: l.color !== "—" ? l.color : undefined }}
+                          />
+                          <span className="break-all text-zinc-300">
+                            {l.color} <span className="text-zinc-600">→ hover {l.hover} · w{l.weight} · {l.decoration}</span>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <div className="text-[11px] text-zinc-500 mb-1">
+                    buttons ({buttonVariants.length}){buttonVariants.length === 0 && " — none detected"}
+                  </div>
+                  {buttonVariants.length > 0 && (
+                    <div className="flex flex-wrap gap-2 max-h-48 overflow-auto">
+                      {buttonVariants.map((b, i) => (
+                        <span
+                          key={`btn-${i}`}
+                          title={`${b.label} · ${b.background} · radius ${b.radius}`}
+                          className="px-3 py-1.5 text-[11px] font-medium"
+                          style={{
+                            backgroundColor: b.background,
+                            color: b.color,
+                            borderRadius: b.radius !== "—" ? b.radius : undefined,
+                            border: b.border !== "—" ? b.border : undefined,
+                          }}
+                        >
+                          {b.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                </div>
+                <div className="space-y-3 min-w-0">
+                {inputGroups.length > 0 && (
+                  <div>
+                    <div className="text-[11px] text-zinc-500 mb-1">inputs</div>
+                    <div className="space-y-2 max-h-48 overflow-auto">
+                      {inputGroups.map((g) => (
+                        <div key={`input-${g.type}`}>
+                          <div className="text-zinc-500">{g.type}</div>
+                          {g.rows.map((r, i) => (
+                            <div key={`input-${g.type}-${i}`} className="break-all text-zinc-400">
+                              border <span className="text-zinc-200">{r.border}</span>
+                              <span className="text-zinc-600"> · radius {r.radius} · pad {r.padding} · focus {r.focus}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {(badgeInfo.total > 0 || badgeInfo.variants.some((v) => v.count > 0)) && (
+                  <div>
+                    <div className="text-[11px] text-zinc-500 mb-1">badges ({badgeInfo.total})</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {badgeInfo.variants
+                        .filter((v) => v.count > 0)
+                        .map((v) => (
+                          <span key={`badge-${v.name}`} className="px-1.5 py-0.5 rounded border border-zinc-800 bg-zinc-950 text-zinc-300">
+                            {v.name} <span className="text-zinc-600">×{v.count}</span>
+                          </span>
+                        ))}
+                    </div>
+                  </div>
+                )}
+                </div>
               </div>
             </section>
 
@@ -462,6 +733,17 @@ export default function AppearancePage() {
                   </pre>
                 </div>
               </div>
+              {designMdText && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="text-[11px] font-mono text-zinc-500">DESIGN.md</div>
+                    <CopyButton label="Copy DESIGN.md" value={designMdText} />
+                  </div>
+                  <pre className="p-3 rounded-lg border border-zinc-800 bg-zinc-950 text-[11px] font-mono text-zinc-300 max-h-64 overflow-auto whitespace-pre-wrap break-all">
+                    {designMdText}
+                  </pre>
+                </div>
+              )}
             </section>
 
             {/* WCAG */}
@@ -476,7 +758,8 @@ export default function AppearancePage() {
                         <th className="py-1.5 pr-3 font-medium">FG</th>
                         <th className="py-1.5 pr-3 font-medium">BG</th>
                         <th className="py-1.5 pr-3 font-medium">Ratio</th>
-                        <th className="py-1.5 font-medium">Pass</th>
+                        <th className="py-1.5 pr-3 font-medium">Pass</th>
+                        <th className="py-1.5 font-medium">Uses</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-900">
@@ -493,7 +776,22 @@ export default function AppearancePage() {
                           <td className="py-1.5 pr-3">{p.fg}</td>
                           <td className="py-1.5 pr-3">{p.bg}</td>
                           <td className="py-1.5 pr-3">{p.ratio ?? "—"}</td>
-                          <td className="py-1.5">{p.pass ?? "—"}</td>
+                          <td className="py-1.5 pr-3">
+                            {p.pass == null ? (
+                              "—"
+                            ) : (
+                              <span
+                                className={
+                                  p.pass === "true"
+                                    ? "text-emerald-400"
+                                    : "text-red-400"
+                                }
+                              >
+                                {p.pass === "true" ? "PASS" : "FAIL"}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-1.5 text-zinc-500">{p.count ?? "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -502,11 +800,11 @@ export default function AppearancePage() {
               </section>
             )}
 
-            {activeSheet?.screenshot_url && (
+            {activeSheet?.screenshotUrl && (
               <section className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/40 space-y-2">
                 <h2 className="text-xs font-semibold text-zinc-200 uppercase tracking-wider font-mono">Screenshot</h2>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={activeSheet.screenshot_url} alt="Stylesheet screenshot" className="rounded-lg border border-zinc-800 max-h-96 w-auto" />
+                <img src={activeSheet.screenshotUrl} alt="Stylesheet screenshot" className="rounded-lg border border-zinc-800 max-h-96 w-auto" />
               </section>
             )}
           </>

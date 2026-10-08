@@ -2,7 +2,7 @@ import { Worker } from "bullmq";
 import { QUEUE_NAMES, redisConnection, type BrandJobData } from "@ag-ui/queues";
 import { db, brands, brandStylesheets, eq, desc } from "@ag-ui/database";
 import { validateSafeUrl } from "@ag-ui/crawler";
-import { runDembrandt, mapDembrandtToTokens } from "@ag-ui/brand";
+import { runDembrandt, mapDembrandtToTokens, buildDtcg, buildDesignMd } from "@ag-ui/brand";
 import { logger } from "@ag-ui/shared";
 
 export const brandWorker = new Worker<BrandJobData>(
@@ -38,19 +38,23 @@ export const brandWorker = new Worker<BrandJobData>(
 
     try {
       await validateSafeUrl(origin);
-      const raw: any = await runDembrandt(origin, {
+      const { raw, tailwindCss } = await runDembrandt(origin, {
         noSandbox: process.env.DEMBRANDT_NO_SANDBOX !== "0",
       });
+
+      // Pure offline exports from the raw extraction (no second browser run:
+      // --dtcg would hijack stdout, so we use dembrandt's own formatters).
+      const [dtcg, designMd] = await Promise.all([buildDtcg(raw), buildDesignMd(raw)]);
 
       await db
         .update(brandStylesheets)
         .set({
           raw,
-          dtcg: raw?.dtcg ?? null,
-          tailwind: typeof raw?.tailwind === "string" ? raw.tailwind : null,
-          designMd: typeof raw?.designMd === "string" ? raw.designMd : null,
+          dtcg,
+          tailwind: tailwindCss,
+          designMd,
           wcag: raw?.wcag ?? null,
-          screenshotUrl: typeof raw?.screenshotUrl === "string" ? raw.screenshotUrl : null,
+          screenshotUrl: null,
           error: null,
           updatedAt: new Date(),
         })

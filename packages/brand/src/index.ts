@@ -3,17 +3,35 @@
 
 declare const Bun: any;
 
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 export interface DembrandtRunOptions {
   timeoutMs?: number;
   noSandbox?: boolean;
+  /** Capture Tailwind v4 @theme CSS via --tailwind into a temp file. Default true. */
+  tailwind?: boolean;
+}
+
+export interface DembrandtRunResult {
+  raw: any;
+  tailwindCss: string | null;
 }
 
 const DEFAULT_TIMEOUT_MS = 90_000;
 
-export async function runDembrandt(origin: string, opts?: DembrandtRunOptions): Promise<any> {
+export async function runDembrandt(origin: string, opts?: DembrandtRunOptions): Promise<DembrandtRunResult> {
   const target = (origin ?? "").trim();
   if (!target) throw new Error("runDembrandt: origin is required");
   const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const wantTailwind = opts?.tailwind ?? true;
+
+  // Temp dir for file exports dembrandt can only write to disk (--tailwind).
+  // stdout stays the raw extraction JSON (proven: file flags don't hijack it,
+  // unlike --dtcg which replaces stdout with the DTCG document).
+  const workdir = await mkdtemp(join(tmpdir(), "dembrandt-"));
+  const themePath = join(workdir, "theme.css");
   const args = [
     "x",
     "-y",
@@ -24,6 +42,7 @@ export async function runDembrandt(origin: string, opts?: DembrandtRunOptions): 
     "--color-format",
     "hex",
   ];
+  if (wantTailwind) args.push("--tailwind", themePath);
   if (opts?.noSandbox) args.push("--no-sandbox");
 
   const proc = Bun.spawn(["bun", ...args], {
@@ -55,17 +74,64 @@ export async function runDembrandt(origin: string, opts?: DembrandtRunOptions): 
 
   const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
   if (exitCode !== 0) {
+    await rm(workdir, { recursive: true, force: true }).catch(() => {});
     const detail = (stderr || stdout || "").slice(0, 2000).trim();
     throw new Error(`dembrandt failed (exit ${exitCode})${detail ? `: ${detail}` : ""}`);
   }
   const text = (stdout || "").trim();
-  if (!text) throw new Error("dembrandt returned empty output");
+  if (!text) {
+    await rm(workdir, { recursive: true, force: true }).catch(() => {});
+    throw new Error("dembrandt returned empty output");
+  }
+  let raw: any;
   try {
-    return JSON.parse(text);
+    raw = JSON.parse(text);
   } catch (err) {
+    await rm(workdir, { recursive: true, force: true }).catch(() => {});
     throw new Error(
       `dembrandt returned invalid JSON: ${err instanceof Error ? err.message : String(err)}`
     );
+  }
+  let tailwindCss: string | null = null;
+  if (wantTailwind) {
+    try {
+      const css = (await readFile(themePath, "utf8")).trim();
+      tailwindCss = css.length > 0 ? css : null;
+    } catch {
+      tailwindCss = null;
+    }
+  }
+  await rm(workdir, { recursive: true, force: true }).catch(() => {});
+  return { raw, tailwindCss };
+}
+
+/**
+ * Pure (no browser) DTCG export from a stored raw extraction, using
+ * dembrandt's own formatter. Null when the input isn't a valid extraction.
+ */
+export async function buildDtcg(raw: any): Promise<Record<string, any> | null> {
+  try {
+    const mod: any = await import("dembrandt/dtcg-export");
+    const doc = mod.toDtcgTokens(raw);
+    if (doc && typeof doc === "object") return doc as Record<string, any>;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Pure (no browser) DESIGN.md brand doc from a stored raw extraction.
+ * Null when generation fails.
+ */
+export async function buildDesignMd(raw: any): Promise<string | null> {
+  try {
+    const mod: any = await import("dembrandt/markdown");
+    const md = mod.generateDesignMd(raw);
+    if (typeof md === "string" && md.trim().length > 0) return md;
+    return null;
+  } catch {
+    return null;
   }
 }
 

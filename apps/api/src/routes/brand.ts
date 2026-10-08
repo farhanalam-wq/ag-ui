@@ -1,9 +1,11 @@
 import { Elysia, t } from "elysia";
-import { db, brands, brandStylesheets, eq, desc } from "@ag-ui/database";
+import { db, brands, brandStylesheets, companies, eq, desc } from "@ag-ui/database";
 import { brandQueue } from "@ag-ui/queues";
 import { logger } from "@ag-ui/shared";
 
 export const brandRoutes = new Elysia({ prefix: "/api/brand" })
+  // Drizzle returns camelCase (designMd, screenshotUrl, createdAt); the API
+  // contract mirrors it 1:1 so the web client never guesses key casing.
   .get(
     "/:companyId/latest",
     async ({ params, set }) => {
@@ -48,7 +50,8 @@ export const brandRoutes = new Elysia({ prefix: "/api/brand" })
         .orderBy(desc(brandStylesheets.createdAt))
         .limit(20);
 
-      return { stylesheets: rows };
+      // `items` is the contract the web client reads; `stylesheets` kept for compat.
+      return { items: rows, stylesheets: rows };
     },
     {
       params: t.Object({
@@ -63,21 +66,35 @@ export const brandRoutes = new Elysia({ prefix: "/api/brand" })
 
   .post(
     "/retry",
-    async ({ body }) => {
-      const { companyId, snapshotId, origin } = body;
+    async ({ body, set }) => {
+      // Origin is optional: fall back to the company's stored URL so the
+      // Appearance page retry button works without knowing it.
+      let origin = body.origin;
+      if (!origin) {
+        const [company] = await db
+          .select()
+          .from(companies)
+          .where(eq(companies.id, body.companyId))
+          .limit(1);
+        origin = company?.url ?? null;
+      }
+      if (!origin) {
+        set.status = 400;
+        return { error: "origin is required (no stored company URL found)" };
+      }
       const job = await brandQueue.add(
         "extract",
-        { companyId, snapshotId: snapshotId ?? null, origin },
+        { companyId: body.companyId, snapshotId: body.snapshotId ?? null, origin },
         { removeOnComplete: true }
       );
-      logger.info(`[API:BRAND] retry queued for company ${companyId} (job ${job.id})`);
+      logger.info(`[API:BRAND] retry queued for company ${body.companyId} (job ${job.id})`);
       return { success: true, jobId: job.id };
     },
     {
       body: t.Object({
         companyId: t.String(),
         snapshotId: t.Optional(t.Union([t.String(), t.Null()])),
-        origin: t.String(),
+        origin: t.Optional(t.String()),
       }),
       detail: {
         summary: "Retry brand extraction",
