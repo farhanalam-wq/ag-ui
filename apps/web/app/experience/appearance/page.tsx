@@ -26,6 +26,13 @@ function statusLabel(kind: StatusKind, raw?: string | null): string {
   return "No stylesheet yet";
 }
 
+function formatSheetDate(iso?: string | null): string {
+  if (!iso) return "unknown date";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
 function statusClasses(kind: StatusKind): string {
   if (kind === "ready") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
   if (kind === "failed") return "border-red-500/30 bg-red-500/10 text-red-300";
@@ -473,12 +480,12 @@ export default function AppearancePage() {
                 >
                   {latest?.stylesheet && (
                     <option value={latest.stylesheet.id}>
-                      latest · {latest.stylesheet.status} · {latest.stylesheet.createdAt}
+                      latest · {latest.stylesheet.status} · {formatSheetDate(latest.stylesheet.createdAt)}
                     </option>
                   )}
                   {history.map((h) => (
                     <option key={h.id} value={h.id}>
-                      {h.id.slice(0, 8)} · {h.status} · {h.createdAt}
+                      {h.id.slice(0, 8)} · {h.status} · {formatSheetDate(h.createdAt)}
                     </option>
                   ))}
                 </select>
