@@ -270,6 +270,11 @@ To ensure strict retrieval grounding, anti-hallucination compliance, and safety 
 * **Scraped Design Tokens**: Automatic extraction of primary brand hex colors, typography, border radii, and brand logos from the site's stylesheet.
 * **Widget Geometry**: Placement selection (bottom-right vs. bottom-left), desktop offset margins, and mobile responsive behavior (drawer vs. full sheet).
 * **Theme Modes**: Native synchronization with host website dark/light mode classes.
+* **Phase 2 — Stylesheet depth (next):**
+  * **Multi-page merge** — dembrandt `--crawl N` / `--sitemap` extraction merged with cross-page confidence into one token set per snapshot (single-page root extraction remains the default).
+  * **Dark-mode & mobile variants** — `--dark-mode` / `--mobile` runs stored as variants on the stylesheet row, selectable in Appearance.
+  * **Drift gate** — per-company token baseline + `--compare` on re-crawl; Appearance surfaces added/removed/changed tokens per snapshot, with optional blocking on drift.
+  * **Screenshot proof** — viewport capture persisted once object storage lands (`screenshotUrl` column already exists).
 
 #### 4.2 Voice & Tone (`/experience/personality`)
 * **Linguistic Character**: Tone presets (e.g., *Concise & Technical*, *Warm & Consultative*, *Corporate & Authoritative*).
