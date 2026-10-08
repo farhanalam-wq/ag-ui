@@ -197,6 +197,15 @@ export interface WidgetKeyListItem {
   createdAt: string;
 }
 
+export interface WidgetKeyDomain {
+  id: string;
+  keyId: string;
+  origin: string;
+  includePaths: string[];
+  excludePaths: string[];
+  createdAt: string;
+}
+
 export interface SourceDocument {
   id: string;
   url: string;
@@ -645,6 +654,61 @@ class ApiClient {
       if (!res.ok) {
         const errText = await res.text();
         throw new Error(`Failed to revoke widget key: HTTP ${res.status} - ${errText}`);
+      }
+      return res.json();
+    },
+
+    listDomains: async (keyId: string): Promise<WidgetKeyDomain[]> => {
+      const res = await fetch(
+        `${this.baseUrl}/api/embed/keys/${encodeURIComponent(keyId)}/domains`
+      );
+      if (res.status === 404) throw new Error("Widget key not found");
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Failed to list domains: HTTP ${res.status} - ${errText}`);
+      }
+      const data = await res.json();
+      return data.domains || [];
+    },
+
+    addDomain: async (
+      keyId: string,
+      payload: { origin: string; includePaths?: string[]; excludePaths?: string[] }
+    ): Promise<WidgetKeyDomain> => {
+      const res = await fetch(
+        `${this.baseUrl}/api/embed/keys/${encodeURIComponent(keyId)}/domains`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
+      if (res.status === 404) throw new Error("Widget key not found");
+      if (res.status === 409) throw new Error("This origin is already allowlisted for this key");
+      if (res.status === 422) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error || "Origin limit reached for this key");
+      }
+      if (res.status === 400) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error || "Invalid origin");
+      }
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Failed to add domain: HTTP ${res.status} - ${errText}`);
+      }
+      const data = await res.json();
+      return data.domain;
+    },
+
+    removeDomain: async (id: string): Promise<{ removed: boolean }> => {
+      const res = await fetch(`${this.baseUrl}/api/embed/domains/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      if (res.status === 404) throw new Error("Allowed origin not found");
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Failed to remove domain: HTTP ${res.status} - ${errText}`);
       }
       return res.json();
     },

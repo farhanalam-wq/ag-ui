@@ -17,6 +17,13 @@ import {
   revokeWidgetKey,
   checkEmbedRateLimit,
   resolveThemeStylesheetId,
+  listDomainsByKey,
+  getKeyCompanyId,
+  addDomain,
+  removeDomain,
+  assertOriginAllowed,
+  safeRefererForLog,
+  DomainValidationError,
   eq,
   desc,
   and,
@@ -153,10 +160,90 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
       detail: { summary: "Revoke widget key", description: "Revokes a widget key; public config/chat return 410 afterwards." },
     }
   )
+  // 3b. List allowed origins for a key (prefixes never leave as raw).
+  .get(
+    "/keys/:keyId/domains",
+    async ({ params, set }) => {
+      const companyId = await getKeyCompanyId(params.keyId);
+      if (!companyId) {
+        set.status = 404;
+        return { error: "Widget key not found" };
+      }
+      const domains = await listDomainsByKey(params.keyId);
+      return { keyId: params.keyId, domains };
+    },
+    {
+      params: t.Object({ keyId: t.String({ format: "uuid" }) }),
+      detail: { summary: "List allowed origins", description: "Lists origin whitelist entries for a widget key." },
+    }
+  )
+  // 3c. Add an allowed origin to a key. Origin normalized server-side.
+  .post(
+    "/keys/:keyId/domains",
+    async ({ params, body, set, request }) => {
+      const companyId = await getKeyCompanyId(params.keyId);
+      if (!companyId) {
+        set.status = 404;
+        return { error: "Widget key not found" };
+      }
+      const actor = request.headers.get("x-actor")?.trim().slice(0, 64) || null;
+      try {
+        const domain = await addDomain({
+          keyId: params.keyId,
+          origin: body.origin,
+          includePaths: body.includePaths,
+          excludePaths: body.excludePaths,
+          createdBy: actor,
+          createdIp: getClientIp(request),
+        });
+        set.status = 201;
+        return { domain };
+      } catch (err: any) {
+        if (err?.code === "DUPLICATE") {
+          set.status = 409;
+          return { error: "This origin is already allowlisted for this key", field: "origin" };
+        }
+        if (err?.code === "LIMIT_REACHED") {
+          set.status = 422;
+          return { error: err.message };
+        }
+        if (err instanceof DomainValidationError) {
+          set.status = 400;
+          return { error: err.message, field: err.field };
+        }
+        throw err;
+      }
+    },
+    {
+      params: t.Object({ keyId: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        origin: t.String({ minLength: 1, maxLength: 253 }),
+        includePaths: t.Optional(t.Array(t.String(), { maxItems: 50 })),
+        excludePaths: t.Optional(t.Array(t.String(), { maxItems: 50 })),
+      }),
+      detail: { summary: "Add allowed origin", description: "Allowists an exact origin (scheme://host[:port]) for a widget key." },
+    }
+  )
+  // 3d. Remove an allowed origin by row id (resolves key internally).
+  .delete(
+    "/domains/:id",
+    async ({ params, set }) => {
+      const removed = await removeDomain(params.id);
+      if (!removed) {
+        set.status = 404;
+        return { error: "Allowed origin not found" };
+      }
+      return { removed: true, id: params.id };
+    },
+    {
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
+      detail: { summary: "Remove allowed origin", description: "Removes an origin whitelist entry." },
+    }
+  )
   // 4. Public widget config by opaque key (no company id in the URL).
   .get(
     "/:key/config",
-    async ({ params, set }) => {
+    async ({ params, set, request }) => {
       const resolved = await resolveActiveKey(params.key);
       if (resolved.error === "not_found") {
         set.status = 404;
@@ -165,6 +252,17 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
       if (resolved.error === "revoked") {
         set.status = 410;
         return { error: "Widget key revoked" };
+      }
+
+      // Per-key origin gate (zero rules = open). Never burns rate-limit budget.
+      const gate = await assertOriginAllowed(resolved.row.id, request);
+      if (set.headers) set.headers["vary"] = "Origin";
+      if (!gate.allowed) {
+        logger.warn(
+          `[EMBED] Blocked config for key ${resolved.row.keyPrefix}… reason=${gate.reason} referer=${safeRefererForLog(request.headers.get("referer"))}`
+        );
+        set.status = 403;
+        return { error: "This key is not allowed on this site", reason: gate.reason };
       }
 
       const [company] = await db
@@ -267,6 +365,17 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
       if (resolved.error === "revoked" || !resolved.row || !resolved.keyHash) {
         set.status = 410;
         yield { event: "error", data: { message: "Widget key revoked" } };
+        return;
+      }
+
+      // Per-key origin gate runs before snapshot + rate-limit work.
+      const gate = await assertOriginAllowed(resolved.row.id, request);
+      if (!gate.allowed) {
+        logger.warn(
+          `[EMBED] Blocked chat for key ${resolved.row.keyPrefix}… reason=${gate.reason} referer=${safeRefererForLog(request.headers.get("referer"))}`
+        );
+        set.status = 403;
+        yield { event: "error", data: { message: "This key is not allowed on this site", reason: gate.reason } };
         return;
       }
 

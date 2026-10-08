@@ -208,6 +208,32 @@ export const widgetKeys = pgTable(
   ]
 );
 
+export const widgetKeyDomains = pgTable(
+  "widget_key_domains",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    keyId: uuid("key_id")
+      .references(() => widgetKeys.id, { onDelete: "cascade" })
+      .notNull(),
+    origin: text("origin").notNull(),
+    includePaths: text("include_paths")
+      .array()
+      .notNull()
+      .$defaultFn(() => ["/"]),
+    excludePaths: text("exclude_paths")
+      .array()
+      .notNull()
+      .$defaultFn(() => []),
+    createdBy: text("created_by"),
+    createdIp: text("created_ip"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("widget_key_domains_key_idx").on(table.keyId),
+    unique("widget_key_domains_key_origin_unique").on(table.keyId, table.origin),
+  ]
+);
+
 export const brandStylesheets = pgTable(
   "brand_stylesheets",
   {
