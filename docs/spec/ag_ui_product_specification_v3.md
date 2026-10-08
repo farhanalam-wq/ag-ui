@@ -275,6 +275,7 @@ To ensure strict retrieval grounding, anti-hallucination compliance, and safety 
   * **Dark-mode & mobile variants** — `--dark-mode` / `--mobile` runs stored as variants on the stylesheet row, selectable in Appearance.
   * **Drift gate** — per-company token baseline + `--compare` on re-crawl; Appearance surfaces added/removed/changed tokens per snapshot, with optional blocking on drift.
   * **Screenshot proof** — viewport capture persisted once object storage lands (`screenshotUrl` column already exists).
+* **Theme drift tracking** — token-hash per stylesheet row; Appearance + Snapshots surface a "colors moved since last extract" flag. Informational minor-level signal only: knowledge versions never bump on theme changes.
 
 #### 4.2 Voice & Tone (`/experience/personality`)
 * **Linguistic Character**: Tone presets (e.g., *Concise & Technical*, *Warm & Consultative*, *Corporate & Authoritative*).
