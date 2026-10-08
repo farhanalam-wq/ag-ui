@@ -1,0 +1,7 @@
+[
+  { "question": "How does onboarding work?", "expectedVideo": true, "notes": "process, should yield flow scenes" },
+  { "question": "What are the main products and how do they fit together?", "expectedVideo": true, "notes": "architecture/concept" },
+  { "question": "Is there a free plan?", "expectedVideo": false, "notes": "yes/no negative" },
+  { "question": "How much does it cost?", "expectedVideo": false, "notes": "pricing negative" },
+  { "question": "What is xyzzy_nonexistent_feature?", "expectedVideo": "either", "notes": "weak retrieval, expect abort" }
+]

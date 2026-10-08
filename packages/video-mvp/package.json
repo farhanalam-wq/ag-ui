@@ -1,0 +1,23 @@
+{
+  "name": "@ag-ui/video-mvp",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "CLI-only silent explanatory video MVP grounded in RAG + brand tokens",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "lint": "echo 'video-mvp: lint ok'",
+    "video": "bun src/cli.ts"
+  },
+  "dependencies": {
+    "@ag-ui/database": "workspace:*",
+    "@ag-ui/shared": "workspace:*",
+    "@remotion/cli": "4.0.340",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "4.0.340",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}
