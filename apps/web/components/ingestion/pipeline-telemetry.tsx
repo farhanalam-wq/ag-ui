@@ -15,7 +15,14 @@ import {
 import { EmbedSnippet } from "./embed-snippet";
 
 export interface PipelineProgressData {
-  stage: "DISCOVERING" | "CRAWLING" | "PARSING" | "EMBEDDING" | "EXTRACTING" | "READY";
+  stage:
+    | "DISCOVERING"
+    | "CRAWLING"
+    | "PARSING"
+    | "EMBEDDING"
+    | "EXTRACTING"
+    | "EXTRACTING_APPEARANCE"
+    | "READY";
   crawled?: number;
   totalSelected?: number;
   docs?: number;
@@ -63,6 +70,7 @@ interface PipelineTelemetryProps {
   result: PipelineResultData | null;
   error: string | null;
   onReset: () => void;
+  appearanceActive?: boolean;
 }
 
 const STAGES = [
@@ -80,6 +88,7 @@ export function PipelineTelemetry({
   result,
   error,
   onReset,
+  appearanceActive = false,
 }: PipelineTelemetryProps) {
   const logContainerRef = useRef<HTMLDivElement>(null);
 
@@ -93,6 +102,10 @@ export function PipelineTelemetry({
   const currentStage = progress?.stage || phase || "INITIALIZING";
   const isDone = !!result || currentStage === "READY";
   const isFailed = !!error;
+  const showAppearance =
+    appearanceActive ||
+    currentStage === "EXTRACTING_APPEARANCE" ||
+    logs.some((l) => l.includes("EXTRACTING_APPEARANCE"));
 
   const total = progress?.totalSelected || result?.insertedDocs || 1;
   const crawled = progress?.crawled || 0;
@@ -104,7 +117,7 @@ export function PipelineTelemetry({
   const crawlPct = Math.min(100, Math.round((crawled / Math.max(1, total)) * 100));
 
   const getStageStatus = (stageKey: string) => {
-    const stageOrder = ["DISCOVERING", "CRAWLING", "PARSING", "EMBEDDING", "EXTRACTING", "READY"];
+    const stageOrder = ["DISCOVERING", "CRAWLING", "PARSING", "EMBEDDING", "EXTRACTING", "EXTRACTING_APPEARANCE", "READY"];
     const currentIndex = stageOrder.indexOf(currentStage);
     const targetIndex = stageOrder.indexOf(stageKey);
 
@@ -167,6 +180,14 @@ export function PipelineTelemetry({
             );
           })}
         </div>
+
+        {/* Appearance track badge/card — parallel to knowledge progress */}
+        {showAppearance && !isDone && (
+          <div className="mt-3 flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-300 text-xs font-mono w-fit animate-pulse">
+            <span className="size-1.5 rounded-full bg-fuchsia-400 animate-pulse" />
+            <span>Appearance: extracting stylesheet…</span>
+          </div>
+        )}
       </div>
 
       {/* Real-time Telemetry Stat Cards */}
@@ -312,6 +333,17 @@ export function PipelineTelemetry({
 
           {/* Embeddable chatbot snippet (opaque widget key, raw shown once) */}
           <EmbedSnippet result={result} />
+
+          {/* Appearance deep-link (Phase 1 track C) */}
+          <div className="pt-2 border-t border-zinc-800/60 text-xs">
+            <a
+              href={`/experience/appearance?company=${encodeURIComponent(result.companyId)}`}
+              className="inline-flex items-center gap-1.5 text-fuchsia-300 hover:text-fuchsia-200 font-mono transition-colors"
+            >
+              <span>View stylesheet in Appearance</span>
+              <span aria-hidden>→</span>
+            </a>
+          </div>
         </div>
       )}
 

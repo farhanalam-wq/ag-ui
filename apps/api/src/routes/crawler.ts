@@ -3,6 +3,7 @@ import { validateSafeUrl } from "@ag-ui/crawler";
 import { discoverPages } from "@ag-ui/crawler";
 import { logger } from "@ag-ui/shared";
 import { db, brands, companies, companySnapshots, crawlJobs, eq, desc } from "@ag-ui/database";
+import { brandQueue } from "@ag-ui/queues";
 import { runIngestPipeline, type PipelineProgressEvent } from "../../../../ingest-cli";
 
 class AsyncEventQueue<T> {
@@ -286,6 +287,25 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
             }
           } catch {
             // Non-blocking
+          }
+
+          // Fire-and-forget brand appearance extraction (non-blocking for response).
+          if (result.companyId && result.snapshotId) {
+            let origin = clean;
+            try {
+              origin = new URL(clean).origin;
+            } catch {
+              // keep raw input
+            }
+            try {
+              await brandQueue.add(
+                "extract",
+                { companyId: result.companyId, snapshotId: result.snapshotId, origin },
+                { removeOnComplete: true }
+              );
+            } catch (err: any) {
+              logger.warn(`[API:INGEST] brand enqueue skipped: ${err?.message ?? err}`);
+            }
           }
 
           eventQueue.push({

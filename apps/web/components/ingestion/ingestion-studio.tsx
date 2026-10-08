@@ -61,6 +61,9 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
   const [result, setResult] = useState<PipelineResultData | null>(null);
   const [pipelineError, setPipelineError] = useState<string | null>(null);
 
+  // Appearance track state (Phase 1 track C — parallel to knowledge progress)
+  const [appearanceActive, setAppearanceActive] = useState(false);
+
   // Advanced Tuning settings
   const [showTuning, setShowTuning] = useState(false);
   const [fetchConcurrency, setFetchConcurrency] = useState(25);
@@ -196,6 +199,7 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
     setProgress(null);
     setResult(null);
     setPipelineError(null);
+    setAppearanceActive(false);
 
     try {
       await apiClient.crawler.ingestStream(
@@ -217,6 +221,7 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
           },
           onProgress: (prog) => {
             setProgress(prog as any);
+            if (prog.stage === "EXTRACTING_APPEARANCE") setAppearanceActive(true);
             setLogs((prev) => [
               ...prev,
               `[${prog.stage}] fetched=${prog.crawled ?? 0}/${prog.totalSelected ?? selectedUrls.size} docs=${prog.docs ?? 0} thin/dup=${prog.skippedThin ?? 0} dead=${prog.failed ?? 0}`,
@@ -311,6 +316,8 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
     setProgress(null);
     setResult(null);
     setPipelineError(null);
+    setAppearanceActive(false);
+    setPhase("INITIALIZING");
   };
 
   return (
@@ -641,6 +648,7 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
           result={result}
           error={pipelineError}
           onReset={handleReset}
+          appearanceActive={appearanceActive}
         />
       )}
     </div>

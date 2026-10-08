@@ -82,7 +82,7 @@ interface DiscoveredPage {
 }
 
 export interface PipelineProgressEvent {
-  stage: "DISCOVERING" | "CRAWLING" | "PARSING" | "EMBEDDING" | "EXTRACTING" | "READY";
+  stage: "DISCOVERING" | "CRAWLING" | "PARSING" | "EMBEDDING" | "EXTRACTING" | "EXTRACTING_APPEARANCE" | "READY";
   jobId?: string;
   companyId?: string;
   snapshotId?: string;
@@ -115,6 +115,7 @@ export interface CliOptions {
   skipEmbed: boolean;
   dryRun: boolean;
   noEmbedCache: boolean;
+  withBrand: boolean;
   onProgress?: (event: PipelineProgressEvent) => void | Promise<void>;
 }
 
@@ -244,6 +245,7 @@ Options:
   --skip-embed           Parse + insert documents but skip chunk/embed (fast smoke test)
   --no-embed-cache       Bypass Redis embedding cache for reads and writes (parity tests)
   --dry-run              Crawl + parse, print stats, skip all DB writes
+  --with-brand           Enqueue dembrandt appearance extraction on the brand queue after DB populate
   --help                 Show this help
 
 Interactive (no --limit/--all/--select):
@@ -307,6 +309,7 @@ function parseArgs(argv: string[]): { url: string | null; opts: CliOptions } {
       skipEmbed: has("--skip-embed"),
       dryRun: has("--dry-run"),
       noEmbedCache: has("--no-embed-cache"),
+      withBrand: has("--with-brand"),
     },
   };
 }
@@ -1341,6 +1344,7 @@ export async function runIngestPipeline(
     skipEmbed: false,
     dryRun: false,
     noEmbedCache: false,
+    withBrand: false,
   };
 
   const opts: CliOptions = { ...defaultOpts, ...userOpts };
@@ -1621,6 +1625,34 @@ export async function runIngestPipeline(
   } catch {}
 
   const res = await populateDb(baseUrl as URL, domain, docs, rootHtml, opts, stats, jobContext);
+
+  if (opts.withBrand && res.companyId && res.snapshotId) {
+    try {
+      await opts.onProgress?.({
+        stage: "EXTRACTING_APPEARANCE",
+        companyId: res.companyId,
+        snapshotId: res.snapshotId,
+        message: "Queuing brand appearance extraction...",
+      });
+    } catch {}
+    try {
+      const { brandQueue } = await import("./packages/queues/src/index");
+      let origin = (baseUrl as URL).origin;
+      try {
+        origin = new URL(target).origin;
+      } catch {
+        // keep baseUrl origin
+      }
+      await brandQueue.add(
+        "extract",
+        { companyId: res.companyId, snapshotId: res.snapshotId, origin },
+        { removeOnComplete: true }
+      );
+      console.log(`[BRAND] appearance extraction queued for ${origin}`);
+    } catch (err: any) {
+      console.log(`[BRAND] queue unavailable, skipping appearance extraction: ${err?.message ?? err}`);
+    }
+  }
 
   try {
     await opts.onProgress?.({

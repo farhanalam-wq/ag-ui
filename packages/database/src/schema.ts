@@ -207,3 +207,27 @@ export const widgetKeys = pgTable(
     index("widget_keys_prefix_idx").on(table.keyPrefix),
   ]
 );
+
+export const brandStylesheets = pgTable(
+  "brand_stylesheets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    snapshotId: uuid("snapshot_id").references(() => companySnapshots.id, {
+      onDelete: "set null",
+    }),
+    status: text("status").default("QUEUED").notNull(),
+    dtcg: jsonb("dtcg"),
+    tailwind: text("tailwind"),
+    designMd: text("design_md"),
+    wcag: jsonb("wcag"),
+    raw: jsonb("raw"),
+    screenshotUrl: text("screenshot_url"),
+    error: text("error"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [index("brand_stylesheets_company_idx").on(t.companyId)]
+);

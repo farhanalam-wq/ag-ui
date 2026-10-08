@@ -5,6 +5,7 @@ import { logger } from "@ag-ui/shared";
 import { companiesRoutes } from "./routes/companies";
 import { chatRoutes } from "./routes/chat";
 import { crawlerRoutes } from "./routes/crawler";
+import { brandRoutes } from "./routes/brand";
 import { embedRoutes } from "./routes/embed";
 import { voiceRoutes } from "./routes/voice";
 import { voiceToolRoutes } from "./routes/voice-tool";
@@ -38,6 +39,7 @@ export const app = new Elysia()
   .use(companiesRoutes)
   .use(chatRoutes)
   .use(crawlerRoutes)
+  .use(brandRoutes)
   .use(embedRoutes)
   .use(voiceRoutes)
   .use(voiceToolRoutes)

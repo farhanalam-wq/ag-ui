@@ -324,3 +324,6 @@ logger.info("Background crawl worker listening on Redis queue: crawl-queue");
 
 // Enrichment worker (uploads -> minor versions) runs in the same process.
 import "./enrich-worker";
+
+// Brand extraction worker (dembrandt -> brand_stylesheets + brands).
+import "./brand-worker";

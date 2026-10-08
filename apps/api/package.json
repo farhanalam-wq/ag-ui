@@ -16,6 +16,7 @@
     "@ag-ui/contracts": "workspace:*",
     "@ag-ui/crawler": "workspace:*",
     "@ag-ui/database": "workspace:*",
+    "@ag-ui/brand": "workspace:*",
     "@ag-ui/extract": "workspace:*",
     "@ag-ui/queues": "workspace:*",
     "@ag-ui/shared": "workspace:*"

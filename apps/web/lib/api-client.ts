@@ -59,7 +59,15 @@ export interface IngestStreamCallbacks {
   onPhase?: (phase: string, message?: string) => void;
   onJob?: (data: { jobId: string; companyId: string; snapshotId: string }) => void;
   onProgress?: (data: {
-    stage: string;
+    stage:
+      | string
+      | "DISCOVERING"
+      | "CRAWLING"
+      | "PARSING"
+      | "EMBEDDING"
+      | "EXTRACTING"
+      | "EXTRACTING_APPEARANCE"
+      | "READY";
     jobId?: string;
     companyId?: string;
     snapshotId?: string;
@@ -74,6 +82,28 @@ export interface IngestStreamCallbacks {
   }) => void;
   onDone?: (result: any) => void;
   onError?: (error: { message: string }) => void;
+}
+
+export interface BrandStylesheet {
+  id: string;
+  status: string;
+  dtcg: any;
+  tailwind: string | null;
+  design_md: string | null;
+  wcag: any;
+  raw: any;
+  screenshot_url: string | null;
+  error: string | null;
+  createdAt: string;
+}
+
+export interface BrandLatestResponse {
+  brand: { logoUrl: string | null; tokens: any } | null;
+  stylesheet: BrandStylesheet | null;
+}
+
+export interface BrandHistoryResponse {
+  items: BrandStylesheet[];
 }
 
 export interface CompanyDetailResponse {
@@ -694,6 +724,50 @@ class ApiClient {
           }
         }
       }
+    },
+  };
+
+  /**
+   * Brand / Appearance endpoints (Phase 1 track C, frontend only)
+   */
+  brand = {
+    getLatest: async (companyId: string): Promise<BrandLatestResponse> => {
+      const res = await fetch(
+        `${this.baseUrl}/api/brand/${encodeURIComponent(companyId)}/latest`
+      );
+      if (res.status === 404) return { brand: null, stylesheet: null };
+      if (!res.ok) {
+        throw new Error(`Failed to get brand latest: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+
+    getHistory: async (companyId: string): Promise<BrandHistoryResponse> => {
+      const res = await fetch(
+        `${this.baseUrl}/api/brand/${encodeURIComponent(companyId)}/history`
+      );
+      if (res.status === 404) return { items: [] };
+      if (!res.ok) {
+        throw new Error(`Failed to get brand history: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+
+    retry: async (
+      companyId: string,
+      snapshotId?: string,
+      origin?: string
+    ): Promise<{ queued: boolean }> => {
+      const res = await fetch(`${this.baseUrl}/api/brand/retry`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId, snapshotId, origin }),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Brand retry failed (${res.status}): ${errText}`);
+      }
+      return res.json();
     },
   };
 
