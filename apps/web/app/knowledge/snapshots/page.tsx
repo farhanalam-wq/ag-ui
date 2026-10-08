@@ -217,6 +217,21 @@ export default function SnapshotsPage() {
                               `.${Math.max(...readyMinors.map((b) => b.minor))}`}
                           </span>
                           {statusPill(v.status)}
+                          {v.theme ? (
+                            <span
+                              title={`Stylesheet ${v.theme.id.slice(0, 8)} · ${v.theme.status}`}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono border border-fuchsia-200 dark:border-fuchsia-900/50 text-fuchsia-700 dark:text-fuchsia-300"
+                            >
+                              themed · {v.theme.status}
+                            </span>
+                          ) : (
+                            <span
+                              title="No stylesheet stamped for this version"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono border border-zinc-200 dark:border-zinc-700 text-zinc-400 dark:text-zinc-500"
+                            >
+                              no theme
+                            </span>
+                          )}
                           <span className="text-[11px] font-mono text-zinc-500">
                             {new Date(v.createdAt).toLocaleString()}
                           </span>

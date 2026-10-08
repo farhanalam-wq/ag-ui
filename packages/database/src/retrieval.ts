@@ -12,7 +12,8 @@
  */
 
 import { db } from "./index";
-import { companies, companySnapshots, brands, brandStylesheets, chunks, documents, facts } from "./schema";
+import { companies, companySnapshots, brands, chunks, documents, facts } from "./schema";
+import { resolveThemeStylesheetId } from "./theme";
 import { eq, desc, inArray, and, or, isNull } from "drizzle-orm";
 import { generateEmbeddings, logger } from "@ag-ui/shared";
 import type { Evidence } from "@ag-ui/contracts";
@@ -82,34 +83,17 @@ export async function retrieveCompanyContext(
     .where(eq(brands.companyId, companyId))
     .limit(1);
 
-  // Latest READY stylesheet id doubles as the widget theme version (~1ms,
-  // indexed). Attached to the brand payload so SSE consumers can skip
-  // re-theming when nothing changed.
-  let themeVersion: string | null = null;
-  try {
-    const [sheet] = await db
-      .select({ id: brandStylesheets.id })
-      .from(brandStylesheets)
-      .where(
-        and(
-          eq(brandStylesheets.companyId, companyId),
-          eq(brandStylesheets.status, "READY")
-        )
-      )
-      .orderBy(desc(brandStylesheets.createdAt))
-      .limit(1);
-    themeVersion = sheet?.id ?? null;
-  } catch {
-    themeVersion = null;
-  }
-  const brandWithVersion = brand ? { ...brand, themeVersion } : null;
-
   const [latestSnapshot] = await db
     .select()
     .from(companySnapshots)
     .where(eq(companySnapshots.companyId, companyId))
     .orderBy(desc(companySnapshots.version))
     .limit(1);
+
+  // Theme version scoped to the effective snapshot: restoring docs to an
+  // older version automatically re-themes to that version's stylesheet.
+  const themeVersion = await resolveThemeStylesheetId(companyId, latestSnapshot?.id ?? null);
+  const brandWithVersion = brand ? { ...brand, themeVersion } : null;
 
   if (!latestSnapshot) {
     return {

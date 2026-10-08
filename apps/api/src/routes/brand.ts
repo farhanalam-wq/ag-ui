@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { db, brands, brandStylesheets, companies, eq, desc } from "@ag-ui/database";
+import { db, brands, brandStylesheets, companies, companySnapshots, eq, desc, resolveThemeStylesheetId } from "@ag-ui/database";
 import { brandQueue } from "@ag-ui/queues";
 import { logger } from "@ag-ui/shared";
 
@@ -82,9 +82,25 @@ export const brandRoutes = new Elysia({ prefix: "/api/brand" })
         set.status = 400;
         return { error: "origin is required (no stored company URL found)" };
       }
+      // Stamp the active snapshot when the caller didn't name one, so every
+      // stylesheet row knows which knowledge version it belongs to.
+      let snapshotId = body.snapshotId ?? null;
+      if (!snapshotId) {
+        try {
+          const [latest] = await db
+            .select({ id: companySnapshots.id })
+            .from(companySnapshots)
+            .where(eq(companySnapshots.companyId, body.companyId))
+            .orderBy(desc(companySnapshots.version))
+            .limit(1);
+          snapshotId = latest?.id ?? null;
+        } catch {
+          snapshotId = null;
+        }
+      }
       const job = await brandQueue.add(
         "extract",
-        { companyId: body.companyId, snapshotId: body.snapshotId ?? null, origin },
+        { companyId: body.companyId, snapshotId, origin },
         { removeOnComplete: true }
       );
       logger.info(`[API:BRAND] retry queued for company ${body.companyId} (job ${job.id})`);

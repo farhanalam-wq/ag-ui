@@ -279,6 +279,7 @@ export interface MajorVersion {
   } | null;
   createdAt: string;
   batches: EnrichmentBatch[];
+  theme: { id: string; status: string } | null;
 }
 
 class ApiClient {

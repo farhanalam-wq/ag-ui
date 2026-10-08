@@ -4,7 +4,6 @@ import {
   companies,
   companySnapshots,
   brands,
-  brandStylesheets,
   documents,
   chunks,
   facts,
@@ -17,6 +16,7 @@ import {
   listKeysByCompany,
   revokeWidgetKey,
   checkEmbedRateLimit,
+  resolveThemeStylesheetId,
   eq,
   desc,
   and,
@@ -184,25 +184,10 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
         .where(eq(brands.companyId, company.id))
         .limit(1);
 
-      // Server-sanitized theme + version. Clients apply `theme` directly and
-      // skip re-apply when `themeVersion` is unchanged.
-      let themeVersion: string | null = null;
-      try {
-        const [sheet] = await db
-          .select({ id: brandStylesheets.id })
-          .from(brandStylesheets)
-          .where(
-            and(
-              eq(brandStylesheets.companyId, company.id),
-              eq(brandStylesheets.status, "READY")
-            )
-          )
-          .orderBy(desc(brandStylesheets.createdAt))
-          .limit(1);
-        themeVersion = sheet?.id ?? null;
-      } catch {
-        themeVersion = null;
-      }
+      // Server-sanitized theme + version, scoped to the ACTIVE snapshot so
+      // theme follows knowledge rollbacks. Clients skip re-apply when
+      // `themeVersion` is unchanged.
+      const themeVersion = await resolveThemeStylesheetId(company.id, snapshot?.id ?? null);
       const theme = mapBrandToWidgetTheme(brand?.tokens, brand?.logoUrl);
 
       let docCount = 0;

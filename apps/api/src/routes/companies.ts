@@ -4,6 +4,7 @@ import {
   companies,
   companySnapshots,
   brands,
+  brandStylesheets,
   documents,
   chunks,
   facts,
@@ -322,11 +323,29 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
         bySnapshot.set(b.snapshotId, list);
       }
 
+      // Theme badge per version: latest stylesheet stamped for the snapshot.
+      const sheets = await db
+        .select({
+          id: brandStylesheets.id,
+          snapshotId: brandStylesheets.snapshotId,
+          status: brandStylesheets.status,
+        })
+        .from(brandStylesheets)
+        .where(eq(brandStylesheets.companyId, company.id))
+        .orderBy(desc(brandStylesheets.createdAt));
+      const themeBySnapshot = new Map<string, { id: string; status: string }>();
+      for (const s of sheets) {
+        if (s.snapshotId && !themeBySnapshot.has(s.snapshotId)) {
+          themeBySnapshot.set(s.snapshotId, { id: s.id, status: s.status });
+        }
+      }
+
       return {
         companyId: company.id,
         versions: snapshots.map((s) => ({
           ...s,
           batches: (bySnapshot.get(s.id) ?? []).map((b) => ({ ...b })),
+          theme: themeBySnapshot.get(s.id) ?? null,
         })),
       };
     },
