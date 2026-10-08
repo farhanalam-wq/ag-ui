@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ArrowCounterClockwise,
   ArrowSquareOut,
@@ -10,7 +10,6 @@ import {
   WarningCircle,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiClient } from "@/lib/api-client";
 import { useWidgetKeys } from "./use-widget-keys";
@@ -39,7 +38,8 @@ function timeAgo(ts: number): string {
 
 export function EmbedSnippetStudio({ companyId, companyName, brandColor }: EmbedSnippetStudioProps) {
   const { phase, rotating, rotate, retry } = useWidgetKeys(companyId);
-  const [apiBase, setApiBase] = useState<string>(() => defaultApiBase());
+  // API base is fixed from env (NEXT_PUBLIC_API_URL) — not user-editable.
+  const [apiBase] = useState<string>(() => defaultApiBase());
   const [position, setPosition] = useState<"bottom-right" | "bottom-left">("bottom-right");
   const [framework, setFramework] = useState<FrameworkId>("html");
   const [copied, setCopied] = useState(false);
@@ -50,26 +50,18 @@ export function EmbedSnippetStudio({ companyId, companyName, brandColor }: Embed
 
   const webOrigin = mounted && typeof window !== "undefined" ? window.location.origin : "";
   const raw = phase.kind === "ready" ? phase.raw : null;
-  const apiValid = useMemo(() => {
-    try {
-      const u = new URL(apiBase.trim());
-      return u.protocol === "http:" || u.protocol === "https:";
-    } catch {
-      return false;
-    }
-  }, [apiBase]);
 
-  const snippet = raw && apiValid ? buildSnippet({ webOrigin, raw, apiBase, companyName, position }) : null;
+  const snippet = raw ? buildSnippet({ webOrigin, raw, apiBase, companyName, position }) : null;
 
   const ping = useCallback(async () => {
     if (!raw) return;
     try {
-      await apiClient.embed.getConfig(raw, apiValid ? apiBase.trim() : undefined);
+      await apiClient.embed.getConfig(raw, apiBase.trim());
       setLastHandshake(Date.now());
     } catch {
       // best-effort only; page never blocks on ping
     }
-  }, [raw, apiBase, apiValid]);
+  }, [raw, apiBase]);
 
   useEffect(() => {
     if (!raw) return;
@@ -137,22 +129,6 @@ export function EmbedSnippetStudio({ companyId, companyName, brandColor }: Embed
               Key <span className="text-emerald-400">{phase.prefix}…</span> active
             </div>
           )}
-
-          <div className="space-y-2">
-            <label htmlFor="embed-api-base" className="text-[11px] font-mono text-zinc-500 block">
-              API base (edit if the host site must reach a non-local backend)
-            </label>
-            <Input
-              id="embed-api-base"
-              value={apiBase}
-              onChange={(e) => setApiBase(e.target.value)}
-              spellCheck={false}
-              className="font-mono"
-            />
-            {!apiValid && (
-              <p className="text-[11px] font-mono text-red-300">Enter a valid http(s) URL.</p>
-            )}
-          </div>
 
           <div className="space-y-2">
             <span className="text-[11px] font-mono text-zinc-500 block">Position</span>
