@@ -6,7 +6,7 @@
  *     data-widget-key="agw_..."
  *     data-api-base="https://api.example.com"
  *     data-title="Acme Help"
- *     data-color="#3b82f6"></script>
+ *     data-color="#3b82f6" defer></script>
  *
  * All network identity is the opaque widget key (`agw_…`); no company ids
  * ever appear in the snippet, the iframe URL, or API paths.

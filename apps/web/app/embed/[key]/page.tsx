@@ -20,7 +20,7 @@ import {
   mapBrandToWidgetTheme,
   widgetThemeVars,
   type WidgetTheme,
-} from "@ag-ui/shared";
+} from "@ag-ui/shared/client";
 import { VoiceSession } from "@/components/voice/voice-session";
 import {
   VoiceAmplitudeBars,

@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from "react";
 
 import { apiClient } from "@/lib/api-client";
-import { applyWidgetTheme, mapBrandToWidgetTheme } from "@ag-ui/shared";
+import { applyWidgetTheme, mapBrandToWidgetTheme } from "@ag-ui/shared/client";
 import { coalesceVoiceLines } from "@/lib/voice-transcript";
 import type { VoiceLine } from "@/components/voice/voice-session";
 
