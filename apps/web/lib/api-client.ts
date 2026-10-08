@@ -322,6 +322,21 @@ class ApiClient {
       return data.companies || [];
     },
 
+    videoPlan: async (args: {
+      companyId: string;
+      question: string;
+      forceVideo?: boolean;
+    }): Promise<any> => {
+      const res = await fetch(`${this.baseUrl}/api/labs/video-plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(args),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `Video plan failed: HTTP ${res.status}`);
+      return data;
+    },
+
     get: async (id: string): Promise<CompanyDetailResponse> => {
       const res = await fetch(`${this.baseUrl}/api/companies/${id}`);
       if (!res.ok) {

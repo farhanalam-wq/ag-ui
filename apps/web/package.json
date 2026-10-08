@@ -12,6 +12,7 @@
     "@ag-ui/contracts": "workspace:*",
     "@ag-ui/genui": "workspace:*",
     "@ag-ui/shared": "workspace:*",
+    "@ag-ui/video-mvp": "workspace:*",
     "@livekit/components-react": "^2.9.24",
     "@livekit/components-styles": "^1.2.0",
     "@openuidev/lang-core": "^0.2.18",

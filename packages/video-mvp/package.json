@@ -19,5 +19,10 @@
   },
   "devDependencies": {
     "typescript": "^5.7.3"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./layout/rules": "./src/layout/rules.ts",
+    "./package.json": "./package.json"
   }
 }
