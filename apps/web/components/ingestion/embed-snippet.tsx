@@ -10,90 +10,28 @@ import {
   ArrowCounterClockwise,
   Code,
 } from "@phosphor-icons/react";
-import { apiClient } from "@/lib/api-client";
+import { useWidgetKeys } from "@/components/integration/use-widget-keys";
+import { buildSnippet, defaultApiBase } from "@/components/integration/snippet-builder";
 import type { PipelineResultData } from "./pipeline-telemetry";
 
 interface EmbedSnippetProps {
   result: PipelineResultData;
 }
 
-type SnippetState =
-  | { kind: "issuing" }
-  | { kind: "ready"; raw: string; keyId: string; prefix: string }
-  | { kind: "existing"; keyId: string; prefix: string }
-  | { kind: "error"; message: string };
-
-function defaultApiBase(): string {
-  const envBase =
-    process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "";
-  if (envBase.trim()) return envBase.trim().replace(/\/$/, "");
-  if (typeof window !== "undefined") {
-    return window.location.origin.replace(":3000", ":3001");
-  }
-  return "http://localhost:3001";
-}
-
 export function EmbedSnippet({ result }: EmbedSnippetProps) {
-  const [state, setState] = useState<SnippetState>({ kind: "issuing" });
-  const [apiBase, setApiBase] = useState<string>(defaultApiBase());
+  const { phase, rotating, rotate, retry } = useWidgetKeys(result.companyId);
+  const [apiBase, setApiBase] = useState<string>(() => defaultApiBase());
   const [copied, setCopied] = useState(false);
-  const [rotating, setRotating] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
-  const webOrigin =
-    typeof window !== "undefined" ? window.location.origin : "";
+  useEffect(() => setMounted(true), []);
+
+  const webOrigin = mounted && typeof window !== "undefined" ? window.location.origin : "";
   const brandColor = result.brand?.tokens?.colors?.primary || "#3b82f6";
 
-  const ensureKey = useCallback(async () => {
-    setState({ kind: "issuing" });
-    try {
-      const issued = await apiClient.embed.issueKey(result.companyId);
-      if (issued.widgetKey) {
-        setState({
-          kind: "ready",
-          raw: issued.widgetKey,
-          keyId: issued.id,
-          prefix: issued.keyPrefix,
-        });
-      } else {
-        // Server reuses per (companyId, label) and never re-emits the raw.
-        setState({ kind: "existing", keyId: issued.id, prefix: issued.keyPrefix });
-      }
-    } catch (err: any) {
-      setState({ kind: "error", message: err.message || "Failed to issue widget key" });
-    }
-  }, [result.companyId]);
-
-  useEffect(() => {
-    ensureKey();
-  }, [ensureKey]);
-
-  const handleRotate = useCallback(async () => {
-    const keyId = state.kind === "existing" || state.kind === "ready" ? state.keyId : null;
-    if (!keyId) return;
-    setRotating(true);
-    try {
-      await apiClient.embed.revokeKey(keyId);
-      const issued = await apiClient.embed.issueKey(result.companyId);
-      if (issued.widgetKey) {
-        setState({
-          kind: "ready",
-          raw: issued.widgetKey,
-          keyId: issued.id,
-          prefix: issued.keyPrefix,
-        });
-      } else {
-        setState({ kind: "existing", keyId: issued.id, prefix: issued.keyPrefix });
-      }
-    } catch (err: any) {
-      setState({ kind: "error", message: err.message || "Rotation failed" });
-    } finally {
-      setRotating(false);
-    }
-  }, [state, result.companyId]);
-
-  const raw = state.kind === "ready" ? state.raw : null;
+  const raw = phase.kind === "ready" ? phase.raw : null;
   const snippet = raw
-    ? `<script src="${webOrigin}/embed.js"\n  data-widget-key="${raw}"\n  data-api-base="${apiBase}"\n  data-title="${result.companyName} Help" defer></script>`
+    ? buildSnippet({ webOrigin, raw, apiBase, companyName: result.companyName })
     : null;
 
   const handleCopy = useCallback(async () => {
@@ -114,10 +52,10 @@ export function EmbedSnippet({ result }: EmbedSnippetProps) {
           <Code className="size-4" style={{ color: brandColor }} />
           <span>Deploy chatbot — paste this snippet on any site</span>
         </div>
-        {(state.kind === "ready" || state.kind === "existing") && (
+        {(phase.kind === "ready" || phase.kind === "existing") && (
           <button
             type="button"
-            onClick={handleRotate}
+            onClick={rotate}
             disabled={rotating}
             className="inline-flex items-center gap-1 text-[11px] font-mono text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-40"
             title="Revoke this key and issue a fresh one (old embeds stop working immediately)"
@@ -128,22 +66,22 @@ export function EmbedSnippet({ result }: EmbedSnippetProps) {
         )}
       </div>
 
-      {state.kind === "issuing" && (
+      {phase.kind === "issuing" && (
         <div className="flex items-center gap-2 p-3 rounded-lg border border-zinc-800 bg-zinc-900/40 text-xs text-zinc-400 font-mono animate-pulse">
           <CircleNotch className="size-3.5 animate-spin" />
           <span>Issuing secure widget key…</span>
         </div>
       )}
 
-      {state.kind === "error" && (
+      {phase.kind === "error" && (
         <div className="flex items-start gap-2 p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-xs text-red-300">
           <WarningCircle className="size-4 shrink-0 mt-0.5" />
           <div className="flex-1">
             <div className="font-semibold">Could not issue widget key</div>
-            <div className="font-mono text-[11px] mt-0.5">{state.message}</div>
+            <div className="font-mono text-[11px] mt-0.5">{phase.message}</div>
             <button
               type="button"
-              onClick={ensureKey}
+              onClick={retry}
               className="mt-2 px-2.5 py-1 rounded-md border border-red-500/40 hover:bg-red-500/20 text-xs transition-colors"
             >
               Retry
@@ -152,10 +90,10 @@ export function EmbedSnippet({ result }: EmbedSnippetProps) {
         </div>
       )}
 
-      {state.kind === "existing" && (
+      {phase.kind === "existing" && (
         <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/5 text-xs text-amber-200/90 space-y-1.5">
           <div className="font-mono text-[11px]">
-            Key <span className="font-semibold">{state.prefix}…</span> already issued for this
+            Key <span className="font-semibold">{phase.prefix}…</span> already issued for this
             company — raws are shown once and never stored. Rotate to get a fresh snippet.
           </div>
         </div>
