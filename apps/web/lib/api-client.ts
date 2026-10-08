@@ -166,6 +166,18 @@ export interface EmbedConfig {
   version: number;
   counts: { docs: number; chunks: number; facts: number };
   brand: { logoUrl: string | null; tokens: any } | null;
+  /** Server-sanitized theme (mirrors WidgetTheme); prefer over mapping locally. */
+  theme?: {
+    primary: string;
+    secondary: string;
+    radius: string;
+    surface: string;
+    text: string;
+    logoUrl: string | null;
+    fullSurface: boolean;
+  } | null;
+  /** Latest READY stylesheet id; clients skip re-apply when unchanged. */
+  themeVersion?: string | null;
 }
 
 export interface IssueWidgetKeyResponse {

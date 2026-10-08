@@ -12,7 +12,7 @@
  */
 
 import { db } from "./index";
-import { companies, companySnapshots, brands, chunks, documents, facts } from "./schema";
+import { companies, companySnapshots, brands, brandStylesheets, chunks, documents, facts } from "./schema";
 import { eq, desc, inArray, and, or, isNull } from "drizzle-orm";
 import { generateEmbeddings, logger } from "@ag-ui/shared";
 import type { Evidence } from "@ag-ui/contracts";
@@ -34,6 +34,8 @@ export interface RetrievedContext {
   brand: {
     logoUrl: string | null;
     tokens: any;
+    /** Latest READY stylesheet id — widget clients skip re-theming when unchanged. */
+    themeVersion?: string | null;
   } | null;
   facts: {
     subject: string;
@@ -80,6 +82,28 @@ export async function retrieveCompanyContext(
     .where(eq(brands.companyId, companyId))
     .limit(1);
 
+  // Latest READY stylesheet id doubles as the widget theme version (~1ms,
+  // indexed). Attached to the brand payload so SSE consumers can skip
+  // re-theming when nothing changed.
+  let themeVersion: string | null = null;
+  try {
+    const [sheet] = await db
+      .select({ id: brandStylesheets.id })
+      .from(brandStylesheets)
+      .where(
+        and(
+          eq(brandStylesheets.companyId, companyId),
+          eq(brandStylesheets.status, "READY")
+        )
+      )
+      .orderBy(desc(brandStylesheets.createdAt))
+      .limit(1);
+    themeVersion = sheet?.id ?? null;
+  } catch {
+    themeVersion = null;
+  }
+  const brandWithVersion = brand ? { ...brand, themeVersion } : null;
+
   const [latestSnapshot] = await db
     .select()
     .from(companySnapshots)
@@ -90,7 +114,7 @@ export async function retrieveCompanyContext(
   if (!latestSnapshot) {
     return {
       company,
-      brand: brand || null,
+      brand: brandWithVersion,
       facts: [],
       chunks: [],
       evidence: [],
@@ -237,7 +261,7 @@ export async function retrieveCompanyContext(
 
   const result: RetrievedContext = {
     company,
-    brand: brand || null,
+    brand: brandWithVersion,
     facts: factRecords.map((f) => ({
       subject: f.subject,
       predicate: f.predicate,

@@ -46,6 +46,7 @@ export function useCompanyChat() {
   const [selectedEvidence, setSelectedEvidence] = useState<EvidenceItem | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const appliedBrandVersionRef = useRef<string | null>(null);
 
   const sendMessage = useCallback(
     async (
@@ -127,6 +128,14 @@ export function useCompanyChat() {
             onBrand: (data) => {
               setActiveBrand(data);
               try {
+                // Skip when the theme version hasn't moved (every chat turn
+                // re-yields brand; re-apply only on real theme changes).
+                const version =
+                  (data as any)?.themeVersion !== undefined
+                    ? String((data as any).themeVersion)
+                    : `tokens:${JSON.stringify((data as any)?.tokens ?? null)}`;
+                if (appliedBrandVersionRef.current === version) return;
+                appliedBrandVersionRef.current = version;
                 applyWidgetTheme(
                   document.documentElement,
                   mapBrandToWidgetTheme(data?.tokens, (data as any)?.logoUrl)

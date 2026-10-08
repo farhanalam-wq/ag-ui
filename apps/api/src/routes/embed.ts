@@ -4,6 +4,7 @@ import {
   companies,
   companySnapshots,
   brands,
+  brandStylesheets,
   documents,
   chunks,
   facts,
@@ -23,7 +24,7 @@ import {
   inArray,
   count,
 } from "@ag-ui/database";
-import { generateWidgetKey, hashWidgetKey, logger, buildAnswerSystemPrompt, streamChatCompletionGenerator } from "@ag-ui/shared";
+import { generateWidgetKey, hashWidgetKey, logger, buildAnswerSystemPrompt, streamChatCompletionGenerator, mapBrandToWidgetTheme } from "@ag-ui/shared";
 
 function getClientIp(request: Request): string {
   const forwarded = request.headers.get("x-forwarded-for");
@@ -183,6 +184,27 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
         .where(eq(brands.companyId, company.id))
         .limit(1);
 
+      // Server-sanitized theme + version. Clients apply `theme` directly and
+      // skip re-apply when `themeVersion` is unchanged.
+      let themeVersion: string | null = null;
+      try {
+        const [sheet] = await db
+          .select({ id: brandStylesheets.id })
+          .from(brandStylesheets)
+          .where(
+            and(
+              eq(brandStylesheets.companyId, company.id),
+              eq(brandStylesheets.status, "READY")
+            )
+          )
+          .orderBy(desc(brandStylesheets.createdAt))
+          .limit(1);
+        themeVersion = sheet?.id ?? null;
+      } catch {
+        themeVersion = null;
+      }
+      const theme = mapBrandToWidgetTheme(brand?.tokens, brand?.logoUrl);
+
       let docCount = 0;
       let chunkCount = 0;
       let factCount = 0;
@@ -233,6 +255,8 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
         version: snapshot?.version ?? 0,
         counts: { docs: docCount || snapshot?.pageCount || 0, chunks: chunkCount, facts: factCount },
         brand: brand ? { logoUrl: brand.logoUrl, tokens: brand.tokens } : null,
+        theme,
+        themeVersion,
       };
     },
     {

@@ -69,14 +69,28 @@ export default function EmbedChatPage() {
     config?.brand?.tokens?.colors?.primary || colorOverride || "#2563eb";
   const displayName = titleOverride || config?.name || "Assistant";
 
-  // Full per-company theme (sanitized). colorOverride wins for primary only.
+  // Full per-company theme (sanitized). Server `theme` wins when present;
+  // otherwise map locally. colorOverride wins for primary only.
+  const appliedThemeVersion = React.useRef<string | null>(null);
   const theme: WidgetTheme = React.useMemo(() => {
-    const t = mapBrandToWidgetTheme(config?.brand?.tokens, config?.brand?.logoUrl);
+    const server = config?.theme;
+    const base: WidgetTheme =
+      server && typeof server.primary === "string"
+        ? {
+            primary: server.primary,
+            secondary: server.secondary,
+            radius: server.radius,
+            surface: server.surface,
+            text: server.text,
+            logoUrl: server.logoUrl,
+            fullSurface: server.fullSurface,
+          }
+        : mapBrandToWidgetTheme(config?.brand?.tokens, config?.brand?.logoUrl);
     if (colorOverride && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(colorOverride.trim())) {
-      return { ...t, primary: colorOverride.trim().toLowerCase() };
+      return { ...base, primary: colorOverride.trim().toLowerCase() };
     }
-    return t;
-  }, [config?.brand, colorOverride]);
+    return base;
+  }, [config?.brand, config?.theme, colorOverride]);
 
   const loadConfig = useCallback(async () => {
     if (!widgetKey) {
@@ -97,14 +111,21 @@ export default function EmbedChatPage() {
   }, [widgetKey, apiBase]);
 
   // Apply the full theme (document root for var consumers + local override).
-  // Runs whenever the resolved theme changes (config load, brand updates).
+  // Skips re-apply when neither vars nor themeVersion moved (config polls
+  // every 5s while indexing; setProperty churn is pointless there).
   useEffect(() => {
     try {
+      const fingerprint = JSON.stringify({
+        v: widgetThemeVars(theme),
+        tv: config?.themeVersion ?? null,
+      });
+      if (appliedThemeVersion.current === fingerprint) return;
+      appliedThemeVersion.current = fingerprint;
       applyWidgetTheme(document.documentElement, theme);
     } catch {
       // non-DOM environment — no-op
     }
-  }, [theme]);
+  }, [theme, config?.themeVersion]);
 
   useEffect(() => {
     let cancelled = false;

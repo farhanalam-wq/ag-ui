@@ -113,11 +113,71 @@
   frame.setAttribute("allow", "microphone; autoplay");
 
   var srcLoaded = false;
+  var orbThemeVersion = null;
+  var orbFetchedAt = 0;
+  var ORB_STALE_MS = 5 * 60 * 1000;
+
+  function applyOrbTheme(cfg) {
+    if (!cfg) return;
+    var tokens = (cfg.brand && cfg.brand.tokens) || {};
+    var colors = tokens.colors || {};
+    var primary = isHex(colors.primary) ? colors.primary : color;
+    var secondary = isHex(colors.secondary || colors.accent) ? (colors.secondary || colors.accent) : primary;
+    var radius = isRadius(tokens.radius) ? tokens.radius : null;
+    orb.style.background = primary;
+    if (radius) orb.style.borderRadius = radius;
+    orb.onmouseenter = function () {
+      orb.style.background = secondary;
+    };
+    orb.onmouseleave = function () {
+      orb.style.background = primary;
+    };
+    var logoUrl = cfg.brand && cfg.brand.logoUrl;
+    if (typeof logoUrl === "string" && /^https:\/\//.test(logoUrl)) {
+      var img = document.createElement("img");
+      img.src = logoUrl;
+      img.alt = "";
+      img.style.cssText = "width:60%;height:60%;object-fit:contain;";
+      img.onerror = function () {
+        img.remove();
+      };
+      orb.textContent = "";
+      orb.appendChild(img);
+      orb.style.display = "inline-flex";
+      orb.style.alignItems = "center";
+      orb.style.justifyContent = "center";
+    }
+  }
+
+  function fetchConfig() {
+    if (!widgetKey) return Promise.resolve(null);
+    return fetch(apiBase + "/api/embed/" + encodeURIComponent(widgetKey) + "/config")
+      .then(function (res) {
+        if (!res.ok) return null;
+        return res.json();
+      })
+      .then(function (cfg) {
+        if (cfg) {
+          orbFetchedAt = Date.now();
+          orbThemeVersion = cfg.themeVersion || null;
+        }
+        return cfg;
+      })
+      .catch(function () {
+        return null;
+      });
+  }
+
   orb.addEventListener("click", function () {
     if (orb.disabled) return;
     if (frame.hidden && !srcLoaded) {
       frame.src = iframeSrc();
       srcLoaded = true;
+    }
+    // Re-theme on open when the cached config is stale (>5 min): picks up
+    // re-crawls without a page reload. Best-effort, never blocks the panel.
+    if (widgetKey && Date.now() - orbFetchedAt > ORB_STALE_MS) {
+      fetchConfig().then(applyOrbTheme);
     }
     frame.hidden = !frame.hidden;
   });
@@ -146,34 +206,9 @@
     })
     .then(function (cfg) {
       if (!cfg) return;
-      var tokens = (cfg.brand && cfg.brand.tokens) || {};
-      var colors = tokens.colors || {};
-      var primary = isHex(colors.primary) ? colors.primary : color;
-      var secondary = isHex(colors.secondary || colors.accent) ? (colors.secondary || colors.accent) : primary;
-      var radius = isRadius(tokens.radius) ? tokens.radius : null;
-      orb.style.background = primary;
-      if (radius) orb.style.borderRadius = radius;
-      orb.addEventListener("mouseenter", function () {
-        orb.style.background = secondary;
-      });
-      orb.addEventListener("mouseleave", function () {
-        orb.style.background = primary;
-      });
-      var logoUrl = cfg.brand && cfg.brand.logoUrl;
-      if (typeof logoUrl === "string" && /^https:\/\//.test(logoUrl)) {
-        var img = document.createElement("img");
-        img.src = logoUrl;
-        img.alt = "";
-        img.style.cssText = "width:60%;height:60%;object-fit:contain;";
-        img.onerror = function () {
-          img.remove();
-        };
-        orb.textContent = "";
-        orb.appendChild(img);
-        orb.style.display = "inline-flex";
-        orb.style.alignItems = "center";
-        orb.style.justifyContent = "center";
-      }
+      orbFetchedAt = Date.now();
+      orbThemeVersion = cfg.themeVersion || null;
+      applyOrbTheme(cfg);
       if (!dataset.title && cfg.name) setTooltip("Chat with " + cfg.name);
       else if (cfg.name) setTooltip(title + " — " + cfg.name);
       if (!cfg.ready) setTooltip("Indexing " + (cfg.domain || "knowledge") + "…");

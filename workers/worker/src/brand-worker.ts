@@ -1,6 +1,6 @@
 import { Worker } from "bullmq";
 import { QUEUE_NAMES, redisConnection, type BrandJobData } from "@ag-ui/queues";
-import { db, brands, brandStylesheets, eq, desc } from "@ag-ui/database";
+import { db, brands, brandStylesheets, eq, desc, invalidateCompanyContextCache } from "@ag-ui/database";
 import { validateSafeUrl } from "@ag-ui/crawler";
 import { runDembrandt, mapDembrandtToTokens, buildDtcg, buildDesignMd } from "@ag-ui/brand";
 import { logger } from "@ag-ui/shared";
@@ -79,6 +79,10 @@ export const brandWorker = new Worker<BrandJobData>(
         .update(brandStylesheets)
         .set({ status: "READY", updatedAt: new Date() })
         .where(eq(brandStylesheets.id, stylesheetId));
+
+      // Bust the 5-min retrieval cache so the next chat SSE carries the new
+      // themeVersion and widgets re-theme without waiting for TTL expiry.
+      await invalidateCompanyContextCache(companyId).catch(() => {});
 
       logger.info(`[BRAND WORKER] Brand extraction READY for company ${companyId} (stylesheet ${stylesheetId})`);
       return { status: "READY", stylesheetId };
