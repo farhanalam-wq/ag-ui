@@ -57,6 +57,16 @@
     if (orb) orb.setAttribute("title", text);
   }
 
+  // Sanitizers mirror packages/shared widget-theme guards (vanilla copy:
+  // this file ships standalone with zero dependencies).
+  function isHex(v) {
+    return typeof v === "string" && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v.trim());
+  }
+
+  function isRadius(v) {
+    return typeof v === "string" && /^(0|(?:\d+(?:\.\d+)?)(?:px|rem|%))$/.test(v.trim());
+  }
+
   function iframeSrc() {
     var q =
       "api=" + encodeURIComponent(apiBase) +
@@ -136,10 +146,34 @@
     })
     .then(function (cfg) {
       if (!cfg) return;
-      var primary =
-        (cfg.brand && cfg.brand.tokens && cfg.brand.tokens.colors && cfg.brand.tokens.colors.primary) ||
-        color;
+      var tokens = (cfg.brand && cfg.brand.tokens) || {};
+      var colors = tokens.colors || {};
+      var primary = isHex(colors.primary) ? colors.primary : color;
+      var secondary = isHex(colors.secondary || colors.accent) ? (colors.secondary || colors.accent) : primary;
+      var radius = isRadius(tokens.radius) ? tokens.radius : null;
       orb.style.background = primary;
+      if (radius) orb.style.borderRadius = radius;
+      orb.addEventListener("mouseenter", function () {
+        orb.style.background = secondary;
+      });
+      orb.addEventListener("mouseleave", function () {
+        orb.style.background = primary;
+      });
+      var logoUrl = cfg.brand && cfg.brand.logoUrl;
+      if (typeof logoUrl === "string" && /^https:\/\//.test(logoUrl)) {
+        var img = document.createElement("img");
+        img.src = logoUrl;
+        img.alt = "";
+        img.style.cssText = "width:60%;height:60%;object-fit:contain;";
+        img.onerror = function () {
+          img.remove();
+        };
+        orb.textContent = "";
+        orb.appendChild(img);
+        orb.style.display = "inline-flex";
+        orb.style.alignItems = "center";
+        orb.style.justifyContent = "center";
+      }
       if (!dataset.title && cfg.name) setTooltip("Chat with " + cfg.name);
       else if (cfg.name) setTooltip(title + " — " + cfg.name);
       if (!cfg.ready) setTooltip("Indexing " + (cfg.domain || "knowledge") + "…");

@@ -28,6 +28,8 @@
     --brand-primary: #2563eb;
     --brand-secondary: #3b82f6;
     --brand-radius: 0.5rem;
+    --brand-surface: #09090b;
+    --brand-text: #fafafa;
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -62,6 +64,8 @@
 
     --brand-primary: #3b82f6;
     --brand-secondary: #60a5fa;
+    --brand-surface: #09090b;
+    --brand-text: #fafafa;
 
     --sidebar-background: 240 10% 3.9%;
     --sidebar-foreground: 240 4.8% 95.9%;

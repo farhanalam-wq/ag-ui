@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef } from "react";
 
 import { apiClient } from "@/lib/api-client";
+import { applyWidgetTheme, mapBrandToWidgetTheme } from "@ag-ui/shared";
 import { coalesceVoiceLines } from "@/lib/voice-transcript";
 import type { VoiceLine } from "@/components/voice/voice-session";
 
@@ -125,11 +126,13 @@ export function useCompanyChat() {
             },
             onBrand: (data) => {
               setActiveBrand(data);
-              if (data.tokens?.colors?.primary) {
-                document.documentElement.style.setProperty(
-                  "--brand-primary",
-                  data.tokens.colors.primary
+              try {
+                applyWidgetTheme(
+                  document.documentElement,
+                  mapBrandToWidgetTheme(data?.tokens, (data as any)?.logoUrl)
                 );
+              } catch {
+                // non-DOM environment — no-op
               }
             },
             onEvidence: (evidenceList) => {

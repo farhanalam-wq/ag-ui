@@ -46,7 +46,9 @@ const config: Config = {
   			ring: 'hsl(var(--ring))',
   			brand: {
   				primary: 'var(--brand-primary, #2563eb)',
-  				secondary: 'var(--brand-secondary, #3b82f6)'
+  				secondary: 'var(--brand-secondary, #3b82f6)',
+  				surface: 'var(--brand-surface, #09090b)',
+  				text: 'var(--brand-text, #fafafa)'
   			},
   			sidebar: {
   				DEFAULT: 'hsl(var(--sidebar-background))',

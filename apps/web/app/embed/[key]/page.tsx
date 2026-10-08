@@ -15,6 +15,12 @@ import { Buildings, CircleNotch, WarningCircle } from "@phosphor-icons/react";
 import { useCompanyChat } from "@/hooks/use-company-chat";
 import { ChatMessageItem } from "@/components/chat-message";
 import { apiClient, type EmbedConfig } from "@/lib/api-client";
+import {
+  applyWidgetTheme,
+  mapBrandToWidgetTheme,
+  widgetThemeVars,
+  type WidgetTheme,
+} from "@ag-ui/shared";
 import { VoiceSession } from "@/components/voice/voice-session";
 import {
   VoiceAmplitudeBars,
@@ -63,6 +69,15 @@ export default function EmbedChatPage() {
     config?.brand?.tokens?.colors?.primary || colorOverride || "#2563eb";
   const displayName = titleOverride || config?.name || "Assistant";
 
+  // Full per-company theme (sanitized). colorOverride wins for primary only.
+  const theme: WidgetTheme = React.useMemo(() => {
+    const t = mapBrandToWidgetTheme(config?.brand?.tokens, config?.brand?.logoUrl);
+    if (colorOverride && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(colorOverride.trim())) {
+      return { ...t, primary: colorOverride.trim().toLowerCase() };
+    }
+    return t;
+  }, [config?.brand, colorOverride]);
+
   const loadConfig = useCallback(async () => {
     if (!widgetKey) {
       setPhase("error");
@@ -72,10 +87,6 @@ export default function EmbedChatPage() {
     try {
       const cfg = await apiClient.embed.getConfig(widgetKey, apiBase);
       setConfig(cfg);
-      document.documentElement.style.setProperty(
-        "--brand-primary",
-        cfg.brand?.tokens?.colors?.primary || colorOverride || "#2563eb"
-      );
       setPhase(cfg.ready ? "chat" : "indexing");
       return cfg;
     } catch (err: any) {
@@ -83,7 +94,17 @@ export default function EmbedChatPage() {
       setError(err.message || "Failed to load assistant");
       return null;
     }
-  }, [widgetKey, apiBase, colorOverride]);
+  }, [widgetKey, apiBase]);
+
+  // Apply the full theme (document root for var consumers + local override).
+  // Runs whenever the resolved theme changes (config load, brand updates).
+  useEffect(() => {
+    try {
+      applyWidgetTheme(document.documentElement, theme);
+    } catch {
+      // non-DOM environment — no-op
+    }
+  }, [theme]);
 
   useEffect(() => {
     let cancelled = false;
@@ -130,16 +151,40 @@ export default function EmbedChatPage() {
   return (
     <div
       className="flex flex-col h-[100dvh] w-full bg-background text-foreground antialiased"
-      style={{ "--brand-primary": brandColor } as React.CSSProperties}
+      style={{ ...widgetThemeVars(theme), "--brand-primary": brandColor } as React.CSSProperties}
     >
       {/* Header */}
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-zinc-800 bg-zinc-950/90 px-3">
-        <div
-          className="flex items-center justify-center w-7 h-7 rounded-lg font-bold text-[11px] shrink-0 border border-zinc-800"
-          style={{ backgroundColor: `${brandColor}20`, color: brandColor }}
-        >
-          {displayName.slice(0, 2).toUpperCase()}
-        </div>
+      <header
+        className="flex h-12 shrink-0 items-center gap-2 border-b border-zinc-800 bg-zinc-950/90 px-3"
+        style={
+          theme.fullSurface
+            ? { backgroundColor: theme.surface, borderColor: theme.secondary, color: theme.text }
+            : undefined
+        }
+      >
+        {theme.logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={theme.logoUrl}
+            alt={`${displayName} logo`}
+            className="w-7 h-7 rounded-lg object-contain shrink-0 border border-zinc-800 bg-white"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = "none";
+            }}
+          />
+        ) : (
+          <div
+            className="flex items-center justify-center w-7 h-7 rounded-lg font-bold text-[11px] shrink-0 border"
+            style={{
+              backgroundColor: `${brandColor}20`,
+              color: brandColor,
+              borderColor: theme.secondary,
+              borderRadius: "var(--brand-radius)",
+            }}
+          >
+            {displayName.slice(0, 2).toUpperCase()}
+          </div>
+        )}
         <div className="min-w-0 flex-1">
           <div className="text-xs font-semibold text-zinc-100 truncate">{displayName}</div>
           <div className="text-[10px] font-mono text-zinc-500 truncate">
@@ -223,7 +268,8 @@ export default function EmbedChatPage() {
                       setInput(q);
                       handleSubmit(q);
                     }}
-                    className="block w-full text-left text-xs rounded-lg border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800 px-3 py-2 text-zinc-300 transition-colors"
+                    className="block w-full text-left text-xs rounded-lg border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800 px-3 py-2 text-zinc-300 transition-colors hover:border-[var(--brand-secondary)]"
+                    style={{ borderRadius: "var(--brand-radius)" }}
                   >
                     {q}
                   </button>
@@ -256,7 +302,7 @@ export default function EmbedChatPage() {
               onValueChange={setInput}
               onSubmit={handleSubmit}
               isSubmitting={isStreaming}
-              className="w-full border-zinc-800 bg-zinc-900/90"
+              className="w-full border-zinc-800 bg-zinc-900/90 focus-within:border-[var(--brand-primary)]"
             >
               <PromptInputBody>
                 <PromptInputTextarea
