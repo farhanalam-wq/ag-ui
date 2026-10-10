@@ -1,7 +1,7 @@
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import type { CliOptions, DiscoveredPage } from "./types";
-import { validateSafeUrl, inferCategory } from "@ag-ui/crawler";
+import { validateSafeUrl, inferCategory, calculatePriority } from "@ag-ui/crawler";
 import { discoverPages, printDiscovery } from "./discover";
 import { applyMaxPages, parseSelection } from "./select";
 import { crawlPages } from "./crawl";
@@ -98,7 +98,7 @@ export async function runIngestPipeline(
     pages = opts.selectedUrls.map((u) => ({
       url: u,
       category: inferCategory(u, ""),
-      priority: 5,
+      priority: calculatePriority(u),
       source: "sitemap" as const,
       depth: 1,
     }));
