@@ -13,6 +13,12 @@
       "skillPath": "skills/algorithmic-color-palette/SKILL.md",
       "computedHash": "5f04b32e39e5461f1b67f6599ed0047dd6870e761243b4e83be60e766f38ed4e"
     },
+    "animation-vocabulary": {
+      "source": "emilkowalski/skills",
+      "sourceType": "github",
+      "skillPath": "skills/animation-vocabulary/SKILL.md",
+      "computedHash": "0058036865ecbb864fd0c4132efcc62425355d6e99c7e6ef6a936742d62a5dea"
+    },
     "api-design": {
       "source": "proyecto26/system-design-skills",
       "sourceType": "github",
@@ -54,6 +60,12 @@
       "sourceType": "github",
       "skillPath": "skills/brand-visual-language/SKILL.md",
       "computedHash": "bd5b9a139aa00d98fef9832d462144a3f84e4b0c7e03b38a79411835bef3b963"
+    },
+    "break-ui": {
+      "source": "emilkowalski/skills",
+      "sourceType": "github",
+      "skillPath": "skills/break-ui/SKILL.md",
+      "computedHash": "60ada67662925f4df5e3c6ff41cac3ab241b66f8898100a5ffcd7ba7196cb868"
     },
     "button-states": {
       "source": "dembrandt/dembrandt-skills",
@@ -157,11 +169,23 @@
       "skillPath": "skills/elevation-and-depth/SKILL.md",
       "computedHash": "46f0e1ee492378b084e1381f7c86d76b990383e96afebb9bd180aee0b9407e41"
     },
+    "emil-design-eng": {
+      "source": "emilkowalski/skills",
+      "sourceType": "github",
+      "skillPath": "skills/emil-design-eng/SKILL.md",
+      "computedHash": "51f2537e04d15911b41d78e2de24c36a0e26d41beae15e82a954fe5496a5eda9"
+    },
     "extract-design": {
       "source": "dembrandt/dembrandt-skills",
       "sourceType": "github",
       "skillPath": "skills/extract-design/SKILL.md",
       "computedHash": "33783349605ad0d110a2353e9a821c476ffca56fad5acfd9236f09e0b469d01d"
+    },
+    "find-animation-opportunities": {
+      "source": "emilkowalski/skills",
+      "sourceType": "github",
+      "skillPath": "skills/find-animation-opportunities/SKILL.md",
+      "computedHash": "465d087c41768e4f14ed640dd049036009f613feb55baaa5831b68b33178f9d2"
     },
     "form-design": {
       "source": "dembrandt/dembrandt-skills",
@@ -199,6 +223,12 @@
       "sourceType": "github",
       "skillPath": ".agents/skills/impeccable/SKILL.md",
       "computedHash": "932f49c617041a9c82cae40126bcaa1d69fdb66187abfc7283b4fb3e763da1dd"
+    },
+    "improve-animations": {
+      "source": "emilkowalski/skills",
+      "sourceType": "github",
+      "skillPath": "skills/improve-animations/SKILL.md",
+      "computedHash": "524ea241e41d58bbdd8e288700fe24f5725e2a2f3ae7186ad7cebf9055058356"
     },
     "information-architecture": {
       "source": "dembrandt/dembrandt-skills",
@@ -248,6 +278,12 @@
       "skillPath": "skills/migrate-radix-to-base/SKILL.md",
       "computedHash": "e1f2030ee5059be3dff0812ca0e4b995ee9fa3132176f049ebe6c90346a6755e"
     },
+    "mobile-native": {
+      "source": "emilkowalski/skills",
+      "sourceType": "github",
+      "skillPath": "skills/mobile-native/SKILL.md",
+      "computedHash": "f221cea36642168df6d3d6d7f236237cbf1ae669138ff7df07775674223d49ad"
+    },
     "modal-and-overlay-patterns": {
       "source": "dembrandt/dembrandt-skills",
       "sourceType": "github",
@@ -296,6 +332,12 @@
       "skillPath": "skills/performance-and-web-vitals/SKILL.md",
       "computedHash": "cc5f81d877849aa2248d1a2da97816ecd8cb24fc256add87d2b9d18995757b0d"
     },
+    "prototype": {
+      "source": "emilkowalski/skills",
+      "sourceType": "github",
+      "skillPath": "skills/prototype/SKILL.md",
+      "computedHash": "77be567d8c946608fdd15e61b62ab383cdf289a194dce2479828b7eda860d3ba"
+    },
     "real-world-metaphors": {
       "source": "dembrandt/dembrandt-skills",
       "sourceType": "github",
@@ -325,6 +367,12 @@
       "sourceType": "github",
       "skillPath": "skills/responsive-paradigms/SKILL.md",
       "computedHash": "c9e184711ff9340d3630eecf0a7b8f50c07214f3f6b27393877f45f161ab991a"
+    },
+    "review-animations": {
+      "source": "emilkowalski/skills",
+      "sourceType": "github",
+      "skillPath": "skills/review-animations/SKILL.md",
+      "computedHash": "b4e5f0f4fe3e2743c85bf7354108f48a0b9d502cb20ef5c4a9c195da91f93736"
     },
     "scaling-evolution": {
       "source": "proyecto26/system-design-skills",
