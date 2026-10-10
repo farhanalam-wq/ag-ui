@@ -2,12 +2,12 @@
 > Single Source of Truth for Visuals, UI & UX.
 > For humans and AI agents. If it conflicts with ad-hoc code, this file wins.
 
-**Design Read:** Internal B2B intelligence console for technical founders, marketers, and ops, with a Linear-clean minimalist language, leaning toward shadcn/ui + Tailwind + Geist + restrained motion + insight-first data-viz.
+**Design Read:** Internal B2B intelligence console for technical founders, marketers, and ops, with a Linear-clean minimalist language, leaning toward shadcn/ui + Tailwind + Hanken Grotesk + restrained motion + insight-first data-viz.
 
 **Dials:** `DESIGN_VARIANCE 5 / MOTION_INTENSITY 3 / VISUAL_DENSITY 7`
 - Variance 5: offset, not artsy. Left-aligned headers, asymmetric 2:1 splits for viz, never centered marketing heroes inside the app.
 - Motion 3: static + micro-feedback only. No scroll-hijack, no marquees, no perpetual loops.
-- Density 7: cockpit. Tight 8/12/16 rhythm, 1px dividers over cards, mono for all numbers.
+- Density 7: cockpit. Tight 8/12/16 rhythm, 1px dividers over cards, Hanken `tnum` for all UI numerals (mono reserved for code/URL/hash/diff only).
 
 ---
 
@@ -30,7 +30,7 @@ Anti-goal: run-of-the-mill AI slop — purple glows, centered heroes, 3-equal-ca
 - Components: shadcn/ui is PRIMARY (Zinc, CSS variables) + Radix primitives in `apps/web/components/ui/`. ai-elements is PRIMARY for AI surfaces in `@/components/ai-elements/`. Rule: if shadcn or ai-elements has it, use it — never hand-roll. You own the code (copy-paste distribution) — never ship default state unstyled. Run `bunx --bun shadcn@latest` / `bunx --bun ai-elements@latest` per packageManager `bun@1.4.2`; check `components.json` aliases (`@/components`, `@/lib/utils`) and `apps/web/package.json` before import.
 - State: Zustand (`apps/web/stores/`), `useState` for local only. Never `useState` for pointer/scroll physics — use `useMotionValue` if needed (rare here).
 - Icons: `@phosphor-icons/react` ONLY for new code. `lucide-react@1.45 + @thesvg/icons` in `apps/web/package.json` are legacy — do not import in new files; replace on touch with Phosphor equivalent (`Search → MagnifyingGlass`, etc). Keep one weight per hierarchy (`regular 1.5` UI, `bold 2.0` active nav only), sizes `16/20/24`, `aria-hidden` decorative / `aria-label+Tooltip` standalone, target ≥44px.
-- Fonts: `geist` package is MANDATORY (Linear/Vercel maturity = Geist, not system stack). Install: `bun add geist --filter @ag-ui/web`, then in `apps/web/app/layout.tsx`: `import { GeistSans } from 'geist/font/sans'; import { GeistMono } from 'geist/font/mono'` and apply `className={GeistSans.variable + ' ' + GeistMono.variable}` on `<html>`, map `font-sans`/`font-mono` in `tailwind.config.ts` to `var(--font-geist-sans)` / `var(--font-geist-mono)`, `font-display: swap`. Fallbacks `Inter Tight + JetBrains Mono` apply only before install lands. Current `body { font-family: -apple-system... }` system stack in `globals.css:84` is non-compliant — replace on token pass. Never `<link>` Google Fonts. Body `font-sans`, all numbers/dates/URLs/latencies `font-mono tabular-nums`. Dark-mode body copy steps up one weight where it reads thin (400→500 for `text-2`, per halation rule).
+- Fonts: `Hanken Grotesk` variable (OFL — corporate-commercial safe) is the single UI face; `JetBrains Mono` variable is scoped to code/URL/hash/diff ONLY. Install (blocking, not yet in `package.json`): `bun add @fontsource-variable/hanken-grotesk @fontsource-variable/jetbrains-mono --filter @ag-ui/web`, then in `apps/web/app/layout.tsx` wire `--font-sans` / `--font-code` variables, map `font-sans → Hanken Grotesk` and `font-mono → JetBrains Mono` in `tailwind.config.ts`, `font-display: swap`. Fallback stack `Inter Tight, system-ui` (sans) / `ui-monospace` (code) applies only before install lands. Current `body { font-family: -apple-system... }` system stack in `globals.css:84` is non-compliant — replace on token pass. Never `<link>` Google Fonts. Body + headlines + buttons + nav + ALL UI numerals (KPIs, counts, latencies, timestamps, table numerics) = `font-sans` with tabular figures (`tabular-nums` class / `font-feature-settings: "tnum" 1`). `font-mono` is banned outside code/URL/hash/ID/snippet/diff roles. Dark-mode body copy steps up one weight where it reads thin (400→500 for `text-2`, per halation rule). Banned: `Geist`/`Inter` as the shipped default (indistinguishable AI-slop zone), any serif in app, `SF Pro` (Apple-proprietary, not licensable).
 
 ### 2.1 Token hierarchy (mandatory)
 
@@ -141,9 +141,9 @@ No pure `#000000` / `#FFFFFF`. Off-black `zinc-950`, off-white `zinc-50`.
 Max 4 series per chart. Baseline/comparison always zinc dashed. Positive emerald, negative rose — never invert. Status hues keep one meaning everywhere: emerald = success/healthy, amber = warning/needs-attention only (never pending/progress/info), rose = error/destructive, blue = info/neutral. Four semantic colors max; anything else is zinc.
 
 Per-mode expression (same hue, different surround):
-- Gridlines: Light `zinc-200`, Dark `white/10`. Axis ticks mono 12px: Light `zinc-500` (4.8:1 pass), Dark `zinc-400` (7.8:1 pass — `zinc-500` on Dark is 4.1:1 = fail, banned).
+- Gridlines: Light `zinc-200`, Dark `white/10`. Axis ticks Hanken 12px `tnum`: Light `zinc-500` (4.8:1 pass), Dark `zinc-400` (7.8:1 pass — `zinc-500` on Dark is 4.1:1 = fail, banned).
 - Area fill: Light `accent/12 + stroke 2px`, Dark `accent/20 + stroke 2px` — Light needs less wash to stay crisp on white.
-- Tooltip: Light `bg-white border-zinc-200 shadow-md`, Dark `bg-zinc-900 border-white/10`. Mono numbers in both.
+- Tooltip: Light `bg-white border-zinc-200 shadow-md`, Dark `bg-zinc-900 border-white/10`. UI numerals in Hanken `tnum`; code/IDs inside tooltips in `font-mono`.
 - Donut center total: `text-1` in both. Legend `text-2` in both, never `text-3` for legend labels.
 
 ### 3.4 Light / Dark Parity Protocol (replaces dark-only thinking)
@@ -170,17 +170,19 @@ Per `ui-ux-pro-max` Light/Dark + `web-design-guidelines` + `ui-styling` theming:
 
 | Role | Font | Fallback | Usage |
 |---|---|---|---|
-| UI / Display | `Geist Sans` | `Inter Tight, system-ui` | headlines, body, buttons, nav |
-| Data / Mono | `Geist Mono` | `JetBrains Mono, ui-monospace` | KPI values, timestamps, event names, URLs, code, tables numerics |
+| UI / Display / Numerals | `Hanken Grotesk` variable | `Inter Tight, system-ui` | headlines, body, buttons, nav, KPIs, counts, latencies, timestamps, table numerics (with `tnum`) |
+| Code-only Mono | `JetBrains Mono` variable | `ui-monospace` | code blocks, URLs/hashes/IDs, embed snippets, diff views ONLY |
 
-One sans for headline + body. No serif in app (serif reserved for editorial/marketing only — dashboards with serif = fail). Banned defaults: `Inter` as sole default without tightening, `Fraunces` / `Instrument Serif`.
+Single sans everywhere (Linear/Vercel pattern — two sanses in one cockpit reads as slop). No serif in app (serif reserved for editorial/marketing only — dashboards with serif = fail). Banned defaults: `Geist` / `Inter` as shipped default, `Fraunces` / `Instrument Serif`.
 
-Load via `next/font`:
+Load self-hosted (no `<link>` Google Fonts):
 ```tsx
-import { GeistSans } from 'geist/font/sans';
-import { GeistMono } from 'geist/font/mono';
-// body: font-sans, numbers: font-mono tabular-nums
+import '@fontsource-variable/hanken-grotesk'; // + index.css wiring per package docs
+import '@fontsource-variable/jetbrains-mono';
+// body: font-sans; UI numerals: font-sans tabular-nums [font-feature-settings:"tnum" 1]
+// code/URL/hash/diff: font-mono
 ```
+License: both OFL — free for corporate commercial use, embed, modify. `SF Pro`/`SF Mono` explicitly banned (Apple-proprietary).
 
 ### 4.2 Scale (The Elements of Typographic Style, tight)
 
@@ -192,7 +194,8 @@ import { GeistMono } from 'geist/font/mono';
 | `body` | `14/20 normal` | 400 | default UI text |
 | `small` | `13/18 normal` | 400/500 | table cells, helper |
 | `caption` | `12/16 normal` | 400/500 | timestamps, axis ticks, badges. `text-text-3` |
-| `mono-num` | `tabular-nums font-mono` | 500/600 | all metrics, counts, latencies |
+| `mono-num` | `tabular-nums font-sans [font-feature-settings:"tnum" 1]` | 500/600 | all UI metrics, counts, latencies, timestamps |
+| `code-mono` | `font-mono` (JetBrains, 12–13px) | 400/500 | code/URL/hash/ID/snippet/diff ONLY — never labels, KPIs, or body |
 
 Rules:
 - Line length 45–75ch, body `max-w-[65ch]`. Body leading 1.5 at that measure (1.4 narrow → 1.6+ wide, never below 1.4); headings tighten to 1.1–1.25 as size grows. Scale ratio 1.25 desktop, compress from the top on mobile (body floor never moves).
@@ -323,7 +326,7 @@ Footer bar: Discard / Save + last-saved timestamp
 **C. Ledger (Visitors/*, Knowledge/sources+snapshots, Operations/*, Settings/api+team)**
 ```
 PageHeader + search/filter bar
-Dense table (sticky header, mono numbers, row → drawer)
+Dense table (sticky header, Hanken `tnum` numerals, row → drawer)
 Right Drawer (transcript / diff / log / dossier), never modal for reading
 ```
 **D. Lab (Playground, Knowledge/graph, Agents)**
@@ -384,10 +387,10 @@ Zero-data onboarding: empty chart area shows `Empty` (icon + "No data for range 
 ### 8.2 Every chart ships with (dual-mode)
 
 1. **Title + InsightCaption:** `Trend` + `Pricing Evaluation +32% WoW, driven by /pricing after widget open.` No caption = incomplete. Caption `text-2` Light + Dark, never `text-3` for insight.
-2. **Axes / Grid:** mono `12px text-3`, `tabular-nums`, human units (`1.2k`, `3m 12s`, `p95 820ms`). Grid Light `zinc-200`, Dark `white/10`. No raw ms dumps. Light axis on white must still hit 4.5:1 — use `zinc-500`, not `zinc-300`.
+2. **Axes / Grid:** `12px text-3 font-sans tabular-nums`, human units (`1.2k`, `3m 12s`, `p95 820ms`). Grid Light `zinc-200`, Dark `white/10`. No raw ms dumps. Light axis on white must still hit 4.5:1 — use `zinc-500`, not `zinc-300`.
 3. **Legend:** top-right, `text-2`, max 4 items. Direct-label lines when only 1–2 series.
 4. **States:** loading skeleton matching chart shape (Light `bg-zinc-200/70`, Dark `bg-white/10`, never spinner), empty with CTA, error inline with fix. Table fallback via `<details>` for SR + export.
-5. **Tooltips:** elevated card per §3.4 (Light white, Dark zinc-900), mono numbers, `%` + absolute, timestamp + source. No truncation. Tooltip text `text-1`/`text-2`, never low-contrast `text-3` for values.
+5. **Tooltips:** elevated card per §3.4 (Light white, Dark zinc-900), Hanken `tnum` numerals, `%` + absolute, timestamp + source. No truncation. Tooltip text `text-1`/`text-2`, never low-contrast `text-3` for values.
 
 ```tsx
 <Card>
@@ -402,7 +405,7 @@ Zero-data onboarding: empty chart area shows `Empty` (icon + "No data for range 
 
 ```
 [Label 12px text-2] [Info tooltip]
-[Value 28px mono semibold tabular-nums] [Delta pill: ▲12.4% emerald / ▼3.1% rose]
+[Value 28px font-sans semibold tabular-nums] [Delta pill: ▲12.4% emerald / ▼3.1% rose]
 [Sparkline 64x24, accent stroke, no axes]
 [Insight 12px text-3, 1 line]
 ```
@@ -411,7 +414,7 @@ Deltas always vs prior equivalent period, with tooltip `vs prior 7d`. Positive-g
 
 ### 8.4 Tables
 
-- Sticky header `bg-muted/50 backdrop-blur`, row `h-12 border-b border-subtle hover:bg-muted/40`, mono for numbers/URLs/latency, status via dot + label (not color alone).
+- Sticky header `bg-muted/50 backdrop-blur`, row `h-12 border-b border-subtle hover:bg-muted/40`, Hanken `tnum` for numerics, `font-mono` only for URLs/hashes/latency-code, status via dot + label (not color alone).
 - Right-aligned numerics, left-aligned text. Pagination + `Export CSV` for >25 rows.
 - Row click → Drawer, never full-page jump for reading.
 
@@ -467,7 +470,7 @@ Form a11y: `<label>`, `aria-describedby` helper, `aria-invalid` + error role, co
 
 ### 9.5 Interaction contracts (no guessing)
 
-- **Table:** shadcn `Table` + header `bg-muted/50 backdrop-blur sticky top-0 z-10`. Props: sortable headers (`aria-sort`), filter `Input` with `SearchIcon data-icon`, pagination (`Pagination + page-size Select`), row `hover:bg-muted/40 focus-visible:ring-2`, selected `bg-accent/8 + left border accent`. Numbers right-aligned mono, text left. >25 rows = pagination + Export CSV. Row → `Sheet` drawer, `Enter` opens, `Esc` closes, focus returns to row.
+- **Table:** shadcn `Table` + header `bg-muted/50 backdrop-blur sticky top-0 z-10`. Props: sortable headers (`aria-sort`), filter `Input` with `SearchIcon data-icon`, pagination (`Pagination + page-size Select`), row `hover:bg-muted/40 focus-visible:ring-2`, selected `bg-accent/8 + left border accent`. Numerics right-aligned Hanken `tnum`, text left. >25 rows = pagination + Export CSV. Row → `Sheet` drawer, `Enter` opens, `Esc` closes, focus returns to row.
 - **Drawer (`Sheet`):** `w-[480px] desktop / w-full mobile (max-w-full)`, `SheetTitle` always (sr-only ok), focus-trap + `Esc` + scrim click close, footer actions sticky bottom. Never modal for reading transcripts/diffs/logs.
 - **Header controls:** `DateRange = Popover + Calendar (or Select 7d/30d/90d MVP)` + `AgentSelect = Select + SelectGroup>SelectItem (All agents + list)` + one `Button primary`. Right-aligned `flex gap-2 flex-wrap`, truncates on mobile.
 - **Form error example:**
@@ -488,29 +491,29 @@ Form a11y: `<label>`, `aria-describedby` helper, `aria-invalid` + error role, co
 
 - **`/overview` (Telemetry):** 4 KPIs (active scripts, live sessions, voice min, assisted lift) + Demand Pulse top-5 intent chips + Health list (snapshot version, crawl status, ping). Insight captions mandatory.
 - **`/knowledge/ingest` (Studio):** URL input + depth slider 1–5 + exclusions + Live Extraction Visualizer (5-stage pipeline timeline) + Crawl History table. Visualizer = log timeline, not spinner.
-- **`/knowledge/sources` (Ledger):** Tabs (Pages / Sitemaps / Docs / Snippets / robots). Pages table: URL mono, status code badge, last-crawled, enable toggle.
-- **`/knowledge/snapshots` (Ledger):** Snapshot cards + 1-click Rollback (confirm) + Diff Inspector side-by-side green/red, mono.
+- **`/knowledge/sources` (Ledger):** Tabs (Pages / Sitemaps / Docs / Snippets / robots). Pages table: URL `font-mono`, status code badge, last-crawled (Hanken `tnum`), enable toggle.
+- **`/knowledge/snapshots` (Ledger):** Snapshot cards + 1-click Rollback (confirm) + Diff Inspector side-by-side green/red, `font-mono` diff.
 - **`/knowledge/graph` (Lab):** ECharts force graph, entity colors by type, orphan nodes amber ring + count. Click → inspector.
 - **`/agents` (Lab):** Agent cards + Partition Bindings drawer (snapshot, domains, voice). No table for <6 agents.
 - **`/experience/appearance` (Studio):** Scraped tokens swatches + geometry radio (bottom-right/left, drawer/sheet) + theme sync toggle + widget preview iframe.
 - **`/experience/personality` (Studio):** Tone presets (3 cards) + Directives markdown editor + Voice Studio (voice select, speed 0.8–1.25x slider, energy preset). Sentiment modulation as info callout.
 - **`/experience/behavior` (Studio):** Trigger rules list (dwell 30s/pricing, exit-intent) + greeting chips preview + grounding confidence slider with fallback explainer.
-- **`/playground` (Lab):** Chat left + Citation & Chunk Inspector right (source URL, score bar, latency mono) + Prompt Debugger collapsible (Base/Admin/Runtime layers).
-- **`/integration/embed` (Studio):** Script snippet code block + Copy + Framework tabs (Next/React/Webflow/Shopify/WP/GTM) + Ping indicator (emerald pulse + last handshake mono).
+- **`/playground` (Lab):** Chat left + Citation & Chunk Inspector right (source URL `font-mono`, score bar, latency Hanken `tnum`) + Prompt Debugger collapsible (Base/Admin/Runtime layers).
+- **`/integration/embed` (Studio):** Script snippet code block + Copy + Framework tabs (Next/React/Webflow/Shopify/WP/GTM) + Ping indicator (emerald dot + last handshake Hanken `tnum`).
 - **`/integration/domains` (Ledger):** Origin whitelist table + path include/exclude inputs with `[data-conversion]` hint.
 - **`/analytics/*` (Telemetry):** Shared header (date + agent). Website: visitors/sessions/dwell + landing/exit tables. Agent: open rate/depth/voice%/CTR + p50/p95 latency chart. Intent: distribution donut + trend + funnel. Conversions: total/baseline/assisted + top pages/intents. Assisted = blue, baseline = zinc dashed.
 - **`/intelligence/intent-radar` (Telemetry+ECharts):** Demand cluster bubbles (size=volume, color=intent), Blindspot Index table (query, intent, confidence, volume), Competitor mentions bar.
 - **`/intelligence/signals` (Studio):** Draft cards (FAQ + JSON-LD tabs) + Approve/Push (Webflow/WP/GitHub PR) + human-approval gate note. No auto-publish UI.
-- **`/visitors/conversations` (Ledger):** Session table + transcript drawer (timestamp mono, audio player, thumbs, metadata: country/device/referrer/chunks).
+- **`/visitors/conversations` (Ledger):** Session table + transcript drawer (timestamp Hanken `tnum`, audio player, thumbs, metadata: country/device/referrer/chunks).
 - **`/visitors/leads` (Ledger):** Dossier cards (contact, BANT tags, stack) + CRM handoff buttons (Slack/HubSpot/SF/webhook). Zero-form language, no fake precision.
-- **`/operations/activity+errors` (Ledger):** Audit table (actor, action, time mono) + Error log (level badge, retry, rate-limit hint).
+- **`/operations/activity+errors` (Ledger):** Audit table (actor, action, time Hanken `tnum`) + Error log (level badge, retry, rate-limit hint).
 - **`/settings/*` (Ledger/Studio):** API keys masked + webhook list (`lead.captured` etc) + Billing quotas (token/voice/events bars) + Team roles (Admin/Editor/Viewer).
 
 ---
 
 ## 11. Copy Voice
 
-Conversational, plain verbs, sentence case. Action = outcome (`Save changes`, `Publish` → `Published`). Name by user mental model (`Notifications`, not `webhook config`). Errors explain fix, never apologize vaguely. Empty = invitation. One register per page — no mono-spec + editorial + marketing mix.
+Conversational, plain verbs, sentence case. Action = outcome (`Save changes`, `Publish` → `Published`). Name by user mental model (`Notifications`, not `webhook config`). Errors explain fix, never apologize vaguely. Empty = invitation. One register per page — no spec-sheet + editorial + marketing mix.
 
 Self-audit before ship: re-read every string. Kill broken grammar, unclear referents, cute-but-wrong metaphors, fake-precise `92% / 4.1×` unless from real data or labeled mock.
 
@@ -532,7 +535,7 @@ Self-audit before ship: re-read every string. Kill broken grammar, unclear refer
    - [ ] Light checked: white cards separate from zinc-50 via border, dividers visible, placeholder/helper ≥4.5:1, tooltip legible on white
    - [ ] Dark checked: borders/inner highlight visible on zinc-950, text-2 ≥4.5:1, scrim isolates drawer
    - [ ] 375px + desktop, focus visible in both, reduced-motion collapses, `prefers-color-scheme` respected + ModeToggle persists
-   - [ ] Numbers mono tabular-nums, human units, funnel order consistent
+   - [ ] Numbers Hanken `tnum` (`font-sans tabular-nums`), `font-mono` code-only, human units, funnel order consistent
 
 **Banned (AI tells):** AI-purple glow, warm-cream `#F4F1EA` + terracotta `#D97757`, near-black `#0B0B0B` as black, all-caps eyebrow per section, `A · B · C` meta strings, `WORD — fragment` labels, `→` on every button, mono for small labels-as-decoration, gradient text headers, custom cursors, hand-rolled div-screenshots, text-only page claiming minimalism.
 
