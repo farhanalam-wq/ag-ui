@@ -7,3 +7,4 @@ export * from "./select";
 export * from "./crawl";
 export * from "./populate";
 export * from "./pipeline";
+export * from "./query";

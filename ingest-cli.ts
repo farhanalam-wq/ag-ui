@@ -36,6 +36,11 @@ loadDotEnv();
 
 
 import { runIngestPipeline, PipelineExitError, type CliOptions } from "./packages/ingest/src/index";
+import {
+  runQueryCommand,
+  runFactsCommand,
+  runStatsCommand,
+} from "./packages/ingest/src/index";
 
 function printHelp() {
   console.log(`
@@ -69,6 +74,12 @@ Options:
   --with-brand           Enqueue dembrandt appearance extraction on the brand queue after DB populate
   --help                 Show this help
 
+Commands (read-only, no writes):
+  query <domain> "question" [--limit 6] [--json]
+                         Run retrieval, print excerpts + scores + facts
+  facts <domain> [--json]  Print the latest snapshot fact table
+  stats <domain>           Print doc/chunk/fact counts + Qdrant points
+
 Interactive (no --limit/--all/--select):
   Shows ranked URL table, prompts for: all | N | ranges (e.g. 1-50,60,70-80)
 
@@ -79,7 +90,19 @@ Examples:
 `);
 }
 
-function parseArgs(argv: string[]): { url: string | null; opts: CliOptions } {
+interface CliCommand {
+  name: "query" | "facts" | "stats";
+  domain: string;
+  question: string;
+  limit: number;
+  json: boolean;
+}
+
+function parseArgs(argv: string[]): {
+  url: string | null;
+  opts: CliOptions;
+  command: CliCommand | null;
+} {
   const args = argv.slice(2);
   if (args.includes("--help") || args.includes("-h")) {
     printHelp();
@@ -96,6 +119,18 @@ function parseArgs(argv: string[]): { url: string | null; opts: CliOptions } {
   };
   const has = (name: string) => args.includes(name);
   const positional = args.find((a) => !a.startsWith("--")) ?? null;
+
+  const first = args[0] ?? null;
+  let command: CliCommand | null = null;
+  if (first === "query" || first === "facts" || first === "stats") {
+    command = {
+      name: first,
+      domain: args[1] ?? "",
+      question: first === "query" ? (args[2] ?? "") : "",
+      limit: Math.min(6, Math.max(1, parseInt(getVal("--limit") ?? "6", 10) || 6)),
+      json: has("--json"),
+    };
+  }
 
   const limitRaw = getVal("--limit");
   const fetchRaw = getVal("--fetch-concurrency");
@@ -114,6 +149,7 @@ function parseArgs(argv: string[]): { url: string | null; opts: CliOptions } {
 
   return {
     url: positional,
+    command,
     opts: {
       url: positional ?? "",
       discoverOnly: has("--discover-only"),
@@ -142,14 +178,36 @@ function parseArgs(argv: string[]): { url: string | null; opts: CliOptions } {
 // -------------------------------------------------------------- utils ---
 
 
+async function runCommand(command: CliCommand): Promise<void> {
+  if (!command.domain) {
+    console.error("[FATAL] missing domain. Usage: bun ingest-cli.ts query <domain> \"question\" | facts <domain> | stats <domain>");
+    process.exit(1);
+  }
+  if (command.name === "query") {
+    if (!command.question) {
+      console.error("[FATAL] missing question. Usage: bun ingest-cli.ts query <domain> \"question\" [--limit 6] [--json]");
+      process.exit(1);
+    }
+    await runQueryCommand(command.domain, command.question, { limit: command.limit, json: command.json });
+  } else if (command.name === "facts") {
+    await runFactsCommand(command.domain, { json: command.json });
+  } else {
+    await runStatsCommand(command.domain);
+  }
+}
+
 async function main() {
-  const { url, opts } = parseArgs(process.argv);
-  if (!url) {
+  const { url, opts, command } = parseArgs(process.argv);
+  if (!url && !command) {
     printHelp();
     process.exit(1);
   }
   try {
-    await runIngestPipeline(url, opts);
+    if (command) {
+      await runCommand(command);
+      process.exit(0);
+    }
+    await runIngestPipeline(url!, opts);
     process.exit(0);
   } catch (err: any) {
     console.error("[FATAL]", err?.message ?? err);

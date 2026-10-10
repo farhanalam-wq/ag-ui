@@ -170,6 +170,48 @@ export async function queryChunkPoints(
 }
 
 /**
+ * Counts points for a company (optionally scoped to a snapshot), excluding
+ * tombstoned rollback rows. Read-only; used by stats/observability.
+ */
+export async function countCompanyPoints(
+  companyId: string,
+  snapshotId?: string,
+  collection = QDRANT_COLLECTION
+): Promise<number> {
+  const url = `${getQdrantUrl()}/collections/${collection}/points/count`;
+  const mustFilters: any[] = [{ key: "company_id", match: { value: companyId } }];
+  if (snapshotId) {
+    mustFilters.push({ key: "snapshot_id", match: { value: snapshotId } });
+  }
+  const body = {
+    filter: {
+      must: mustFilters,
+      must_not: [{ key: "tombstoned", match: { value: true } }],
+    },
+    exact: true,
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(body),
+    });
+  } catch (err: any) {
+    throw new Error(`[QDRANT] Count network error: ${err.message}`);
+  }
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`[QDRANT] Count failed (HTTP ${res.status}): ${errText}`);
+  }
+
+  const data = (await res.json()) as any;
+  return typeof data?.result?.count === "number" ? data.result.count : 0;
+}
+
+/**
  * Soft tombstones (or restores) all points of the given documents via
  * payload update — no re-embedding on restore. Throws on terminal failure.
  */
