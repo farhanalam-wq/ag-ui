@@ -20,6 +20,7 @@
         "@ag-ui/crawler": "workspace:*",
         "@ag-ui/database": "workspace:*",
         "@ag-ui/extract": "workspace:*",
+        "@ag-ui/ingest": "workspace:*",
         "@ag-ui/queues": "workspace:*",
         "@ag-ui/shared": "workspace:*",
         "@elysiajs/cors": "^1.2.0",
@@ -164,6 +165,20 @@
         "react-dom": "^19.0.0",
       },
     },
+    "packages/ingest": {
+      "name": "@ag-ui/ingest",
+      "version": "0.0.1",
+      "dependencies": {
+        "@ag-ui/crawler": "workspace:*",
+        "@ag-ui/database": "workspace:*",
+        "@ag-ui/queues": "workspace:*",
+        "@ag-ui/shared": "workspace:*",
+        "playwright": "^1.50.1",
+      },
+      "devDependencies": {
+        "typescript": "^5.7.3",
+      },
+    },
     "packages/queues": {
       "name": "@ag-ui/queues",
       "version": "0.0.1",
@@ -230,6 +245,8 @@
     "@ag-ui/extract": ["@ag-ui/extract@workspace:packages/extract"],
 
     "@ag-ui/genui": ["@ag-ui/genui@workspace:packages/genui"],
+
+    "@ag-ui/ingest": ["@ag-ui/ingest@workspace:packages/ingest"],
 
     "@ag-ui/queues": ["@ag-ui/queues@workspace:packages/queues"],
 

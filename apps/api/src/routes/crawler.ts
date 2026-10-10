@@ -4,7 +4,7 @@ import { discoverPages } from "@ag-ui/crawler";
 import { logger } from "@ag-ui/shared";
 import { db, brands, companies, companySnapshots, crawlJobs, eq, desc } from "@ag-ui/database";
 import { brandQueue } from "@ag-ui/queues";
-import { runIngestPipeline, type PipelineProgressEvent } from "../../../../ingest-cli";
+import { runIngestPipeline, type PipelineProgressEvent } from "@ag-ui/ingest";
 
 class AsyncEventQueue<T> {
   private queue: T[] = [];
