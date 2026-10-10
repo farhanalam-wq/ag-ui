@@ -418,7 +418,7 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
 
           {/* Quick Examples */}
           <div className="space-y-2 text-center">
-            <div className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">
+            <div className="text-[11px] font-sans text-zinc-500 uppercase tracking-wider">
               Popular Examples
             </div>
             <div className="flex flex-wrap items-center justify-center gap-2">
@@ -508,7 +508,7 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Database className="size-4 text-brand-primary" />
-                <h3 className="text-xs font-semibold text-zinc-200 uppercase tracking-wider font-mono">
+                <h3 className="text-xs font-semibold text-zinc-200 uppercase tracking-wider font-sans">
                   Indexed Companies ({indexedCompanies.length})
                 </h3>
               </div>

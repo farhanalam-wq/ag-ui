@@ -133,7 +133,7 @@ export function PipelineTelemetry({
       {/* Pipeline Stage Bar */}
       <div className="p-4 rounded-xl border border-zinc-800/80 bg-zinc-950/60 backdrop-blur-sm">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-3">
-          <div className="text-xs font-mono font-medium text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+          <div className="text-xs font-sans font-medium text-zinc-400 uppercase tracking-wider flex items-center gap-2">
             <span>Pipeline Execution</span>
             <span className="text-zinc-600">•</span>
             <span className="text-brand-primary lowercase font-sans">
@@ -172,7 +172,7 @@ export function PipelineTelemetry({
                     : "border-zinc-800/60 bg-zinc-900/30 text-zinc-500"
                 }`}
               >
-                <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase">
+                <div className="flex items-center gap-1.5 font-sans text-[10px] uppercase">
                   <span>[{i + 1}]</span>
                   <span className="truncate">{s.label}</span>
                 </div>
@@ -193,7 +193,7 @@ export function PipelineTelemetry({
       {/* Real-time Telemetry Stat Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <div className="p-3.5 rounded-xl border border-zinc-800/80 bg-zinc-900/40">
-          <div className="text-[10px] font-mono text-zinc-500 uppercase">Fetched</div>
+          <div className="text-[10px] font-sans text-zinc-500 uppercase">Fetched</div>
           <div className="text-lg font-bold text-zinc-100 mt-0.5">
             {crawled}{" "}
             <span className="text-xs font-normal text-zinc-400">/ {total}</span>
@@ -207,19 +207,19 @@ export function PipelineTelemetry({
         </div>
 
         <div className="p-3.5 rounded-xl border border-zinc-800/80 bg-zinc-900/40">
-          <div className="text-[10px] font-mono text-zinc-500 uppercase">Docs Retained</div>
+          <div className="text-[10px] font-sans text-zinc-500 uppercase">Docs Retained</div>
           <div className="text-lg font-bold text-emerald-400 mt-0.5">{docs}</div>
           <div className="text-[10px] text-zinc-500 font-mono mt-1">clean markdown</div>
         </div>
 
         <div className="p-3.5 rounded-xl border border-zinc-800/80 bg-zinc-900/40" title="Pruned via SHA-256 content hashing & <50 word threshold">
-          <div className="text-[10px] font-mono text-amber-500/80 uppercase">Thin/Duplicate</div>
+          <div className="text-[10px] font-sans text-amber-500/80 uppercase">Thin/Duplicate</div>
           <div className="text-lg font-bold text-amber-400 mt-0.5">{skippedThin}</div>
           <div className="text-[10px] text-zinc-500 font-mono mt-1">filtered & pruned</div>
         </div>
 
         <div className="p-3.5 rounded-xl border border-zinc-800/80 bg-zinc-900/40">
-          <div className="text-[10px] font-mono text-zinc-500 uppercase">Dead Letters</div>
+          <div className="text-[10px] font-sans text-zinc-500 uppercase">Dead Letters</div>
           <div className={`text-lg font-bold mt-0.5 ${failed > 0 ? "text-red-400" : "text-zinc-400"}`}>
             {failed}
           </div>
@@ -227,13 +227,13 @@ export function PipelineTelemetry({
         </div>
 
         <div className="p-3.5 rounded-xl border border-zinc-800/80 bg-zinc-900/40">
-          <div className="text-[10px] font-mono text-zinc-500 uppercase">Qdrant Vectors</div>
+          <div className="text-[10px] font-sans text-zinc-500 uppercase">Qdrant Vectors</div>
           <div className="text-lg font-bold text-cyan-400 mt-0.5">{chunks}</div>
           <div className="text-[10px] text-zinc-500 font-mono mt-1">1536-dim points</div>
         </div>
 
         <div className="p-3.5 rounded-xl border border-zinc-800/80 bg-zinc-900/40">
-          <div className="text-[10px] font-mono text-zinc-500 uppercase">Vector Engine</div>
+          <div className="text-[10px] font-sans text-zinc-500 uppercase">Vector Engine</div>
           <div className="text-sm font-bold text-emerald-400 mt-1 flex items-center gap-1">
             <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
             Qdrant :6333

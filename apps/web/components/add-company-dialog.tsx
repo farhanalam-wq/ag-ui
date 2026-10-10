@@ -250,7 +250,7 @@ export function AddCompanyDialog({
                     <span className="text-zinc-400 font-medium">
                       Indexing Pipeline Active
                     </span>
-                    <span className="font-mono text-brand-primary uppercase text-[11px] font-semibold flex items-center gap-1.5">
+                    <span className="font-sans text-brand-primary uppercase text-[11px] font-semibold flex items-center gap-1.5">
                       <CircleNotch className="w-3.5 h-3.5 animate-spin" />
                       {statusStep}
                     </span>

@@ -92,27 +92,27 @@ export function DiscoveryTable({
       {/* Top Telemetry Banner */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-xl border border-zinc-800/80 bg-zinc-900/40 backdrop-blur-sm">
         <div>
-          <div className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Discovered</div>
+          <div className="text-[11px] font-sans text-zinc-500 uppercase tracking-wider">Discovered</div>
           <div className="text-xl font-bold text-zinc-100 mt-0.5">
             {pages.length.toLocaleString()}{" "}
             <span className="text-xs font-normal text-zinc-400">URLs</span>
           </div>
         </div>
         <div>
-          <div className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Discovery Time</div>
+          <div className="text-[11px] font-sans text-zinc-500 uppercase tracking-wider">Discovery Time</div>
           <div className="text-xl font-bold text-emerald-400 mt-0.5">
             {(info.durationMs / 1000).toFixed(2)}s
           </div>
         </div>
         <div>
-          <div className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Sitemaps Probed</div>
+          <div className="text-[11px] font-sans text-zinc-500 uppercase tracking-wider">Sitemaps Probed</div>
           <div className="text-xl font-bold text-zinc-100 mt-0.5">
             {info.sitemapsFollowed?.length || (info.robotsSitemaps ? 1 : 0)}{" "}
             <span className="text-xs font-normal text-zinc-400">sources</span>
           </div>
         </div>
         <div>
-          <div className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Selected to Crawl</div>
+          <div className="text-[11px] font-sans text-zinc-500 uppercase tracking-wider">Selected to Crawl</div>
           <div className="text-xl font-bold text-brand-primary mt-0.5">
             {selectedUrls.size}{" "}
             <span className="text-xs font-normal text-zinc-400">pages (~{estTimeSec}s)</span>
@@ -227,7 +227,7 @@ export function DiscoveryTable({
       <div className="rounded-xl border border-zinc-800 overflow-hidden bg-zinc-950/40">
         <div className="max-h-[380px] overflow-y-auto">
           <table className="w-full text-left text-xs">
-            <thead className="sticky top-0 z-10 bg-zinc-900/90 backdrop-blur-md border-b border-zinc-800 text-[11px] font-mono text-zinc-400 uppercase tracking-wider">
+            <thead className="sticky top-0 z-10 bg-zinc-900/90 backdrop-blur-md border-b border-zinc-800 text-[11px] font-sans text-zinc-400 uppercase tracking-wider">
               <tr>
                 <th className="py-2.5 px-3 w-10 text-center">
                   <button

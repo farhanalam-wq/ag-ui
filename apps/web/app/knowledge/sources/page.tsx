@@ -269,7 +269,7 @@ export default function SourcesPage() {
                   className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/40"
                 >
                   <p className="text-lg font-bold font-mono text-zinc-900 dark:text-zinc-100">{stat.value}</p>
-                  <p className="text-[11px] font-mono uppercase tracking-wider text-zinc-500">{stat.label}</p>
+                  <p className="text-[11px] font-sans uppercase tracking-wider text-zinc-500">{stat.label}</p>
                 </div>
               ))}
             </div>
@@ -288,7 +288,7 @@ export default function SourcesPage() {
             ) : (
               <>
                 <section className="space-y-2.5">
-                  <h2 className="text-xs font-mono uppercase tracking-wider text-zinc-500">
+                  <h2 className="text-xs font-sans uppercase tracking-wider text-zinc-500">
                     Website · {crawled.length}
                   </h2>
                   {crawled.length === 0 ? (
@@ -299,7 +299,7 @@ export default function SourcesPage() {
                 </section>
 
                 <section className="space-y-2.5">
-                  <h2 className="text-xs font-mono uppercase tracking-wider text-zinc-500">
+                  <h2 className="text-xs font-sans uppercase tracking-wider text-zinc-500">
                     Uploads · {uploaded.length}
                   </h2>
                   {uploaded.length === 0 ? (
@@ -313,7 +313,7 @@ export default function SourcesPage() {
 
                 {batches.length > 0 && (
                   <section className="space-y-2.5">
-                    <h2 className="text-xs font-mono uppercase tracking-wider text-zinc-500">
+                    <h2 className="text-xs font-sans uppercase tracking-wider text-zinc-500">
                       Batches · {batches.length}
                     </h2>
                     {batches.map((b) => (

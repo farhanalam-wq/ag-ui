@@ -142,7 +142,7 @@ export default function SnapshotsPage() {
     if (!entries || entries.length === 0) return null;
     return (
       <div className="mt-1.5">
-        <p className="text-[11px] font-mono uppercase tracking-wider text-zinc-500">{label}</p>
+        <p className="text-[11px] font-sans uppercase tracking-wider text-zinc-500">{label}</p>
         <ul className="mt-1 space-y-0.5">
           {entries.map((e) => (
             <li key={e.url} className="text-xs text-zinc-600 dark:text-zinc-300 truncate" title={e.url}>
