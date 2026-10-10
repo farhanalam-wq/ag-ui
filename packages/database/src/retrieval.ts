@@ -9,6 +9,8 @@
  *     - qemb:v1:{sha256(query)} (1 hour TTL)
  *     - qctx:v1:{companyId}:{snapshotId}:{sha256(query)}:{limit} (5 min TTL, invalidated on READY)
  * - Prompt compiled strictly from the final 6 diversified excerpts + authoritative facts.
+ * - Task 14 fact/intent selection: scored facts (boosted predicates first, domain always
+ *   in, cap 8) + intent category boost on MMR inputs, never hard-excludes.
  */
 
 import { db } from "./index";
@@ -16,6 +18,7 @@ import { companies, companySnapshots, brands, chunks, documents, facts } from ".
 import { resolveThemeStylesheetId } from "./theme";
 import { eq, desc, inArray, and, or, isNull } from "drizzle-orm";
 import { generateEmbeddings, logger } from "@ag-ui/shared";
+import { selectFactsForQuery, orderCandidatesByIntent } from "@ag-ui/shared";
 import type { Evidence } from "@ag-ui/contracts";
 import { queryChunkPoints, mmrDiversify } from "./qdrant";
 import {
@@ -119,7 +122,8 @@ export async function retrieveCompanyContext(
   }
 
   // 3. Query Deterministic SQL Facts (tombstoned docs excluded; shared
-  // facts with no document link are always kept).
+  // facts with no document link are always kept). Task 14: score by query
+  // intent, domain always in, cap 8 — downstream uses selectedFacts only.
   const factRecords = await db
     .select({
       id: facts.id,
@@ -136,6 +140,8 @@ export async function retrieveCompanyContext(
         or(isNull(facts.documentId), isNull(documents.deletedBatchId))
       )
     );
+
+  const selectedFacts = selectFactsForQuery(query, factRecords);
 
   // 4. Query Embedding (Redis Cache with 1h TTL)
   let queryVector = await getCachedQueryEmbedding(query);
@@ -170,10 +176,13 @@ export async function retrieveCompanyContext(
       );
 
       if (candidates.length > 0) {
+        // Task 14: intent category boost on MMR inputs (stable partition, never excludes).
+        const ordered = orderCandidatesByIntent(candidates, query);
+
         // Hydrate chunk content from PostgreSQL by chunk UUID, skipping
         // chunks of tombstoned documents (Qdrant already filtered them,
         // this guards stale payloads).
-        const chunkIds = candidates.map((c) => c.id);
+        const chunkIds = ordered.map((c) => c.id);
         const chunkRows = await db
           .select({ id: chunks.id, content: chunks.content })
           .from(chunks)
@@ -185,7 +194,7 @@ export async function retrieveCompanyContext(
         const contentMap = new Map(chunkRows.map((r) => [r.id, r.content]));
 
         // Apply local deterministic MMR diversification (lambda 0.7, cap at most 6)
-        const diversified = mmrDiversify(candidates, queryVector, 0.7, finalLimit);
+        const diversified = mmrDiversify(ordered, queryVector, 0.7, finalLimit);
 
         chunkMatches = diversified.map((c) => ({
           id: c.id,
@@ -203,7 +212,7 @@ export async function retrieveCompanyContext(
   // 6. Construct Evidence for UI Verification
   const evidence: Evidence[] = [];
 
-  for (const f of factRecords) {
+  for (const f of selectedFacts) {
     evidence.push({
       sourceId: f.id,
       url: company.url,
@@ -228,9 +237,9 @@ export async function retrieveCompanyContext(
   // 7. Compile Prompt Context for LLM (Strictly from the final diversified excerpts)
   let contextStr = `COMPANY: ${company.name} (${company.domain})\nWEBSITE: ${company.url}\n\n`;
 
-  if (factRecords.length > 0) {
+  if (selectedFacts.length > 0) {
     contextStr += `AUTHORITATIVE FACTS:\n`;
-    for (const f of factRecords) {
+    for (const f of selectedFacts) {
       contextStr += `- ${f.predicate}: ${f.value}\n`;
     }
     contextStr += `\n`;
@@ -246,7 +255,7 @@ export async function retrieveCompanyContext(
   const result: RetrievedContext = {
     company,
     brand: brandWithVersion,
-    facts: factRecords.map((f) => ({
+    facts: selectedFacts.map((f) => ({
       subject: f.subject,
       predicate: f.predicate,
       value: f.value,
