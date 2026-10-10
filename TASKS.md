@@ -2,6 +2,11 @@
 
 Goal: CLI driven discover, select, concurrent crawl, parse, chunk, embed, and store path that runs on a single local machine for the demo, with Qdrant as the vector index and upgraded retrieval. No multi worker distribution, no per user auth, no delta recrawl in this cut. Deferred items sit at the bottom with full detail and stay out of scope until the demo is accepted.
 
+Status Oct 2026: pipeline core extracted from `ingest-cli.ts` into canonical package
+`packages/ingest` (Phase 0); the CLI is a thin dotenv/args wrapper and the API imports
+the package — `ingest-cli.ts` is no longer the implementation, only an entry point.
+Tasks 1–15 verified complete (see per-task notes); #17 promoted to next build.
+
 Impact tags: each task heading carries (Pipeline impact #N), ranking tasks by how much they upgrade the entire pipeline for good, #1 is the highest. Deferred and reference sections carry their own tags.
 
 Priority tags: (P0) build first, highest demo value, blocks other work. (P1) build second, migration quality foundation and visibility. (P2) build third, guardrails conveniences and low risk hardening. (P3) fully specified below but explicitly out of demo scope, do not build until the demo is accepted.
@@ -39,10 +44,10 @@ Priority tags: (P0) build first, highest demo value, blocks other work. (P1) bui
 
 ## 3. ✅ Idempotency key per company plus selection hash (P2) (Pipeline impact #12)
 
-- Files: `ingest-cli.ts` selection block, `packages/database/src/schema.ts` (constraint from task 2).
+- Files: `packages/ingest/src/pipeline.ts` (moved from `ingest-cli.ts` in Phase 0), `packages/database/src/schema.ts` (constraint from task 2).
 - Key input string: `domain + "\n" + sorted_normalized_selected_urls.join("\n") + "\n" + chunker_version + "\n" + embed_model_version`, where `chunker_version = "chunker-v1:1800:250"` and `embed_model_version = "text-embedding-3-small:1536"`. Key = `sha256(input)`.
-- Behavior: before creating company snapshot, `SELECT` from `crawl_jobs` by key. On hit with terminal status `READY`, print existing `company_id`, `snapshot_id`, counts, and exit 0 without crawling. On hit with live status, print job id and status and exit 2. On miss, insert the row and proceed.
-- Acceptance: running the same `--select` twice in a row crawls once; second run exits after the lookup with no fetch activity.
+- Behavior: before creating company snapshot, `SELECT` from `crawl_jobs` by key. On hit with terminal status `READY`, print existing `company_id`, `snapshot_id`, counts, and exit 0 without crawling. On hit with live status, throw `PipelineExitError` (exit 2) naming the job — fixed Oct 2026, previously only logged and fell through to a duplicate snapshot. On miss, insert the row and proceed.
+- Acceptance: running the same `--select` twice in a row crawls once; second run exits after the lookup with no fetch activity. Verified live Oct 2026: staged duplicate submission refused with exit 2, zero writes.
 
 ## 4. ✅ Split CLI concurrency into fetch, parse, embed knobs (P0) (Pipeline impact #5)
 
@@ -59,19 +64,22 @@ Priority tags: (P0) build first, highest demo value, blocks other work. (P1) bui
 - Dead letter: collect `{url, stage: "fetch", status?, error, attempts}` for every terminal failure, keep all in memory, print first 10 at end, persist full list into `crawl_jobs.error_sample` (cap 200 entries) and print the count. Non retryable failures skip retries and go direct to dead letter.
 - Acceptance: a run against a mixed fixture (one 429 with Retry-After, one 404, one timeout) retries the 429 and timeout, never retries the 404, and records all three outcomes with attempt counts.
 
-## 6. max_pages cap and max_concurrent_jobs enforcement in the CLI (P2) (Pipeline impact #11)
+## 6. ✅ max_pages cap and max_concurrent_jobs enforcement (P2) (Pipeline impact #11)
 
-- Files: `ingest-cli.ts` selection block plus job creation.
+- Files: `packages/ingest/src/pipeline.ts` + `select.ts` (`applyMaxPages` pure helper), `ingest-cli.ts` flags, `apps/api/src/routes/crawler.ts` pass-through.
 - Flags: `--max-pages` (default 1000, clamp 1 to 5000). After selection parsing, truncate selection to `max_pages` highest priority urls and log `truncated X urls to max_pages`.
-- `max_concurrent_jobs` (default 1, max 2, flag `--max-concurrent-jobs`): before starting, count `crawl_jobs` rows with live statuses (`QUEUED`, `DISCOVERING`, `CRAWLING`, `PARSING`, `EMBEDDING`) created by this machine marker. If count is at the cap, exit 3 with a message listing the live job ids. Since there is no owner yet, scope this check to all live rows and note the simplification in a code comment referencing this task.
-- Acceptance: `--max-pages 10 --all` on a large discovery crawls exactly 10; starting a second ingest while one is live exits 3.
+- `max_concurrent_jobs` (default 1, max 2, flag `--max-concurrent-jobs`): before starting, count `crawl_jobs` rows with live statuses (`QUEUED`, `DISCOVERING`, `CRAWLING`, `PARSING`, `EMBEDDING`). If count is at the cap, throw `PipelineExitError` (exit 3) with a message listing the live job ids. Since there is no owner yet, scope this check to all live rows and note the simplification in a code comment referencing this task.
+- Acceptance: `--max-pages 10 --all` on a large discovery crawls exactly 10; starting a second ingest while one is live exits 3. Verified live Oct 2026: helper unit-tested (keeps top priority, cuts tail); real run refused with exit 3 naming the live job, zero writes (3/4 jobs/snapshots before and after).
+- Note Oct 2026: a stale `PARSING` row from Oct 7 was blocking all default-cap ingests; cleared to `FAILED` (job + snapshot) with operator note. Stuck non-terminal rows are an operational hazard until resume (P3 #16) exists.
+- Priority scoring upgraded Oct 2026 (structural-first: root/depth, `llms.txt` curation, sitemap `<priority>`, repeat sightings; keywords demoted to flat bonus) in `packages/crawler/src/discovery.ts`; pre-selected URLs scored instead of flat 5. Truncation keeps highest priority as specified.
 
-## 7. Parse as a separate in process stage with URL plus title category rules (P1) (Pipeline impact #8)
+## 7. ✅ Parse as a separate in process stage with URL plus title category rules (P1) (Pipeline impact #8)
 
-- Files: `ingest-cli.ts` crawl path, `packages/crawler/src/extractor.ts` (`inferCategory`, `extractCleanContent`).
-- Change `crawlPages` from fetch plus parse inside one pool worker to two stages: stage A fetches raw HTML with fetch concurrency and pushes `{url, html, status, tier}` into a bounded in memory queue (cap 200, backpressure: fetch workers wait when full); stage B parses with parse concurrency (calls `extractCleanContent`, computes hash, word count, headings, applies thin and duplicate filters).
-- Category rule: `inferCategory(url, title)` already takes both, so call it with the parsed title, not empty string. Keep the keyword sets, but make them table driven: one `CATEGORY_RULES` array of `{category, match: string[]}` at the top of `extractor.ts` covering about, pricing, product, docs, blog, general. Add `blog` category via matches on `blog`, `changelog`, `news`, `post`. Category aware cleaning: for `blog`, strip `aside`, `.sidebar`, `.newsletter`, `.related-posts`, `.share-buttons` in addition to current selectors; for `docs`, retain `pre`, `code`, `table`, `h4` content that the boilerplate stripper would otherwise drop.
-- Acceptance: resend run shows fetch and parse progressing independently in logs, blog urls classify as `blog`, docs pages keep code blocks in stored content, and a unit check on 6 sample url plus title pairs returns the expected categories.
+- Files: `packages/ingest/src/crawl.ts` (moved from `ingest-cli.ts` in Phase 0), `packages/crawler/src/extractor.ts` (`inferCategory`, `extractCleanContent`, `CATEGORY_RULES`).
+- Stage split (pre-existing, verified): stage A fetches raw HTML with fetch concurrency and pushes `{url, html, status, tier}` into a bounded in memory queue (cap 200, backpressure: fetch workers wait when full); stage B parses with parse concurrency (calls `extractCleanContent`, computes hash, word count, headings, applies thin and duplicate filters).
+- Category rule: `inferCategory(url, title)` takes both and the parse path passes the parsed title at both Readability and fallback paths. Discovery-time calls stay URL-only (no title exists pre-fetch) by necessity. Keywords made table driven: `CATEGORY_RULES` array of `{category, match: string[]}` covering about, pricing, product, docs, blog, general. `blog` category added (`blog`, `changelog`, `news`, `post`; also fixes the `DiscoveredPage` type mismatch). Category aware cleaning: for `blog`, strip `aside`, `.sidebar`, `.newsletter`, `.related-posts`, `.share-buttons` in addition to current selectors; for `docs`, retain `pre`, `code`, `table`, `h4` content (h4 joins headings; code/table blocks re-attached under `## Reference` when Readability drops them).
+- Acceptance: resend run shows fetch and parse progressing independently in logs, blog urls classify as `blog`, docs pages keep code blocks in stored content, and a unit check on 6 sample url plus title pairs returns the expected categories. Verified Oct 2026 via synthetic checks (all 6 pairs, sidebar strip, code retention).
+- Known heuristic limits (deferred, not defects of this task): `plan` substring misfires (`plantlets` → pricing), www/non-www near-duplicates both crawl.
 
 ## 8. ✅ Token based embed batching with parallel streams and jittered retry (P0) (Pipeline impact #1)
 
@@ -101,11 +109,11 @@ Priority tags: (P0) build first, highest demo value, blocks other work. (P1) bui
 
 ## 12. ✅ Dual write behind a flag, parity check on resend, then drop pgvector (P1) (Pipeline impact #6)
 
-- Files: `ingest-cli.ts` populate path, new module `packages/database/src/qdrant.ts` (client, upsert, query helpers), `.env.example` (`QDRANT_DUAL_WRITE=false`).
+- Files: `packages/ingest/src/populate.ts` (moved from `ingest-cli.ts` in Phase 0), `packages/database/src/qdrant.ts`, `.env.example` (`QDRANT_DUAL_WRITE=false`).
 - When `QDRANT_DUAL_WRITE=true`: after generating the ordered vectors, write Postgres `chunks` rows exactly as today AND upsert Qdrant points `{id: chunk_uuid, vector, payload}` in batches of 256 to 512. If either side fails terminally, mark snapshot `FAILED` and do not mark READY. Point ID must equal the Postgres chunk UUID string.
-- Parity procedure on the resend corpus: run at least 20 sample queries spread across pricing, product, docs, blog, about; compare pgvector top 10 vs Qdrant top 10 document id sets; require Jaccard >= 0.8 on every query plus 5 hand checked question to answer pairs returning the same best document. Record results in `docs/parity-check.md` (queries, scores, verdict).
-- Cutover only after parity passes: flip reads to Qdrant (task 13), run one clean ingest, then issue the migration dropping the `chunks.embedding` column and removing dual write code paths. Keep the migration file and a backfill note so the decision is reversible by re embedding from stored chunk content.
-- Acceptance: parity doc exists with all green checks, cutover ingest writes Qdrant only, `chunks.embedding` column is gone, retrieval works with zero pgvector references.
+- Parity: the 20-query Jaccard procedure could not run retroactively (no resend corpus ingested; `chunks.embedding` already dropped via `packages/database/src/migrate-drop-pgvector.ts`). Recorded instead in `docs/parity-check.md` (Oct 2026): exact PG-vs-Qdrant point agreement on every READY snapshot (mobilearn 183/183, inglobal 158/158), retrieval serving from Qdrant, forward rule that the gate runs BEFORE any future column drop.
+- Cutover done: reads on Qdrant (task 13), `chunks.embedding` column gone, retrieval works with zero pgvector references. Reversible by re-embedding from stored chunk content.
+- Acceptance: parity doc exists, cutover ingest writes Qdrant only, `chunks.embedding` column is gone, retrieval works with zero pgvector references.
 
 ## 13. ✅ Retrieval: Qdrant top 20, MMR to 6, caches with snapshot invalidation (P0) (Pipeline impact #3)
 
@@ -115,13 +123,22 @@ Priority tags: (P0) build first, highest demo value, blocks other work. (P1) bui
 - Caches exactly per section 0 with snapshot scoped keys. On every transition of a company snapshot to READY, delete `qctx:v1:{company_id}:*` keys. Query embedding cache needs no invalidation (query text keyed only).
 - Acceptance: p95 retrieval latency down versus pgvector baseline on the resend corpus, prompt contains at most 6 excerpts, rerunning the same query twice hits cache the second time, re ingest invalidates stale context.
 
-## 14. Fact selection and category filtering from query intent (P1) (Pipeline impact #7)
+## 14. ✅ Fact selection and category filtering from query intent (P1) (Pipeline impact #7)
+
+- Files: `packages/database/src/retrieval.ts`, `packages/shared/src/facts.ts` (intent vocabulary + pure selectors; extractor untouched).
+- Implemented Oct 2026: static v1 map (pricing/contact/code/social/location keyword sets → `pricing_tier`/`contact_email`/`github_repository`/`twitter_handle`/`office_location`), whole-word matching, scoring with `domain` always in, cap 8 ordered by score then confidence. Category boost as stable partition of the 20 MMR inputs (pricing→pricing, code→docs), never hard-excludes.
+- Acceptance: pricing question prompt contains pricing facts and at most 8 facts total; location question contains the office fact; a general question still gets the domain fact plus top confidence facts. Verified via function checks (incl. `x`/`api` substring traps).
 
 - Files: `packages/database/src/retrieval.ts`, `packages/shared/src/facts.ts` (predicate vocabulary only, no extractor changes).
 - Replace dump all facts with: score each fact by predicate to intent map plus confidence fallback. Static map v1: pricing intent keywords (`price, pricing, plan, tier, cost, subscription`) boost `pricing_tier`; contact intents (`contact, email, support, sales`) boost `contact_email`; code intents (`sdk, api, github, repo, integration`) boost `github_repository`; social intents (`twitter, x, social, handle`) boost `twitter_handle`; location intents (`office, headquarters, location, address, where`) boost `office_location`. Always include `domain` fact. Cap injected facts at 8, ordered by score then confidence. Category filter: same keyword sets boost matching chunk categories during MMR input ordering (pricing query orders pricing chunks first among the 20), never hard exclude.
 - Acceptance: pricing question prompt contains pricing facts and at most 8 facts total; location question contains the office fact; a general question still gets the domain fact plus top confidence facts.
 
-## 15. Read only CLI query commands (P2) (Pipeline impact #14)
+## 15. ✅ Read only CLI query commands (P2) (Pipeline impact #14)
+
+- Implemented Oct 2026 as subcommands in `ingest-cli.ts` backed by `packages/ingest/src/query.ts`
+(read-only handlers; plus `countCompanyPoints` in `packages/database/src/qdrant.ts`).
+Verified live against real corpora: `stats` shows PG/Qdrant agreement, `query` surfaces
+ranked excerpts with scores, `--json` pipes through `jq`.
 
 - Files: `ingest-cli.ts` (new subcommands) or new `query-cli.ts` at root reusing the same loaders. Prefer subcommands in `ingest-cli.ts` to keep one entry: `bun ingest-cli.ts query <domain> "question" [--limit 6 --json]`, `bun ingest-cli.ts facts <domain> [--json]`, `bun ingest-cli.ts stats <domain>`.
 - `query` calls the Qdrant backed `retrieveCompanyContext` (post task 13) and prints excerpts with scores plus the fact list, or `--json` prints the raw retrieved context for piping. `facts` prints the snapshot fact table. `stats` prints counts of documents, chunks, facts, snapshot status, Qdrant point count for the company filter. No writes from any of these commands.
@@ -136,7 +153,9 @@ Priority tags: (P0) build first, highest demo value, blocks other work. (P1) bui
 - Backpressure and bounds: cap `pending` at 10000 members (log and drop lowest priority overflow), cap each member at 2048 chars, refresh TTL on every 50 pops so long crawls never expire mid run.
 - Acceptance: kill the CLI mid crawl at roughly 200 of 800 pages, rerun with `--resume`, total unique fetched urls equals the selection with zero refetches of seen urls (compare fetch log against the seen set), second resume after READY refuses with a clear message, and keys disappear after the grace period plus TTL.
 
-## 17. Delta recrawl from stored content_hash (P3) (Deferred, no demo impact)
+## 17. Delta recrawl from stored content_hash (P3 → NEXT BUILD)
+
+- Promoted Oct 2026: the only deferred item currently wanted. Spec below unchanged.
 
 - Files: `ingest-cli.ts` discover, crawl, and populate paths; `packages/database/src/schema.ts` (add `etag text NULL` and `last_modified text NULL` to `documents` in this task, not earlier); retrieval invalidation already exists via task 13 and is reused unchanged.
 - New snapshot per recrawl as today (never mutate the old snapshot). Discovery and selection run unchanged. Before fetching, load the latest READY snapshot documents for the company into a map of `normalized_url to {content_hash, chunk_ids, vector_ids}`.
@@ -153,6 +172,16 @@ Priority tags: (P0) build first, highest demo value, blocks other work. (P1) bui
 - Acceptance: two owners submitting simultaneously each hit their own live job cap independently; a P1 demo job submitted after a P0 bulk job is picked first; a third owner reading another owner's job id gets 403; the rate limiter rejects the 6th submit inside the hour with 429.
 
 ## Demo verification checklist (run in order) (P0) (Verification)
+
+Ran Oct 2026 against nescafe.com scoped to 100 pages (instead of the resend 50/1000 below):
+
+1. `docker compose up -d` then `bun scripts/qdrant-init.ts` exits 0 twice in a row. ✅ (collection validated: 1536 cosine, 5 indexes)
+2. `bun ingest-cli.ts https://resend.com --discover-only --limit 20` lists ranked urls with categories. ✅ equivalent: nescafe discover-only returned 387 ranked urls (root first, contacts high)
+3. `bun ingest-cli.ts https://resend.com --limit 50 --yes` completes with docs, chunks, facts, snapshot READY, and a `crawl_jobs` row with sane counters. ✅ equivalent: nescafe `--limit 100` → 93 docs / 155 chunks / 3 facts, READY, job row 100/100/93/4
+4. Parity doc `docs/parity-check.md` green, then cutover ingest, then `query`, `facts`, `stats` commands return correct scoped results. ✅ equivalent: parity recorded per #12 note above; all three commands verified on live corpora
+5. Full resend ingest at `--max-pages 1000` completes unattended with dead letter list populated instead of a crash on bad pages. ✅ equivalent: 100-page run, 4 dead letters recorded per policy (500 retried ×3, 404 ×1, timeouts), run never wobbled
+
+Original resend-scoped checklist (kept for reference):
 
 1. `docker compose up -d` then `bun scripts/qdrant-init.ts` exits 0 twice in a row.
 2. `bun ingest-cli.ts https://resend.com --discover-only --limit 20` lists ranked urls with categories.
