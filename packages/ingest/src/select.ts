@@ -23,3 +23,24 @@ export function parseSelection(input: string, total: number): number[] {
   }
   return [...out].sort((a, b) => a - b);
 }
+
+export interface RankedSelection {
+  url: string;
+  priority: number;
+}
+
+/**
+ * Task 6 — enforce the max_pages ceiling after selection parsing. Keeps the
+ * highest-priority URLs (money pages first, long tail cut). Pure: takes the
+ * selected pages, returns the truncated list plus how many were cut.
+ */
+export function applyMaxPages<T extends RankedSelection>(
+  selected: T[],
+  maxPages: number
+): { kept: T[]; truncated: number } {
+  if (selected.length <= maxPages) return { kept: selected, truncated: 0 };
+  const kept = [...selected]
+    .sort((a, b) => b.priority - a.priority)
+    .slice(0, maxPages);
+  return { kept, truncated: selected.length - kept.length };
+}

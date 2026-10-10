@@ -32,6 +32,8 @@ export interface CliOptions {
   parseConcurrency: number;
   embedConcurrency: number;
   hostGapMs: number;
+  maxPages: number;
+  maxConcurrentJobs: number;
   maxSitemapUrls: number;
   maxSitemaps: number;
   timeoutMs: number;

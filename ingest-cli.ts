@@ -35,7 +35,7 @@ function loadDotEnv() {
 loadDotEnv();
 
 
-import { runIngestPipeline, type CliOptions } from "./packages/ingest/src/index";
+import { runIngestPipeline, PipelineExitError, type CliOptions } from "./packages/ingest/src/index";
 
 function printHelp() {
   console.log(`
@@ -57,6 +57,8 @@ Options:
   --embed-concurrency N  Parallel embedding streams (default 3, max 6)
   --host-gap-ms N        Min gap ms between requests to same host (default 150, 100-200)
   --concurrency N         Deprecated alias for --fetch-concurrency
+  --max-pages N           Cap crawled pages to top N by priority (default 1000, 1-5000)
+  --max-concurrent-jobs N Refuse when live jobs at cap (default 1, max 2)
   --max-sitemap N        Cap sitemap URL intake (default 2000)
   --max-sitemaps N       Cap sitemap files followed (default 10)
   --timeout N            Per-page HTTP timeout ms (default 10000)
@@ -107,6 +109,8 @@ function parseArgs(argv: string[]): { url: string | null; opts: CliOptions } {
   const maxSmRaw = getVal("--max-sitemap");
   const maxSmsRaw = getVal("--max-sitemaps");
   const timeoutRaw = getVal("--timeout");
+  const maxPagesRaw = getVal("--max-pages");
+  const maxJobsRaw = getVal("--max-concurrent-jobs");
 
   return {
     url: positional,
@@ -121,6 +125,8 @@ function parseArgs(argv: string[]): { url: string | null; opts: CliOptions } {
       parseConcurrency: Math.min(16, Math.max(1, parseInt(parseRaw ?? "5", 10) || 5)),
       embedConcurrency: Math.min(6, Math.max(1, parseInt(embedRaw ?? "3", 10) || 3)),
       hostGapMs: Math.min(200, Math.max(100, parseInt(hostGapRaw ?? "150", 10) || 150)),
+      maxPages: Math.min(5000, Math.max(1, parseInt(maxPagesRaw ?? "1000", 10) || 1000)),
+      maxConcurrentJobs: Math.min(2, Math.max(1, parseInt(maxJobsRaw ?? "1", 10) || 1)),
       maxSitemapUrls: Math.max(10, parseInt(maxSmRaw ?? "2000", 10) || 2000),
       maxSitemaps: Math.max(1, Math.min(25, parseInt(maxSmsRaw ?? "10", 10) || 10)),
       timeoutMs: Math.max(2000, parseInt(timeoutRaw ?? "10000", 10) || 10000),
@@ -147,7 +153,7 @@ async function main() {
     process.exit(0);
   } catch (err: any) {
     console.error("[FATAL]", err?.message ?? err);
-    process.exit(1);
+    process.exit(err instanceof PipelineExitError ? err.exitCode : 1);
   } finally {
     try {
       const { client, closeRedisConnection } = await import("./packages/database/src/index");
@@ -162,6 +168,6 @@ async function main() {
 if (import.meta.main) {
   main().catch((e) => {
     console.error("[FATAL]", e?.message ?? e);
-    process.exit(1);
+    process.exit(e instanceof PipelineExitError ? e.exitCode : 1);
   });
 }

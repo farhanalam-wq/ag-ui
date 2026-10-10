@@ -3,7 +3,7 @@ import { stdin as input, stdout as output } from "node:process";
 import type { CliOptions, DiscoveredPage } from "./types";
 import { validateSafeUrl, inferCategory } from "@ag-ui/crawler";
 import { discoverPages, printDiscovery } from "./discover";
-import { parseSelection } from "./select";
+import { applyMaxPages, parseSelection } from "./select";
 import { crawlPages } from "./crawl";
 import { populateDb } from "./populate";
 import {
@@ -13,8 +13,25 @@ import {
   crawlJobs,
   eq,
   desc,
+  inArray,
 } from "@ag-ui/database";
 import { sha256 } from "./utils";
+
+/**
+ * Task 6 — fatal pipeline failure with a process exit code. The CLI maps this
+ * to process.exit(exitCode); API callers surface it as an SSE error event.
+ */
+export class PipelineExitError extends Error {
+  exitCode: number;
+  constructor(message: string, exitCode: number) {
+    super(message);
+    this.name = "PipelineExitError";
+    this.exitCode = exitCode;
+  }
+}
+
+/** Task 6 — job statuses that count as live for the concurrency cap. */
+export const LIVE_JOB_STATUSES = ["QUEUED", "DISCOVERING", "CRAWLING", "PARSING", "EMBEDDING"];
 
 export interface IngestPipelineResult {
   companyId: string;
@@ -52,6 +69,8 @@ export async function runIngestPipeline(
     parseConcurrency: 5,
     embedConcurrency: 3,
     hostGapMs: 150,
+    maxPages: 1000,
+    maxConcurrentJobs: 1,
     maxSitemapUrls: 2000,
     maxSitemaps: 10,
     timeoutMs: 10000,
@@ -143,8 +162,15 @@ export async function runIngestPipeline(
   if (indices.length === 0) {
     throw new Error("[SELECT] empty selection — aborting.");
   }
-  const selected = indices.map((i) => pages[i]).filter(Boolean);
+  let selected = indices.map((i) => pages[i]).filter(Boolean);
   console.log(`[SELECT] ${selected.length}/${pages.length} pages selected (est. crawl ~${Math.ceil(selected.length / opts.fetchConcurrency)} waves x ~1-3s)`);
+
+  // Task 6 — max_pages ceiling: keep highest-priority URLs, cut the long tail.
+  const { kept, truncated } = applyMaxPages(selected, opts.maxPages);
+  if (truncated > 0) {
+    console.log(`[SELECT] truncated ${truncated} urls to max_pages=${opts.maxPages} (kept highest priority)`);
+    selected = kept;
+  }
 
   if (!opts.yes && opts.limit === null && !opts.all && !opts.select && (!opts.selectedUrls || opts.selectedUrls.length === 0)) {
     const rl2 = readline.createInterface({ input, output });
@@ -162,6 +188,20 @@ export async function runIngestPipeline(
   let snapVersion = 1;
 
   if (!opts.dryRun) {
+    // Task 6 — max_concurrent_jobs: refuse when live jobs are at the cap. Scoped to
+    // all live rows (no owner concept yet; per-owner scoping arrives with P3 task 18).
+    const liveJobs = await db
+      .select({ id: crawlJobs.id, status: crawlJobs.status })
+      .from(crawlJobs)
+      .where(inArray(crawlJobs.status, LIVE_JOB_STATUSES));
+    if (liveJobs.length >= opts.maxConcurrentJobs) {
+      const ids = liveJobs.map((j) => `${j.id} (${j.status})`).join(", ");
+      throw new PipelineExitError(
+        `[JOBS] ${liveJobs.length} live crawl job(s) at cap (max_concurrent_jobs=${opts.maxConcurrentJobs}): ${ids}. Wait or cancel before starting a new ingest.`,
+        3
+      );
+    }
+
     let [existingComp] = await db.select().from(companies).where(eq(companies.domain, domain)).limit(1);
     if (!existingComp) {
       const [ins] = await db.insert(companies).values({ domain, name: companyName, url: (baseUrl as URL).origin }).returning();

@@ -1,4 +1,4 @@
-export type ExtractedCategory = "about" | "pricing" | "product" | "docs" | "general";
+export type ExtractedCategory = "about" | "pricing" | "product" | "docs" | "blog" | "general";
 
 export interface ExtractedDocument {
   title: string;

@@ -232,6 +232,8 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
         parseConcurrency,
         embedConcurrency,
         hostGapMs,
+        maxPages,
+        maxConcurrentJobs,
       } = body;
 
       let clean = rawUrl.trim();
@@ -263,6 +265,8 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
         parseConcurrency: parseConcurrency || 5,
         embedConcurrency: embedConcurrency || 3,
         hostGapMs: hostGapMs || 150,
+        maxPages: maxPages || 1000,
+        maxConcurrentJobs: maxConcurrentJobs || 1,
         yes: true,
         onProgress: async (evt: PipelineProgressEvent) => {
           eventQueue.push({
@@ -345,6 +349,8 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
         parseConcurrency: t.Optional(t.Number({ minimum: 1, maximum: 16 })),
         embedConcurrency: t.Optional(t.Number({ minimum: 1, maximum: 6 })),
         hostGapMs: t.Optional(t.Number({ minimum: 50, maximum: 1000 })),
+        maxPages: t.Optional(t.Number({ minimum: 1, maximum: 5000 })),
+        maxConcurrentJobs: t.Optional(t.Number({ minimum: 1, maximum: 2 })),
       }),
       detail: {
         summary: "Stream Ingestion Pipeline",
