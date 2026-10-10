@@ -249,7 +249,10 @@ export async function runIngestPipeline(
           },
         };
       } else if (["QUEUED", "CRAWLING", "PROCESSING", "EMBEDDING"].includes(existingJob.status)) {
-        console.log(`[IDEMPOTENCY HIT] Active crawl job ${existingJob.id} is currently ${existingJob.status}.`);
+        throw new PipelineExitError(
+          `[IDEMPOTENCY HIT] Active crawl job ${existingJob.id} is currently ${existingJob.status} for the identical selection. Wait for it or cancel it before resubmitting.`,
+          2
+        );
       } else {
         console.log(`[IDEMPOTENCY] Previous job ${existingJob.id} was ${existingJob.status}. Removing stale record to retry...`);
         await db.delete(crawlJobs).where(eq(crawlJobs.id, existingJob.id));
