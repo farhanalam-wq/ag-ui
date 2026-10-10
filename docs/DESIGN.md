@@ -26,11 +26,11 @@ Anti-goal: run-of-the-mill AI slop — purple glows, centered heroes, 3-equal-ca
 ## 2. Stack & Source of Truth
 
 - Framework: Next.js 15 App Router, React 19, RSC by default. Interactivity isolated to `"use client"` leaves.
-- Styling: Tailwind CSS 3.4 (`apps/web/tailwind.config.ts`), CSS variables in `apps/web/app/globals.css` as single source (`:root` = Light, `.dark` = Dark). Color theming via CSS vars ONLY (`bg-card text-foreground border-border`). `dark:` variant allowed ONLY for non-color tweaks (e.g. `dark:backdrop-blur-md`, layout). Never `dark:bg-gray-800 / dark:text-white` for color — use `bg-card / text-foreground`. Theme via `next-themes` `ThemeProvider` + `ModeToggle` in shell header. Ship intent: `enableSystem + defaultTheme="system"` with persisted override (current `class="dark"` hard-lock in `layout.tsx` is dev-only, remove before ship). One page = one theme lock — sections never invert mid-scroll.
+- Styling: Tailwind CSS 3.4 (`apps/web/tailwind.config.ts`), CSS variables in `apps/web/app/globals.css` as single source (`:root` = Light, `.dark` = Dark). Color theming via CSS vars ONLY (`bg-card text-foreground border-border`). `dark:` variant allowed ONLY for non-color tweaks (e.g. `dark:backdrop-blur-md`, layout). Never `dark:bg-gray-800 / dark:text-white` for color — use `bg-card / text-foreground`. Theme via `next-themes` `ThemeProvider` + `ModeToggle` in shell header. Ship state (verified Oct 2026): `apps/web/app/layout.tsx` hard-locks `class="dark"` + `defaultTheme="dark"` — dev-only. Ship fix (blocking): remove `class="dark"`, set `defaultTheme="system" enableSystem`, keep `suppressHydrationWarning`. One page = one theme lock — sections never invert mid-scroll.
 - Components: shadcn/ui is PRIMARY (Zinc, CSS variables) + Radix primitives in `apps/web/components/ui/`. ai-elements is PRIMARY for AI surfaces in `@/components/ai-elements/`. Rule: if shadcn or ai-elements has it, use it — never hand-roll. You own the code (copy-paste distribution) — never ship default state unstyled. Run `bunx --bun shadcn@latest` / `bunx --bun ai-elements@latest` per packageManager `bun@1.4.2`; check `components.json` aliases (`@/components`, `@/lib/utils`) and `apps/web/package.json` before import.
 - State: Zustand (`apps/web/stores/`), `useState` for local only. Never `useState` for pointer/scroll physics — use `useMotionValue` if needed (rare here).
 - Icons: `@phosphor-icons/react` ONLY for new code. `lucide-react@1.45 + @thesvg/icons` in `apps/web/package.json` are legacy — do not import in new files; replace on touch with Phosphor equivalent (`Search → MagnifyingGlass`, etc). Keep one weight per hierarchy (`regular 1.5` UI, `bold 2.0` active nav only), sizes `16/20/24`, `aria-hidden` decorative / `aria-label+Tooltip` standalone, target ≥44px.
-- Fonts: `next/font` self-hosted `Geist Sans + Geist Mono`, `font-display: swap`. Install delta (not yet in `package.json`): `bun add geist` then `import { GeistSans } from 'geist/font/sans'`. Fallbacks `Inter Tight + JetBrains Mono`. Never `<link>` Google Fonts. Body `font-sans`, all numbers `font-mono tabular-nums`.
+- Fonts: `geist` package is MANDATORY (Linear/Vercel maturity = Geist, not system stack). Install: `bun add geist --filter @ag-ui/web`, then in `apps/web/app/layout.tsx`: `import { GeistSans } from 'geist/font/sans'; import { GeistMono } from 'geist/font/mono'` and apply `className={GeistSans.variable + ' ' + GeistMono.variable}` on `<html>`, map `font-sans`/`font-mono` in `tailwind.config.ts` to `var(--font-geist-sans)` / `var(--font-geist-mono)`, `font-display: swap`. Fallbacks `Inter Tight + JetBrains Mono` apply only before install lands. Current `body { font-family: -apple-system... }` system stack in `globals.css:84` is non-compliant — replace on token pass. Never `<link>` Google Fonts. Body `font-sans`, all numbers/dates/URLs/latencies `font-mono tabular-nums`. Dark-mode body copy steps up one weight where it reads thin (400→500 for `text-2`, per halation rule).
 
 ### 2.1 Token hierarchy (mandatory)
 
@@ -42,31 +42,49 @@ Primitive (raw) → Semantic (purpose) → Component (usage)
 
 Source today: `apps/web/app/globals.css` `:root` = Light, `.dark` = Dark. Future: `apps/web/tokens/design-tokens.json` → `apps/web/app/tokens.css` → mapped in `tailwind.config.ts`. Do not create a second token file until that path exists.
 
-Copy-paste starter (HSL for opacity control, per `design-system` skill):
+Copy-paste starter (HSL for opacity control, per `design-system` skill). Replaces the broken `globals.css:6-78` values — current Light `--border/--input` reuse Dark zinc values (invisible borders on white) and `--background` is pure white instead of `zinc-50`:
 ```css
 :root {
-  --background: 0 0% 98%; --foreground: 240 10% 3.9%;
+  --background: 240 20% 98%; --foreground: 240 10% 3.9%;
   --card: 0 0% 100%; --card-foreground: 240 10% 3.9%;
+  --popover: 0 0% 100%; --popover-foreground: 240 10% 3.9%;
+  --primary: 221 83% 53%; --primary-foreground: 0 0% 100%;
+  --secondary: 240 4.8% 95.9%; --secondary-foreground: 240 5.9% 10%;
   --muted: 240 4.8% 95.9%; --muted-foreground: 240 3.8% 35%;
-  --border: 220 13% 88%; --input: 220 13% 82%; --ring: 221 83% 53%;
-  --brand-600: 221 83% 53%; --chart-1: 224 86% 51%; --chart-2: 160 84% 39%;
+  --accent: 240 4.8% 95.9%; --accent-foreground: 240 5.9% 10%;
+  --destructive: 0 84% 60%; --destructive-foreground: 0 0% 98%;
+  --border: 240 5% 88%; --input: 240 5% 82%; --ring: 221 83% 53%;
+  --brand-600: 221 83% 53%; --brand-500: 217 91% 60%;
+  --chart-1: 224 86% 51%; --chart-2: 160 84% 39%;
   --chart-3: 38 92% 50%; --chart-4: 258 90% 66%; --chart-5: 189 94% 43%;
+  --chart-6: 0 84% 60%; --chart-7: 240 4% 46%; --chart-8: 240 5% 65%;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur-1: 130ms; --dur-2: 180ms; --dur-3: 240ms;
 }
 .dark {
   --background: 240 10% 3.9%; --foreground: 0 0% 98%;
   --card: 240 10% 6%; --card-foreground: 0 0% 98%;
-  --muted: 240 3.7% 15.9%; --muted-foreground: 240 5% 64.9%;
+  --popover: 240 6% 10%; --popover-foreground: 0 0% 98%;
+  --primary: 217 91% 60%; --primary-foreground: 240 10% 3.9%;
+  --secondary: 240 3.7% 15.9%; --secondary-foreground: 0 0% 98%;
+  --muted: 240 3.7% 15.9%; --muted-foreground: 240 5% 72%;
+  --accent: 240 3.7% 15.9%; --accent-foreground: 0 0% 98%;
+  --destructive: 0 62% 42%; --destructive-foreground: 0 0% 98%;
   --border: 0 0% 100% / 0.1; --input: 0 0% 100% / 0.15; --ring: 217 91% 60%;
   --brand-500: 217 91% 60%;
 }
 ```
+Brand-tinted shadow base (per palette skill, never pure black): `hsla(224, 15%, 5%, alpha)`. Focus token: `--ring` above (Light `brand-600`, Dark `brand-500`). Selection: `hsl(221, 83%, 90%)`. Overlay: Light `black/40`, Dark `black/60` (see §3.4).
 Tailwind maps `background/foreground/card/muted/border/input/ring/brand/chart-*` to `hsl(var(--x))`. Add `chart-1..8` to `tailwind.config.ts` once, never per page.
 
-Validate (must be empty outside tokens):
+Validate (must be empty outside tokens + runtime brand fallbacks):
 ```bash
 grep -rn "#[0-9a-fA-F]\\{6\\}" apps/web/app apps/web/components --include="*.tsx" | grep -v tokens
 grep -rn "bg-blue-500\\|text-slate-500\\|bg-gray-800" apps/web/app apps/web/components --include="*.tsx"
 ```
+Note (Oct 2026 audit): `|| "#3b82f6"` fallbacks in `studio-shell`, `ingestion-studio`, `embed-snippet`, `playground`, appearance/embed pages are runtime per-company brand data with a safe default — permitted ONLY in that `brand?.tokens?.colors?.primary ??` position, never as static chrome color. `bg-blue-500 animate-pulse` in `ingestion-studio.tsx:557` is not covered by this exception — fix to token + static dot.
 
 ---
 
@@ -92,18 +110,18 @@ No pure `#000000` / `#FFFFFF`. Off-black `zinc-950`, off-white `zinc-50`.
 
 > Light is not an inverted Dark. Both are designed. Assume ~50% of users live in Light (daytime ops, bright offices). Design Light for paper-clarity, Dark for focus-calm. Same information, same hierarchy, same accent — different expression of surface and depth.
 
-| Semantic | Light (`:root`) | Dark (`.dark`) | Contrast / Notes |
+| Semantic | Light (`:root`) | Dark (`.dark`) | Measured contrast |
 |---|---|---|---|
-| `background` | `zinc-50 #FAFAFA` | `zinc-950 #09090B` | App canvas. Content must separate via `surface` + `border-subtle`, not transparency alone. |
+| `background` | `zinc-50 #FAFAFA` | `zinc-950 #09090B` | Canvas. Content must separate via `surface` + `border-subtle`, not transparency alone. |
 | `surface` / `card` | `#FFFFFF` + `border-zinc-200` | `zinc-900/60` + `border-white/10` | Light: solid white, border mandatory. Dark: translucent allowed + inner highlight. Never transparent-white on `zinc-50` — hierarchy collapses. |
 | `surface-elevated` | `#FFFFFF` + border + `0_1px_2px` shadow | `zinc-900` + `border-white/10` + `inset_0_1px_0_white/6` | Popover, drawer, dropdown, tooltip. Light tooltip = white + border, Dark tooltip = zinc-900. |
-| `text-1` | `zinc-950` | `zinc-50` | Headings, KPI values. Target ≥7:1 in both. |
-| `text-2` | `zinc-600` | `zinc-400` | Body, labels. Mandatory ≥4.5:1 in both. Light `zinc-500` for body = fail. |
-| `text-3` | `zinc-500` | `zinc-500` | Captions, timestamps, axis ticks, helper. Never for body or CTA. Icon meaningful state needs ≥3:1 against adjacent bg in both. |
+| `text-1` | `zinc-950` | `zinc-50` | 19.9:1 Light / 19.1:1 Dark — AAA. Headings, KPI values. |
+| `text-2` | `zinc-600` | `zinc-400` | 7.7:1 Light / 7.8:1 Dark — AAA. Body, labels. Light `zinc-500` for body = fail (only 4.8:1, no headroom). Dark `muted-foreground` token raised to `240 5% 72%` so `text-2` holds AAA. |
+| `text-3` | `zinc-500` | `zinc-400` | 4.8:1 Light / 7.8:1 Dark. Captions, timestamps, axis ticks, helper. Never for body or CTA. Dark was `zinc-500` (4.1:1 = AA fail) — fixed to `zinc-400`. Muted/secondary text always `font-medium` minimum (contrast math ignores weight; 400-weight muted at caption size reads illegible even on pass). |
 | `border-subtle` | `zinc-200 #E4E4E7` | `white/10` | Must be visible in both. Light dividers disappearing on white = fail. Dark borders disappearing on zinc-950 = fail. |
-| `input-bg` / `input-border` | `white` / `zinc-300` | `zinc-900` / `white/15` | Light inputs need stronger border than cards (`300` vs `200`) to read as fields. Placeholder `zinc-400` Light / `zinc-500` Dark, still ≥4.5:1 for label+helper. |
+| `input-bg` / `input-border` | `white` / `zinc-300` | `zinc-900` / `white/15` | Light inputs need stronger border than cards (`300` vs `200`) to read as fields. Placeholder `zinc-500` Light / `zinc-400` Dark (old `zinc-400`-on-white placeholder at 2.6:1 was unreadable — fixed). Labels + helper still ≥4.5:1. |
 | `accent` | `brand-600 #2563EB` | `brand-500 #3B82F6` | Single accent lock. Light uses deeper cut for contrast on white; Dark uses lighter cut for pop on black. |
-| `accent-ink` | `#FFFFFF` on `brand-600` | `#09090B` or `#FFFFFF` per token | Verify ≥4.5:1. Light: white on `#2563EB` passes. Dark: check `brand-500` + ink combo, add `font-medium` if borderline. Focus ring `brand-600/30` Light / `brand-500/40` Dark. |
+| `accent-ink` | `#FFFFFF` on `brand-600` | `zinc-950 #09090B` on `brand-500` | Measured: 5.2:1 Light / 5.4:1 Dark — AA pass. White-on-`brand-500` is 3.7:1 = FAIL, so Dark ink is locked to `zinc-950` (no "or white" option). Borderline combos add `font-medium`. Focus ring `brand-600/30` Light / `brand-500/40` Dark. |
 
 **Color Consistency Lock:** Once Electric Blue is the accent, every CTA, link, active nav, and primary chart series uses it. A rose CTA on one page + blue on another = fail. Status colors never substitute for accent.
 
@@ -120,10 +138,10 @@ No pure `#000000` / `#FFFFFF`. Off-black `zinc-950`, off-white `zinc-50`.
 --chart-8: #A1A1AA (zinc-light, context)
 ```
 
-Max 4 series per chart. Baseline/comparison always zinc dashed. Positive emerald, negative rose — never invert.
+Max 4 series per chart. Baseline/comparison always zinc dashed. Positive emerald, negative rose — never invert. Status hues keep one meaning everywhere: emerald = success/healthy, amber = warning/needs-attention only (never pending/progress/info), rose = error/destructive, blue = info/neutral. Four semantic colors max; anything else is zinc.
 
 Per-mode expression (same hue, different surround):
-- Gridlines: Light `zinc-200`, Dark `white/10`. Axis ticks `text-3` mono 12px in both.
+- Gridlines: Light `zinc-200`, Dark `white/10`. Axis ticks mono 12px: Light `zinc-500` (4.8:1 pass), Dark `zinc-400` (7.8:1 pass — `zinc-500` on Dark is 4.1:1 = fail, banned).
 - Area fill: Light `accent/12 + stroke 2px`, Dark `accent/20 + stroke 2px` — Light needs less wash to stay crisp on white.
 - Tooltip: Light `bg-white border-zinc-200 shadow-md`, Dark `bg-zinc-900 border-white/10`. Mono numbers in both.
 - Donut center total: `text-1` in both. Legend `text-2` in both, never `text-3` for legend labels.
@@ -177,7 +195,10 @@ import { GeistMono } from 'geist/font/mono';
 | `mono-num` | `tabular-nums font-mono` | 500/600 | all metrics, counts, latencies |
 
 Rules:
-- Line length <80ch, body `max-w-[65ch]`.
+- Line length 45–75ch, body `max-w-[65ch]`. Body leading 1.5 at that measure (1.4 narrow → 1.6+ wide, never below 1.4); headings tighten to 1.1–1.25 as size grows. Scale ratio 1.25 desktop, compress from the top on mobile (body floor never moves).
+- `text-wrap: balance` on `h1-h3`/tooltips/captions (set once in stylesheet), `text-wrap: pretty` on `p/li` — never hand `<br>` widows, never `balance` on body copy.
+- Muted/secondary text minimum `font-medium` (see §3.2 — contrast math ignores weight).
+- Numbers that update or stack: `tabular-nums` (counters, columns, KPIs); body prose stays proportional.
 - Sentence case everywhere. No ALL-CAPS labels except `caption` eyebrows (max 1 per 3 sections).
 - No single-word accent color/italic in headlines. Emphasis = same-family bold/italic only.
 - Button labels 1–3 words, one line at desktop. No wrapping CTAs. One label per intent (`Publish` → toast `Published`).
@@ -241,6 +262,7 @@ import { ChartLine, Database, Microphone, Globe, Lightning } from '@phosphor-ico
 - Decorative icons beside text: `aria-hidden="true"`. Standalone icon buttons: `aria-label` + tooltip.
 - No emoji as structural icons. No hand-rolled SVG paths. Missing glyph → second Phosphor weight or `@radix-ui/react-icons`, never draw from scratch.
 - Touch target ≥44×44. Expand `hitarea` when glyph is 16.
+- Migration (blocking): `lucide-react@1.45 + @thesvg/icons` in `apps/web/package.json` are legacy — do not import in new files; replace on touch with Phosphor equivalent (`Search → MagnifyingGlass`, etc). Verify: `grep -rn "lucide-react\|@thesvg/icons" apps/web/app apps/web/components --include="*.tsx"` must shrink to zero over time; new files with legacy imports = fail.
 
 Common map: Overview `ChartLine`, Knowledge `Database`, Agents `Robot`, Persona `Palette`, Audition `FlaskConical`, Runtime `Code`, Website `Globe`, Agent `ChatCircle`, Intent `Crosshair`, Conversion `Target`, Radar `Radar`, Signals `Lightning`, Sessions `Clock`, Leads `Users`, Activity `ListChecks`, Errors `WarningCircle`, API `Key`, Billing `CreditCard`, Team `UserPlus`.
 
@@ -248,16 +270,24 @@ Common map: Overview `ChartLine`, Knowledge `Database`, Agents `Robot`, Persona 
 
 App is data-product — no stock photos, no gradient blobs as hero. Visuals = charts, entity graphs, live previews. Entity avatars use initials + zinc bg, never colored gradients per user.
 
-### 6.3 Motion tokens
+### 6.3 Motion tokens (per `emil-design-eng` + `review-animations` — Linear/Vercel bar)
 
 ```css
---ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+--ease-out: cubic-bezier(0.23, 1, 0.32, 1);      /* entering/exiting UI */
+--ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);  /* on-screen movement */
+--ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);   /* drawers/sheets */
 --dur-1: 130ms; /* menu, tooltip */
 --dur-2: 180ms; /* collapsible, drawer */
 --dur-3: 240ms; /* chart enter */
 ```
 
-Animate `transform` + `opacity` only. Existing `menu-in / collapsible-down/up` in `globals.css:129-172` is canonical. Honor `prefers-reduced-motion: reduce` — collapse to static + disable `CRAWLING` pulse + chart enter animation. Honor `prefers-reduced-transparency` — header/drawer fall back to solid `bg-card` (no `backdrop-blur` / `bg-white/80`). No scroll-hijack, no marquee (max 0 per internal page), no infinite pulse on cards.
+Rules (blocking):
+- Ease: entering/exiting = `ease-out` or stronger custom curve. `ease-in` on UI = fail (delays the moment the user watches most). Hover/color = `ease`; constant motion = `linear`.
+- Duration: UI stays under 300ms. Button press 100–160ms, tooltip 125–200ms, dropdown 150–250ms, modal/drawer 200–500ms. Anything slower needs written justification.
+- Frequency: keyboard-initiated / 100+×/day actions animate NEVER (command palette toggle, shortcuts). Tens/day = reduce or remove. Occasional (modal/drawer/toast) = standard. Rare = delight allowed.
+- Physicality: animate `transform` + `opacity` ONLY (GPU). Never `width/height/margin/padding/top/left`. Never `transition: all` — name properties. Never enter from `scale(0)` — start `scale(0.95)` + `opacity: 0`. Popovers/dropdowns/tooltips scale from trigger (`transform-origin: var(--transform-origin)`); modals stay centered. Pressables get `active:scale-[0.98]`.
+- Interruptibility: toasts/toggles/rapid triggers use CSS transitions (retarget mid-flight), never restart-from-zero keyframes. Stagger groups 30–80ms, never blocking interaction.
+- Existing `menu-in / collapsible-down/up` in `globals.css:133-176` is canonical — retime to curves above. Honor `prefers-reduced-motion: reduce` — collapse to static, keep opacity/color comprehension cues, disable `CRAWLING` pulse + chart enter animation. Honor `prefers-reduced-transparency` — header/drawer fall back to solid `bg-card`. Gate hover motion behind `@media (hover: hover) and (pointer: fine)`. No scroll-hijack, no marquee (max 0 per internal page), no infinite pulse on cards — the `animate-pulse` status dot in `ingestion-studio.tsx:557` is a live violation, replace with static dot + `aria-label`.
 
 ---
 
@@ -423,14 +453,14 @@ Use: `Conversation, Message, MessageContent, MessageResponse, PromptInput, Messa
 
 | Component | Spec (Light / Dark parity) |
 |---|---|
-| `Button` | `h-9 px-4 text-sm font-medium rounded-lg`. Primary: Light `bg-brand-600 text-white hover:bg-brand-500`, Dark `bg-brand-500 text-zinc-950 or white per contrast + hover brighter`, `active:scale-[0.98]`. Secondary: `border-border-subtle bg-surface`. Ghost: text-only. Disabled: `opacity-50 pointer-events-none` + reason tooltip in both. Contrast AA min in both — audit white-on-blue Light and ink-on-blue Dark separately. |
+| `Button` | `h-9 px-4 text-sm font-medium rounded-lg`. Primary: Light `bg-brand-600 text-white hover:bg-brand-500`, Dark `bg-brand-500 text-zinc-950 hover brighter`, `active:scale-[0.98]`, `transition: transform 160ms var(--ease-out)`. Secondary: `border-border-subtle bg-surface`. Ghost: text-only. Disabled: `opacity-50 pointer-events-none` + reason tooltip in both (exempt from contrast). Contrast AA min in both — white-on-`brand-600` 5.2:1 Light, `zinc-950`-on-`brand-500` 5.4:1 Dark; white-on-`brand-500` 3.7:1 is banned, so Dark ink is never white. |
 | `Card` | `rounded-xl border bg-card p-5`. Light `bg-white border-zinc-200`, Dark `bg-card border-white/10`. Title `16 semibold text-1`, sub `13 text-2`. No nested cards. If >6 cards on page, switch to dividers (critical in Light). |
 | `Input/Select/Slider` | Label above (`text-2`), helper in markup (optional), error below (rose-600 Light / rose-400 Dark). `h-9 rounded-lg`. Light `bg-white border-zinc-300`, Dark `bg-zinc-900 border-white/15`. No placeholder-as-label. Focus: Light `ring-2 ring-brand-600/30 border-brand-600`, Dark `ring-brand-500/40 border-brand-500`. Placeholder contrast still readable in Light. |
-| `Badge/Chip` | `rounded-full px-2.5 py-0.5 text-xs font-medium`. Status: dot + label (never color alone). Light fills `emerald-50/blue-50/rose-50/zinc-100` with `700` text; Dark fills `emerald-500/15` etc with `300` text. `READY emerald, CRAWLING blue pulse (once, respects reduced-motion), FAILED rose, DRAFT zinc`. |
+| `Badge/Chip` | `rounded-full px-2.5 py-0.5 text-xs font-medium`. Status: dot + label (never color alone). Light fills `emerald-50/blue-50/rose-50/amber-50/zinc-100` with `emerald-700/blue-700/rose-900/amber-800/zinc-700` text (measured 5.2:1 / 8.7:1 / 6.4:1+ — AA pass); Dark fills `emerald-500/15` etc with `300` text. `READY emerald, CRAWLING blue static dot (pulse only if reduced-motion-safe + stops, never `animate-pulse` loops), FAILED rose, DRAFT zinc`. Amber = warning only. |
 | `Tabs` | Underline style for archetype switching, pill only for filters. Active tab `text-1 + accent underline`, inactive `text-2`. Content `mt-4`. |
 | `Drawer/Sheet` | Right `w-[480px]`, Light `bg-white`, Dark `bg-zinc-900`, header + scroll body + footer actions. Scrim per §3.4. Used for transcript, dossier, diff, chunk inspector. |
 | `Empty` | Centered icon (Phosphor 24, `text-3`) + title `text-1` + 1-line why `text-2` + primary CTA. E.g. “No conversions yet — Configure trigger.” Same in both, icon never `zinc-300` in Light (fails 3:1). |
-| `Error` | Inline rose border + what + how to fix + Retry. Light `border-rose-200 bg-rose-50 text-rose-900`, Dark `border-rose-500/30 bg-rose-500/10 text-rose-200`. Toasts only for transient (saved, copied). |
+| `Error` | Inline rose border + what + why + what-next + Retry. Light `border-rose-200 bg-rose-50 text-rose-900`, Dark `border-rose-500/30 bg-rose-500/10 text-rose-200`. Never "Something went wrong" without action. Confirm before irreversible (`Delete this project and all 47 tasks? This cannot be undone`), disable unavailable actions instead of erroring on click, autosave long inputs. Toasts only for transient (saved, copied). |
 | `Skeleton` | Shape-matched (`h-[180px] rounded-xl`), Light `bg-zinc-200/70`, Dark `bg-white/10`, never spinner for charts/tables. |
 
 Form a11y: `<label>`, `aria-describedby` helper, `aria-invalid` + error role, color never sole indicator.
@@ -513,9 +543,12 @@ Self-audit before ship: re-read every string. Kill broken grammar, unclear refer
 Prime, pristine, consistent = all boxes ticked. If it looks like it could be any dashboard, it failed — revise toward `Behaviour → Interaction → Intent → Outcome`.
 
 ```bash
-# 1. No raw color / no dupe chrome
-grep -rn "#[0-9a-fA-F]\\{6\\}" apps/web/app apps/web/components --include="*.tsx" | grep -v tokens # expect empty
-# 2. Light + Dark screenshots (PageHeader, KPI row, 1 chart, 1 table, 1 drawer) in both modes
-# 3. Contrast: text-1 ≥7:1, text-2 ≥4.5:1, meaningful icon ≥3:1 — checked Light AND Dark separately
-# 4. Keyboard: Tab reaches all actions, Enter opens rows/nodes, Esc closes Sheet/Dialog, focus returns, aria-live announces streaming
+# 1. No raw color / no dupe chrome (runtime brand ?? fallbacks excepted, see §2.1)
+grep -rn "#[0-9a-fA-F]\\{6\\}" apps/web/app apps/web/components --include="*.tsx" | grep -v tokens # expect only brand ?? fallbacks
+grep -rn "bg-blue-500\\|bg-emerald-500\\|animate-pulse" apps/web/app apps/web/components --include="*.tsx" # expect empty
+# 2. No legacy icons in new code
+grep -rn "lucide-react\\|@thesvg/icons" apps/web/app apps/web/components --include="*.tsx" # expect shrinking, zero in new files
+# 3. Light + Dark screenshots (PageHeader, KPI row, 1 chart, 1 table, 1 drawer) in both modes
+# 4. Contrast (measured Oct 2026, re-verify on token change): text-1 19.9/19.1, text-2 7.7/7.8, text-3 4.8/7.8, accent-ink 5.2/5.4 — all ≥4.5:1 both modes; meaningful icon ≥3:1 both modes
+# 5. Keyboard: Tab reaches all actions, Enter opens rows/nodes, Esc closes Sheet/Dialog, focus returns, aria-live announces streaming; focus ring visible both modes; touch targets ≥44px; skip link present
 ```
