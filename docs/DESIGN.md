@@ -304,7 +304,7 @@ Rules (blocking):
 [Sidebar 260px] [Inset: Header h-14 sticky + Breadcrumb + ModeToggle | Main scroll]
 ```
 
-- Sidebar grouping per spec v3 §4 (Overview / Knowledge Foundry / Agent Orchestration / Persona Studio / Audition Lab / Client Runtime / Unified Telemetry / Demand Radar / Prospect Ledger / Operations / Settings). Keep labels verbatim — vocabulary is wayfinding.
+- Sidebar grouping frozen to shipped labels (Oct 2026, `nav-config.ts` is truth): Overview / KNOWLEDGE (Ingest, Sources, Snapshots) / AGENTS / EXPERIENCE (Appearance, Personality, Behavior) / Playground / INTEGRATION (Embed Snippet, Allowed Domains) / ANALYTICS (Website, Agent, Intent, Conversions) / INTELLIGENCE (Intent Radar, Signals) / VISITORS (Conversations, Leads) / OPERATIONS (Activity, Errors). Order follows Behaviour → Interaction → Intent → Outcome. Conversions lives ONLY under Analytics. Settings (Account, API & Webhooks, Usage & Billing, Team) lives in the profile popup. Keep labels verbatim — vocabulary is wayfinding.
 - Header: `h-14`, `border-b`, `backdrop-blur-md`, `SidebarTrigger + Breadcrumb (text-xs) + ModeToggle`. No second nav line at desktop. Height cap 56px.
 - Main: `flex-1 flex-col overflow-y-auto`, inner `max-w-[1400px] mx-auto px-4 md:px-6 py-6 w-full`.
 
@@ -493,21 +493,20 @@ Form a11y: `<label>`, `aria-describedby` helper, `aria-invalid` + error role, co
 - **`/knowledge/ingest` (Studio):** URL input + depth slider 1–5 + exclusions + Live Extraction Visualizer (5-stage pipeline timeline) + Crawl History table. Visualizer = log timeline, not spinner.
 - **`/knowledge/sources` (Ledger):** Tabs (Pages / Sitemaps / Docs / Snippets / robots). Pages table: URL `font-mono`, status code badge, last-crawled (Hanken `tnum`), enable toggle.
 - **`/knowledge/snapshots` (Ledger):** Snapshot cards + 1-click Rollback (confirm) + Diff Inspector side-by-side green/red, `font-mono` diff.
-- **`/knowledge/graph` (Lab):** ECharts force graph, entity colors by type, orphan nodes amber ring + count. Click → inspector.
-- **`/agents` (Lab):** Agent cards + Partition Bindings drawer (snapshot, domains, voice). No table for <6 agents.
+- **`/agents` (Lab):** ComingSoon roadmap signage — multi-agent directory + Partition Bindings drawer (snapshot, domains, voice) when multi-agent ships. No table for <6 agents.
 - **`/experience/appearance` (Studio):** Scraped tokens swatches + geometry radio (bottom-right/left, drawer/sheet) + theme sync toggle + widget preview iframe.
 - **`/experience/personality` (Studio):** Tone presets (3 cards) + Directives markdown editor + Voice Studio (voice select, speed 0.8–1.25x slider, energy preset). Sentiment modulation as info callout.
 - **`/experience/behavior` (Studio):** Trigger rules list (dwell 30s/pricing, exit-intent) + greeting chips preview + grounding confidence slider with fallback explainer.
 - **`/playground` (Lab):** Chat left + Citation & Chunk Inspector right (source URL `font-mono`, score bar, latency Hanken `tnum`) + Prompt Debugger collapsible (Base/Admin/Runtime layers).
-- **`/integration/embed` (Studio):** Script snippet code block + Copy + Framework tabs (Next/React/Webflow/Shopify/WP/GTM) + Ping indicator (emerald dot + last handshake Hanken `tnum`).
-- **`/integration/domains` (Ledger):** Origin whitelist table + path include/exclude inputs with `[data-conversion]` hint.
+- **`/integration/embed-snippet` (Studio):** Script snippet code block + Copy + Framework tabs (Next/React/Webflow/Shopify/WP/GTM) + Ping indicator (emerald dot + last handshake Hanken `tnum`).
+- **`/integration/allowed-domains` (Ledger):** Origin whitelist table + path include/exclude inputs with `[data-conversion]` hint.
 - **`/analytics/*` (Telemetry):** Shared header (date + agent). Website: visitors/sessions/dwell + landing/exit tables. Agent: open rate/depth/voice%/CTR + p50/p95 latency chart. Intent: distribution donut + trend + funnel. Conversions: total/baseline/assisted + top pages/intents. Assisted = blue, baseline = zinc dashed.
 - **`/intelligence/intent-radar` (Telemetry+ECharts):** Demand cluster bubbles (size=volume, color=intent), Blindspot Index table (query, intent, confidence, volume), Competitor mentions bar.
 - **`/intelligence/signals` (Studio):** Draft cards (FAQ + JSON-LD tabs) + Approve/Push (Webflow/WP/GitHub PR) + human-approval gate note. No auto-publish UI.
 - **`/visitors/conversations` (Ledger):** Session table + transcript drawer (timestamp Hanken `tnum`, audio player, thumbs, metadata: country/device/referrer/chunks).
 - **`/visitors/leads` (Ledger):** Dossier cards (contact, BANT tags, stack) + CRM handoff buttons (Slack/HubSpot/SF/webhook). Zero-form language, no fake precision.
 - **`/operations/activity+errors` (Ledger):** Audit table (actor, action, time Hanken `tnum`) + Error log (level badge, retry, rate-limit hint).
-- **`/settings/*` (Ledger/Studio):** API keys masked + webhook list (`lead.captured` etc) + Billing quotas (token/voice/events bars) + Team roles (Admin/Editor/Viewer).
+- **`/settings/*` (popup):** Account + API & Webhooks (masked keys, `lead.captured` etc) + Usage & Billing (token/voice/events bars) + Team (Admin/Editor/Viewer). Launched from profile popup, not sidebar.
 
 ---
 

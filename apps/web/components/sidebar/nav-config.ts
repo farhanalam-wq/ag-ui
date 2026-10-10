@@ -81,15 +81,6 @@ export const SIDEBAR_NAV: SidebarNavSection[] = [
     ],
   },
   {
-    title: "VISITORS",
-    icon: ChatCircleText,
-    items: [
-      { id: "conversations", label: "Conversations", icon: ChatCircleText, href: "/visitors/conversations" },
-      { id: "leads", label: "Leads", icon: UserPlus, href: "/visitors/leads" },
-      { id: "conversions", label: "Conversions", icon: Target, href: "/visitors/conversions" },
-    ],
-  },
-  {
     title: "ANALYTICS",
     icon: ChartBar,
     items: [
@@ -105,6 +96,14 @@ export const SIDEBAR_NAV: SidebarNavSection[] = [
     items: [
       { id: "intent-radar", label: "Intent Radar", icon: Crosshair, href: "/intelligence/intent-radar" },
       { id: "signals", label: "Signals", icon: Lightning, href: "/intelligence/signals" },
+    ],
+  },
+  {
+    title: "VISITORS",
+    icon: ChatCircleText,
+    items: [
+      { id: "conversations", label: "Conversations", icon: ChatCircleText, href: "/visitors/conversations" },
+      { id: "leads", label: "Leads", icon: UserPlus, href: "/visitors/leads" },
     ],
   },
   {
