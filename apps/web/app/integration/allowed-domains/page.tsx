@@ -3,7 +3,18 @@
 import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Globe, Key, Plus, Trash } from "@phosphor-icons/react";
+import { toast } from "sonner";
 import { StudioShell } from "@/components/studio-shell";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -28,6 +39,8 @@ function KeyDomainsSection({ k }: { k: WidgetKeyListItem }) {
   const [origin, setOrigin] = useState("");
   const [adding, setAdding] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<{ id: string; origin: string } | null>(null);
+  const [removing, setRemoving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -53,20 +66,35 @@ function KeyDomainsSection({ k }: { k: WidgetKeyListItem }) {
       const d = await apiClient.embed.addDomain(k.id, { origin: origin.trim() });
       setDomains((prev) => [d, ...prev]);
       setOrigin("");
+      toast.success("Origin added", {
+        description: `${d.origin} is now allowlisted for this key.`,
+      });
     } catch (err: any) {
-      setFormError(err.message || "Failed to add origin");
+      const message = err.message || "Failed to add origin";
+      setFormError(message);
+      toast.error("Failed to add origin", { description: message });
     } finally {
       setAdding(false);
     }
   };
 
-  const handleRemove = async (id: string) => {
-    if (!window.confirm("Remove this origin? Embeds on it stop working immediately.")) return;
+  const confirmRemove = async () => {
+    if (!removeTarget || removing) return;
+    setRemoving(true);
+    const target = removeTarget;
+    setRemoveTarget(null);
     try {
-      await apiClient.embed.removeDomain(id);
-      setDomains((prev) => prev.filter((d) => d.id !== id));
+      await apiClient.embed.removeDomain(target.id);
+      setDomains((prev) => prev.filter((d) => d.id !== target.id));
+      toast.success("Origin removed", {
+        description: `${target.origin} no longer allows this key.`,
+      });
     } catch (err: any) {
-      setFormError(err.message || "Failed to remove origin");
+      const message = err.message || "Failed to remove origin";
+      setFormError(message);
+      toast.error("Failed to remove origin", { description: message });
+    } finally {
+      setRemoving(false);
     }
   };
 
@@ -125,8 +153,9 @@ function KeyDomainsSection({ k }: { k: WidgetKeyListItem }) {
                     <td className="px-3 py-2 text-right">
                       <button
                         type="button"
-                        onClick={() => handleRemove(d.id)}
-                        className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
+                        onClick={() => setRemoveTarget({ id: d.id, origin: d.origin })}
+                        disabled={removing}
+                        className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-destructive disabled:opacity-50"
                         title="Remove origin"
                         aria-label={`Remove ${d.origin}`}
                       >
@@ -157,13 +186,45 @@ function KeyDomainsSection({ k }: { k: WidgetKeyListItem }) {
                 <span>{adding ? "Adding..." : "Add"}</span>
               </Button>
             </div>
-            {formError && <p className="font-mono text-[11px] text-destructive">{formError}</p>}
+            {formError && (
+              <p role="alert" className="font-mono text-[11px] text-destructive">
+                {formError}
+              </p>
+            )}
             <p className="font-mono text-[11px] text-muted-foreground">
               Exact origins only (scheme + host). Paths default to all; use [data-conversion] markers for conversion tracking.
             </p>
           </div>
         )}
       </CardContent>
+      <AlertDialog
+        open={removeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !removing) setRemoveTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {removeTarget?.origin}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Embeds on this origin stop working immediately. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removing}>Keep origin</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={removing}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmRemove();
+              }}
+            >
+              {removing ? "Removing..." : "Remove origin"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
