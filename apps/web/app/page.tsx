@@ -38,15 +38,15 @@ import { useSelectedCompany } from "@/stores/use-company-store";
 import { getOverviewMock } from "@/mocks/overview";
 
 const trendConfig = {
-  assisted: { label: "Assisted", color: "var(--chart-1)" },
-  baseline: { label: "Baseline", color: "var(--chart-7)" },
+  assisted: { label: "Assisted", color: "hsl(var(--chart-1))" },
+  baseline: { label: "Baseline", color: "hsl(var(--chart-7))" },
 } satisfies ChartConfig;
 
 function Sparkline({ data, id }: { data: number[]; id: string }) {
   const points = data.map((v, i) => ({ i, v }));
   return (
     <ChartContainer
-      config={{ v: { label: "Trend", color: "var(--chart-1)" } }}
+      config={{ v: { label: "Trend", color: "hsl(var(--chart-1))" } }}
       className="h-8 w-full"
     >
       <AreaChart data={points} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
@@ -55,7 +55,9 @@ function Sparkline({ data, id }: { data: number[]; id: string }) {
           strokeWidth={1.5}
           dot={false}
           isAnimationActive={false}
-          style={{ stroke: "var(--chart-1)", fill: "var(--chart-1)", fillOpacity: 0.15 }}
+          stroke="var(--color-v)"
+          fill="var(--color-v)"
+          fillOpacity={0.15}
         />
       </AreaChart>
     </ChartContainer>
@@ -131,18 +133,18 @@ export default function OverviewPage() {
             <CardContent>
               <ChartContainer config={trendConfig} className="h-[260px] w-full">
                 <AreaChart data={data.demandTrend} margin={{ top: 4, right: 4, bottom: 0, left: -12 }}>
-                  <CartesianGrid stroke="var(--border)" vertical={false} />
+                  <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
                   <XAxis
                     dataKey="d"
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
+                    tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
                     minTickGap={24}
                   />
                   <YAxis
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
+                    tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
                     width={40}
                   />
                   <ChartTooltip content={<ChartTooltipContent />} />
@@ -150,7 +152,9 @@ export default function OverviewPage() {
                     dataKey="assisted"
                     strokeWidth={2}
                     dot={false}
-                    style={{ stroke: "var(--chart-1)", fill: "var(--chart-1)", fillOpacity: 0.18 }}
+                    stroke="var(--color-assisted)"
+                    fill="var(--color-assisted)"
+                    fillOpacity={0.18}
                   />
                   <Area
                     dataKey="baseline"
@@ -158,7 +162,7 @@ export default function OverviewPage() {
                     strokeWidth={2}
                     strokeDasharray="4 4"
                     dot={false}
-                    style={{ stroke: "var(--chart-7)" }}
+                    stroke="var(--color-baseline)"
                   />
                 </AreaChart>
               </ChartContainer>
@@ -205,7 +209,7 @@ export default function OverviewPage() {
                   </span>
                   <div className="h-2 rounded-full bg-muted">
                     <div
-                      className="h-2 rounded-full bg-[var(--chart-1)]"
+                      className="h-2 rounded-full bg-[hsl(var(--chart-1))]"
                       style={{ width: `${Math.max(stage.pctOfTop, 2)}%` }}
                     />
                   </div>
@@ -227,18 +231,18 @@ export default function OverviewPage() {
               <CardContent>
                 <ChartContainer config={trendConfig} className="h-[220px] w-full">
                   <AreaChart data={data.demandTrend} margin={{ top: 4, right: 4, bottom: 0, left: -12 }}>
-                    <CartesianGrid stroke="var(--border)" vertical={false} />
+                    <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
                     <XAxis
                       dataKey="d"
                       tickLine={false}
                       axisLine={false}
-                      tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
+                      tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
                       minTickGap={32}
                     />
                     <YAxis
                       tickLine={false}
                       axisLine={false}
-                      tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
+                      tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
                       width={40}
                     />
                     <ChartTooltip content={<ChartTooltipContent />} />
@@ -246,7 +250,9 @@ export default function OverviewPage() {
                       dataKey="assisted"
                       strokeWidth={2}
                       dot={false}
-                      style={{ stroke: "var(--chart-1)", fill: "var(--chart-1)", fillOpacity: 0.18 }}
+                      stroke="var(--color-assisted)"
+                      fill="var(--color-assisted)"
+                      fillOpacity={0.18}
                     />
                     <Area
                       dataKey="baseline"
@@ -254,7 +260,7 @@ export default function OverviewPage() {
                       strokeWidth={2}
                       strokeDasharray="4 4"
                       dot={false}
-                      style={{ stroke: "var(--chart-7)" }}
+                      stroke="var(--color-baseline)"
                     />
                   </AreaChart>
                 </ChartContainer>
@@ -276,7 +282,7 @@ export default function OverviewPage() {
                     </div>
                     <div className="mt-1 h-1.5 rounded-full bg-muted">
                       <div
-                        className="h-1.5 rounded-full bg-[var(--chart-1)]"
+                        className="h-1.5 rounded-full bg-[hsl(var(--chart-1))]"
                         style={{ width: `${slice.share}%` }}
                       />
                     </div>
