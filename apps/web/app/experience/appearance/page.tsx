@@ -21,6 +21,8 @@ import {
 } from "@/lib/api-client";
 import { useSelectedCompany } from "@/stores/use-company-store";
 import { copyToClipboard } from "@/lib/copy";
+import { mapBrandToWidgetTheme } from "@ag-ui/shared/client";
+import { WidgetPreview } from "@/components/experience/widget-preview";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -597,6 +599,12 @@ export default function AppearancePage() {
   const dtcgText = stringifyForCopy(activeSheet?.dtcg);
   const designMdText = stringifyForCopy(activeSheet?.designMd);
 
+  const extractedTheme = useMemo(
+    () =>
+      mapBrandToWidgetTheme(latest?.brand?.tokens, latest?.brand?.logoUrl),
+    [latest]
+  );
+
   const showEmpty = !activeSheet && !latest?.brand;
 
   return (
@@ -764,30 +772,8 @@ export default function AppearancePage() {
                   </div>
                 )}
 
-                {/* Brand mark */}
-                {(latest?.brand?.logoUrl || activeSheet?.screenshotUrl) && (
-                  <Card className="min-w-0">
-                    <CardContent className="flex flex-wrap items-center gap-4 pt-5">
-                      {latest?.brand?.logoUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={latest.brand.logoUrl}
-                          alt="Brand logo"
-                          className="h-10 w-auto rounded border border-border bg-background"
-                        />
-                      )}
-                      {activeSheet?.screenshotUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={activeSheet.screenshotUrl}
-                          alt="Source site screenshot"
-                          className="max-h-24 w-auto rounded-lg border border-border"
-                        />
-                      )}
-                    </CardContent>
-                  </Card>
-                )}
-
+                <div className="grid min-w-0 items-start gap-4 lg:grid-cols-12">
+                  <div className="min-w-0 space-y-4 lg:col-span-7">
                 {/* Colors */}
                 <Card className="min-w-0">
                   <CardHeader className="pb-3">
@@ -1277,6 +1263,59 @@ export default function AppearancePage() {
                     </CardContent>
                   </Card>
                 )}
+                  </div>
+                  <div className="min-w-0 lg:col-span-5">
+                    <div className="space-y-4 lg:sticky lg:top-20">
+                      {/* Brand mark */}
+                      {(latest?.brand?.logoUrl ||
+                        activeSheet?.screenshotUrl) && (
+                        <Card className="min-w-0">
+                          <CardContent className="flex flex-wrap items-center gap-4 pt-5">
+                            {latest?.brand?.logoUrl && (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={latest.brand.logoUrl}
+                                alt="Brand logo"
+                                className="h-10 w-auto rounded border border-border bg-background"
+                              />
+                            )}
+                            {activeSheet?.screenshotUrl && (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={activeSheet.screenshotUrl}
+                                alt="Source site screenshot"
+                                className="max-h-24 w-auto rounded-lg border border-border"
+                              />
+                            )}
+                          </CardContent>
+                        </Card>
+                      )}
+                      {/* Widget preview */}
+                      <Card className="min-w-0">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-[15px] font-semibold">
+                            Widget preview
+                          </CardTitle>
+                          <CardDescription className="text-[13px]">
+                            First draft from extracted tokens. Sample thread,
+                            nothing sends.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="pt-0">
+                          <WidgetPreview
+                            theme={extractedTheme}
+                            displayName={
+                              selectedCompany.name || "Assistant"
+                            }
+                            domain={
+                              selectedCompany.domain || "Company assistant"
+                            }
+                          />
+                        </CardContent>
+                      </Card>
+                    </div>
+                  </div>
+                </div>
               </>
             )}
           </div>
