@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   UploadSimple,
   TrayArrowDown,
@@ -11,11 +12,24 @@ import {
   FileText,
 } from "@phosphor-icons/react";
 import { apiClient, type UploadDraft, type EnrichmentBatch } from "@/lib/api-client";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 const MAX_FILES = 20;
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_BATCH_BYTES = 100 * 1024 * 1024;
 const ALLOWED_EXTS = ["pdf", "docx", "xlsx", "csv", "md", "mdx", "txt", "html", "htm", "json", "xml"];
+
+// Single source of truth: every user-facing filetype list derives from here.
+const ACCEPT_ATTR = ALLOWED_EXTS.map((e) => `.${e}`).join(",");
+const TYPE_LIST = ALLOWED_EXTS.join(", ");
 
 function extOf(name: string): string {
   const dot = name.lastIndexOf(".");
@@ -48,6 +62,7 @@ type Phase =
  * One upload request = one batch = one minor version bump.
  */
 export function UploadPanel({ companyId, majorVersion, snapshotReady, onChanged }: UploadPanelProps) {
+  const router = useRouter();
   const [phase, setPhase] = useState<Phase>({ name: "idle" });
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -113,7 +128,7 @@ export function UploadPanel({ companyId, majorVersion, snapshotReady, onChanged 
         if (!ALLOWED_EXTS.includes(extOf(f.name))) {
           setPhase({
             name: "error",
-            message: `"${f.name}" has an unsupported type. Use pdf, docx, xlsx, csv, md, txt, html, json, or sitemap xml.`,
+            message: `"${f.name}" has an unsupported type. Use ${TYPE_LIST}.`,
           });
           return;
         }
@@ -159,157 +174,208 @@ export function UploadPanel({ companyId, majorVersion, snapshotReady, onChanged 
   }, [stopPolling]);
 
   return (
-    <section className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/40 p-5 space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            Enrich with files
-          </h2>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-            One upload = one batch = one minor version bump (v{majorVersion}.
-            <span className="font-mono">x</span>).
-          </p>
-        </div>
-        {phase.name !== "idle" && phase.name !== "error" && (
-          <button
-            type="button"
-            onClick={reset}
-            className="inline-flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 px-2 py-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800"
-          >
-            <X className="size-3.5" />
-            Reset
-          </button>
-        )}
-      </div>
-
-      {!snapshotReady && (
-        <div className="p-3 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 text-xs text-amber-700 dark:text-amber-300">
-          Uploads unlock once the company crawl is READY. Crawl first in Knowledge → Ingest.
-        </div>
-      )}
-
-      {(phase.name === "idle" || phase.name === "error") && (
-        <>
-          {phase.name === "error" && (
-            <div className="flex items-start gap-2 p-3 rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/30 text-xs text-red-700 dark:text-red-300">
-              <XCircle className="size-4 shrink-0 mt-0.5" />
-              <span>{phase.message}</span>
-            </div>
+    <Card className="min-w-0">
+      <CardHeader className="pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <CardTitle className="text-[15px] font-semibold">
+              Enrich with files
+            </CardTitle>
+            <CardDescription className="mt-1 text-[13px]">
+              Uploads join the library as version v{majorVersion}.
+              <span className="font-mono">x</span>.
+            </CardDescription>
+          </div>
+          {phase.name !== "idle" && phase.name !== "error" && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-muted-foreground"
+              onClick={reset}
+            >
+              <X className="size-3.5" data-icon="inline-start" />
+              Reset
+            </Button>
           )}
-          <button
-            type="button"
-            disabled={!snapshotReady}
-            onClick={() => inputRef.current?.click()}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragOver(true);
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragOver(false);
-              void handleFiles([...e.dataTransfer.files]);
-            }}
-            className={`w-full flex flex-col items-center justify-center gap-2 p-8 rounded-xl border border-dashed transition-colors ${
-              dragOver
-                ? "border-zinc-400 dark:border-zinc-500 bg-zinc-100 dark:bg-zinc-800/60"
-                : "border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/60 hover:border-zinc-400 dark:hover:border-zinc-600"
-            } ${snapshotReady ? "cursor-pointer" : "opacity-50 cursor-not-allowed"}`}
-          >
-            <UploadSimple className="size-6 text-zinc-400 dark:text-zinc-500" />
-            <span className="text-sm text-zinc-600 dark:text-zinc-300">
-              Drop files here or <span className="underline">browse</span>
-            </span>
-            <span className="text-[11px] font-mono text-zinc-500 dark:text-zinc-500">
-              pdf · docx · xlsx · csv · md · txt · html · json · sitemap — max 20 files, 25MB each
-            </span>
-          </button>
-          <input
-            ref={inputRef}
-            type="file"
-            multiple
-            accept=".pdf,.docx,.xlsx,.csv,.md,.mdx,.txt,.html,.htm,.json,.xml"
-            className="hidden"
-            onChange={(e) => void handleFiles([...(e.target.files || [])])}
-          />
-        </>
-      )}
-
-      {phase.name === "uploading" && (
-        <div className="flex items-center gap-2 p-4 text-sm text-zinc-500 dark:text-zinc-400">
-          <CircleNotch className="size-4 animate-spin" />
-          Extracting previews…
         </div>
-      )}
-
-      {phase.name === "preview" && (
-        <div className="space-y-3">
-          <div className="space-y-2">
-            {phase.draft.manifest.map((entry, i) => (
-              <div
-                key={`${entry.filename}-${i}`}
-                className="flex items-start gap-2.5 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/60"
+      </CardHeader>
+      <CardContent className="space-y-3 pt-0">
+        {!snapshotReady && (
+          <div
+            role="note"
+            className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-[13px]"
+          >
+            <p className="font-medium">Crawl first, then upload</p>
+            <p className="mt-0.5 text-muted-foreground">
+              Uploads unlock once the company crawl is ready.{" "}
+              <Button
+                variant="link"
+                className="h-auto p-0 text-[13px] font-normal"
+                onClick={() => router.push("/knowledge/ingest")}
               >
-                <FileText className="size-4 shrink-0 mt-0.5 text-zinc-400 dark:text-zinc-500" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-medium text-zinc-800 dark:text-zinc-200 truncate">
-                      {entry.title || entry.filename}
-                    </span>
-                    <span className="text-[11px] font-mono text-zinc-500">{formatBytes(entry.size)}</span>
-                    {typeof entry.wordCount === "number" && (
-                      <span className="text-[11px] font-mono text-zinc-500">{entry.wordCount} words</span>
+                Go to Ingest
+              </Button>
+            </p>
+          </div>
+        )}
+
+        {(phase.name === "idle" || phase.name === "error") && (
+          <>
+            {phase.name === "error" && (
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-[13px]"
+              >
+                <XCircle
+                  className="mt-0.5 size-4 shrink-0 text-destructive"
+                  aria-hidden="true"
+                />
+                <span>{phase.message}</span>
+              </div>
+            )}
+            <div>
+              <button
+                type="button"
+                disabled={!snapshotReady}
+                onClick={() => inputRef.current?.click()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(true);
+                }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOver(false);
+                  void handleFiles([...e.dataTransfer.files]);
+                }}
+                aria-label="Upload files"
+                className={`flex w-full flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed p-8 transition-colors ${
+                  dragOver
+                    ? "border-primary/50 bg-primary/5"
+                    : "border-border bg-muted/30 hover:border-muted-foreground/40"
+                } ${snapshotReady ? "cursor-pointer" : "cursor-not-allowed opacity-50"}`}
+              >
+                <UploadSimple
+                  className="size-6 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <span className="text-sm">
+                  Drop files here or{" "}
+                  <span className="text-primary underline underline-offset-4">
+                    browse
+                  </span>
+                </span>
+                <span className="font-mono text-[11px] text-muted-foreground">
+                  {TYPE_LIST} · max {MAX_FILES} files, 25MB each, 100MB total
+                </span>
+              </button>
+              <input
+                ref={inputRef}
+                id="source-file-upload"
+                type="file"
+                multiple
+                accept={ACCEPT_ATTR}
+                className="hidden"
+                onChange={(e) => void handleFiles([...(e.target.files || [])])}
+              />
+            </div>
+          </>
+        )}
+
+        {phase.name === "uploading" && (
+          <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+            <CircleNotch className="size-4 animate-spin" aria-hidden="true" />
+            Extracting previews
+          </div>
+        )}
+
+        {phase.name === "preview" && (
+          <div className="space-y-3">
+            <div className="divide-y rounded-lg border">
+              {phase.draft.manifest.map((entry, i) => (
+                <div
+                  key={`${entry.filename}-${i}`}
+                  className="flex items-start gap-2.5 px-3 py-2.5"
+                >
+                  <FileText
+                    className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <span className="truncate text-[13px] font-medium">
+                        {entry.title || entry.filename}
+                      </span>
+                      <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                        {formatBytes(entry.size)}
+                      </span>
+                      {typeof entry.wordCount === "number" && (
+                        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                          {entry.wordCount.toLocaleString()} words
+                        </span>
+                      )}
+                    </p>
+                    {entry.error ? (
+                      <p className="mt-1 text-xs text-destructive">
+                        {entry.error}
+                      </p>
+                    ) : (
+                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                        {entry.preview}
+                      </p>
                     )}
                   </div>
                   {entry.error ? (
-                    <p className="text-xs text-red-500 dark:text-red-400 mt-1">{entry.error}</p>
+                    <XCircle
+                      className="size-4 shrink-0 text-destructive"
+                      aria-hidden="true"
+                    />
                   ) : (
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 line-clamp-2">{entry.preview}</p>
+                    <CheckCircle
+                      className="size-4 shrink-0 text-emerald-500"
+                      aria-hidden="true"
+                    />
                   )}
                 </div>
-                {entry.error ? (
-                  <XCircle className="size-4 shrink-0 text-red-500" />
-                ) : (
-                  <CheckCircle className="size-4 shrink-0 text-emerald-500" />
-                )}
-              </div>
-            ))}
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button type="button" onClick={() => void handleConfirm()}>
+                <TrayArrowDown className="size-4" data-icon="inline-start" />
+                Process batch
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void handleCancel()}
+              >
+                Discard
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => void handleConfirm()}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-zinc-100 hover:bg-white dark:bg-zinc-100 dark:hover:bg-white text-zinc-950 text-sm font-medium transition-colors"
-            >
-              <TrayArrowDown className="size-4" />
-              Process batch
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleCancel()}
-              className="px-4 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-            >
-              Discard
-            </button>
+        )}
+
+        {phase.name === "polling" && (
+          <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+            <CircleNotch className="size-4 animate-spin" aria-hidden="true" />
+            Indexing batch. This runs in the background, you can keep working.
           </div>
-        </div>
-      )}
+        )}
 
-      {phase.name === "polling" && (
-        <div className="flex items-center gap-2 p-4 text-sm text-zinc-500 dark:text-zinc-400">
-          <CircleNotch className="size-4 animate-spin" />
-          Indexing batch… this runs in the background, you can keep working.
-        </div>
-      )}
-
-      {phase.name === "done" && (
-        <div className="flex items-start gap-2 p-3 rounded-lg border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/30 text-xs text-emerald-700 dark:text-emerald-300">
-          <CheckCircle className="size-4 shrink-0 mt-0.5" />
-          <span>
-            Batch READY as v{majorVersion}.{phase.batch.minor} — {phase.batch.docs} documents indexed.
-          </span>
-        </div>
-      )}
-    </section>
+        {phase.name === "done" && (
+          <div className="flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-[13px]">
+            <CheckCircle
+              className="mt-0.5 size-4 shrink-0 text-emerald-500"
+              aria-hidden="true"
+            />
+            <span>
+              Batch ready as v{majorVersion}.{phase.batch.minor} ·{" "}
+              {phase.batch.docs} documents indexed.
+            </span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
