@@ -28,6 +28,14 @@ import {
 } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { apiClient, type WidgetKeyDomain, type WidgetKeyListItem } from "@/lib/api-client";
 import { useCompanyKeys } from "@/components/integration/use-company-keys";
 import { useSelectedCompany } from "@/stores/use-company-store";
@@ -102,14 +110,39 @@ function KeyDomainsSection({ k }: { k: WidgetKeyListItem }) {
     <Card className="min-w-0">
       <CardContent className="space-y-3 pt-5">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold">{k.label}</span>
-          <span className="font-mono text-[11px] text-muted-foreground">{k.keyPrefix}...</span>
+          <span
+            title={k.keyPrefix}
+            className="max-w-[220px] truncate font-mono text-[11px] text-muted-foreground"
+          >
+            {k.keyPrefix}...
+          </span>
           <Badge variant="outline" className="rounded-full font-normal">
             <span
               className={`mr-1.5 size-1.5 rounded-full ${k.revoked ? "bg-muted-foreground/40" : "bg-emerald-500"}`}
             />
             {k.revoked ? "revoked" : "active"}
           </Badge>
+          {!k.revoked && !loading && !error && (
+            domains.length === 0 ? (
+              <Badge
+                variant="outline"
+                className="rounded-full font-normal"
+                title="No origins listed, this key works on any site"
+              >
+                <span className="mr-1.5 size-1.5 rounded-full bg-amber-500" />
+                Open - works anywhere
+              </Badge>
+            ) : (
+              <Badge
+                variant="outline"
+                className="rounded-full font-normal"
+                title={`${domains.length} allowlisted origin${domains.length === 1 ? "" : "s"}`}
+              >
+                <span className="mr-1.5 size-1.5 rounded-full bg-emerald-500" />
+                Locked - {domains.length} origin{domains.length === 1 ? "" : "s"}
+              </Badge>
+            )
+          )}
         </div>
 
         {loading ? (
@@ -128,29 +161,29 @@ function KeyDomainsSection({ k }: { k: WidgetKeyListItem }) {
           </div>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full text-xs">
-              <thead className="bg-muted/40">
-                <tr className="text-left font-mono text-muted-foreground">
-                  <th className="px-3 py-2 font-medium">Origin</th>
-                  <th className="px-3 py-2 font-medium">Paths</th>
-                  <th className="px-3 py-2 font-medium text-right">Added</th>
-                  <th className="px-3 py-2"><span className="sr-only">Actions</span></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
+            <Table>
+              <TableHeader>
+                <TableRow className="font-mono">
+                  <TableHead className="px-3 py-2">Origin</TableHead>
+                  <TableHead className="px-3 py-2">Paths</TableHead>
+                  <TableHead className="px-3 py-2 text-right">Added</TableHead>
+                  <TableHead className="px-3 py-2"><span className="sr-only">Actions</span></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {domains.map((d) => (
-                  <tr key={d.id} className="hover:bg-muted/40">
-                    <td className="px-3 py-2 font-mono">{d.origin}</td>
-                    <td className="px-3 py-2 font-mono text-muted-foreground">
+                  <TableRow key={d.id}>
+                    <TableCell className="px-3 py-2 font-mono">{d.origin}</TableCell>
+                    <TableCell className="px-3 py-2 font-mono text-muted-foreground">
                       {d.includePaths.join(", ")}
                       {d.excludePaths.length > 0 && (
                         <span> - excl {d.excludePaths.join(", ")}</span>
                       )}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="px-3 py-2 text-right font-mono text-muted-foreground">
                       {new Date(d.createdAt).toLocaleDateString()}
-                    </td>
-                    <td className="px-3 py-2 text-right">
+                    </TableCell>
+                    <TableCell className="px-3 py-2 text-right">
                       <button
                         type="button"
                         onClick={() => setRemoveTarget({ id: d.id, origin: d.origin })}
@@ -161,27 +194,36 @@ function KeyDomainsSection({ k }: { k: WidgetKeyListItem }) {
                       >
                         <Trash className="size-3.5" />
                       </button>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
 
         {!k.revoked && (
           <div className="space-y-2">
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
               <Input
                 value={origin}
                 onChange={(e) => setOrigin(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleAdd()}
                 placeholder="https://company.com"
                 spellCheck={false}
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
                 className="font-mono"
-                aria-label={`Add origin for ${k.label}`}
+                aria-label={`Add origin for ${k.keyPrefix}`}
               />
-              <Button variant="outline" size="sm" onClick={handleAdd} disabled={!origin.trim() || adding}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-10 shrink-0 px-3"
+                onClick={handleAdd}
+                disabled={!origin.trim() || adding}
+              >
                 <Plus />
                 <span>{adding ? "Adding..." : "Add"}</span>
               </Button>
@@ -192,7 +234,7 @@ function KeyDomainsSection({ k }: { k: WidgetKeyListItem }) {
               </p>
             )}
             <p className="font-mono text-[11px] text-muted-foreground">
-              Exact origins only (scheme + host). Paths default to all; use [data-conversion] markers for conversion tracking.
+              Exact origins only (scheme + host). Paths default to all.
             </p>
           </div>
         )}

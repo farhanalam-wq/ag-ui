@@ -14,7 +14,7 @@ import {
   findActiveKeyByLabel,
   resolveWidgetKeyByHash,
   listKeysByCompany,
-  revokeWidgetKey,
+  deleteWidgetKey,
   checkEmbedRateLimit,
   resolveThemeStylesheetId,
   listDomainsByKey,
@@ -144,20 +144,21 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
       detail: { summary: "List widget keys", description: "Lists key prefixes and revocation status for a company." },
     }
   )
-  // 3. Revoke a key by row id. Revoked keys immediately 410 on config/chat.
+  // 3. Revoke a key by row id. The row is hard deleted (domains cascade),
+  // so deleted keys 404 on config/chat like never issued ones.
   .post(
     "/keys/:keyId/revoke",
     async ({ params, set }) => {
-      const revoked = await revokeWidgetKey(params.keyId);
-      if (!revoked) {
+      const deleted = await deleteWidgetKey(params.keyId);
+      if (!deleted) {
         set.status = 404;
         return { error: "Widget key not found" };
       }
-      return { revoked: true, id: revoked.id, keyPrefix: revoked.keyPrefix };
+      return { deleted: true, id: deleted.id, keyPrefix: deleted.keyPrefix };
     },
     {
       params: t.Object({ keyId: t.String({ format: "uuid" }) }),
-      detail: { summary: "Revoke widget key", description: "Revokes a widget key; public config/chat return 410 afterwards." },
+      detail: { summary: "Revoke widget key", description: "Deletes a widget key and its domains; public config/chat return 404 afterwards." },
     }
   )
   // 3b. List allowed origins for a key (prefixes never leave as raw).

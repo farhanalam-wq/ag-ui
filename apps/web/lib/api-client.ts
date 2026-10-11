@@ -659,7 +659,7 @@ class ApiClient {
       return data.keys || [];
     },
 
-    revokeKey: async (keyId: string): Promise<{ revoked: boolean }> => {
+    revokeKey: async (keyId: string): Promise<{ deleted: boolean }> => {
       const res = await fetch(`${this.baseUrl}/api/embed/keys/${encodeURIComponent(keyId)}/revoke`, {
         method: "POST",
       });
