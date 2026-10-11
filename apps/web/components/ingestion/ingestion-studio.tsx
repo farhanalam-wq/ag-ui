@@ -1,23 +1,18 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
-  Globe,
   MagnifyingGlass,
-  ArrowLeft,
-  Sparkle,
   Sliders,
   CheckCircle,
   WarningCircle,
-  Lightning,
-  TreeStructure,
   Database,
-  ChatCircleText,
+  CircleNotch,
 } from "@phosphor-icons/react";
 import {
   apiClient,
   type DiscoveryResponse,
-  type DiscoveredPageItem,
   type CompanySummary,
 } from "@/lib/api-client";
 import { DiscoveryTable } from "./discovery-table";
@@ -27,21 +22,31 @@ import {
   type PipelineResultData,
 } from "./pipeline-telemetry";
 import type { CompanyItem } from "../sidebar/company-switcher";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 interface IngestionStudioProps {
   onCompanyIndexed: (company: CompanyItem) => void;
   onCancel: () => void;
 }
 
-const QUICK_EXAMPLES = [
-  "https://dummyjson.com",
-  "https://mrftyres.com",
-  "https://resend.com",
-  "https://ambujacement.com",
-  "https://stripe.com",
-];
+const STEPS = ["Discover", "Select", "Ingest", "Done"] as const;
 
 export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioProps) {
+  const router = useRouter();
   // Step state: 'input' | 'discovered' | 'ingesting' | 'done'
   const [step, setStep] = useState<"input" | "discovered" | "ingesting" | "done">("input");
 
@@ -65,7 +70,6 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
   const [appearanceActive, setAppearanceActive] = useState(false);
 
   // Advanced Tuning settings
-  const [showTuning, setShowTuning] = useState(false);
   const [fetchConcurrency, setFetchConcurrency] = useState(25);
   const [parseConcurrency, setParseConcurrency] = useState(5);
   const [embedConcurrency, setEmbedConcurrency] = useState(3);
@@ -320,336 +324,405 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
     setPhase("INITIALIZING");
   };
 
-  return (
-    <div className="w-full max-w-5xl mx-auto p-4 sm:p-6 space-y-6">
-      {/* Studio Header Bar */}
-      <div className="flex items-center justify-between gap-4 pb-4 border-b border-zinc-800">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="p-2 rounded-lg border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors"
-            title="Return to Intelligence Chat"
-          >
-            <ArrowLeft className="size-4" />
-          </button>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-mono bg-brand-primary/10 text-brand-primary border border-brand-primary/20">
-                In-Process Ingestion Engine
-              </span>
-              <span className="text-zinc-500">•</span>
-              <span className="text-xs font-mono text-zinc-400">Qdrant Vector Intelligence</span>
-            </div>
-            <h1 className="text-lg sm:text-xl font-bold text-zinc-100 mt-0.5">
-              Ingestion Studio & Knowledge Crawler
-            </h1>
-          </div>
-        </div>
+  const stepIndex =
+    step === "input" ? 0 : step === "discovered" ? 1 : step === "ingesting" ? 2 : 3;
 
-        {step !== "input" && (
-          <button
-            type="button"
-            onClick={handleReset}
-            className="text-xs text-zinc-400 hover:text-zinc-200 underline font-mono"
-          >
-            New URL
-          </button>
-        )}
+  return (
+    <div className="min-w-0">
+      {/* PageHeader */}
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-[30px] leading-9 tracking-tight font-semibold">
+            Ingest a site
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1 max-w-[65ch]">
+            Discover the pages, pick what matters, and turn the site into an
+            assistant you can question.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {step !== "input" && (
+            <Button variant="ghost" size="sm" onClick={handleReset}>
+              Start over
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={onCancel}>
+            Open Playground
+          </Button>
+        </div>
       </div>
+
+      {/* Stepper */}
+      <ol className="mt-6 flex min-w-0 items-center gap-1">
+        {STEPS.map((label, i) => {
+          const done = i < stepIndex;
+          const active = i === stepIndex;
+          return (
+            <li key={label} className="flex min-w-0 flex-1 items-center gap-1">
+              <span
+                className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg border px-3 py-2 text-[13px] ${
+                  done
+                    ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300"
+                    : active
+                      ? "border-primary/40 bg-primary/5 font-medium text-foreground"
+                      : "border-border text-muted-foreground"
+                }`}
+              >
+                <span
+                  className={`flex size-5 shrink-0 items-center justify-center rounded-full font-sans text-[11px] tabular-nums ${
+                    done
+                      ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300"
+                      : active
+                        ? "bg-primary/15 text-primary"
+                        : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {done ? (
+                    <CheckCircle className="size-3.5" aria-hidden="true" />
+                  ) : (
+                    i + 1
+                  )}
+                </span>
+                <span className="truncate">{label}</span>
+              </span>
+            </li>
+          );
+        })}
+      </ol>
 
       {/* STEP 1: Target URL Input & Discovery Trigger */}
       {step === "input" && (
-        <div className="space-y-6 max-w-2xl mx-auto py-8">
-          <div className="text-center space-y-2">
-            <div className="size-12 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto text-brand-primary shadow-lg shadow-brand-primary/10">
-              <Globe className="size-6" />
-            </div>
-            <h2 className="text-lg font-semibold text-zinc-100">
-              Enter Company Website or Domain
-            </h2>
-            <p className="text-xs text-zinc-400 max-w-md mx-auto">
-              Autonomous discovery will probe <code className="text-zinc-300">robots.txt</code>, recursive sitemap indices, and <code className="text-zinc-300">llms.txt</code> to classify all crawlable pages.
-            </p>
-          </div>
-
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleDiscover();
-            }}
-            className="space-y-3"
-          >
-            <div className="relative">
-              <input
-                type="text"
-                value={targetUrl}
-                onChange={(e) => setTargetUrl(e.target.value)}
-                placeholder="https://example.com"
-                disabled={isDiscovering}
-                className="w-full h-12 pl-4 pr-36 rounded-xl border border-zinc-800 bg-zinc-900/90 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary shadow-inner transition-all font-mono"
-              />
-              <button
-                type="submit"
-                disabled={!targetUrl.trim() || isDiscovering}
-                className="absolute right-1.5 top-1.5 bottom-1.5 px-4 rounded-lg bg-brand-primary hover:opacity-90 disabled:opacity-40 text-white text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer"
+        <div className="mt-4 grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3">
+          <Card className="min-w-0 lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="text-[15px] font-semibold">
+                Which site should the assistant learn?
+              </CardTitle>
+              <CardDescription className="text-[13px]">
+                Discovery checks the sitemap and site structure, then shows
+                every page ranked so you pick what matters.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleDiscover();
+                }}
+                className="flex min-w-0 flex-col gap-2"
               >
-                {isDiscovering ? (
-                  <>
-                    <div className="size-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                    <span>Discovering...</span>
-                  </>
-                ) : (
-                  <>
-                    <MagnifyingGlass className="size-3.5" />
-                    <span>Discover Pages</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            {discoveryError && (
-              <div className="p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-xs text-red-400 flex items-center gap-2">
-                <WarningCircle className="size-4 shrink-0" />
-                <span>{discoveryError}</span>
-              </div>
-            )}
-          </form>
-
-          {/* Quick Examples */}
-          <div className="space-y-2 text-center">
-            <div className="text-[11px] font-sans text-zinc-500 uppercase tracking-wider">
-              Popular Examples
-            </div>
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              {QUICK_EXAMPLES.map((ex) => (
-                <button
-                  key={ex}
-                  type="button"
-                  onClick={() => {
-                    setTargetUrl(ex);
-                    handleDiscover(ex);
-                  }}
-                  className="px-2.5 py-1 rounded-md border border-zinc-800/80 bg-zinc-900/60 hover:bg-zinc-800 text-xs text-zinc-400 hover:text-zinc-200 transition-colors font-mono"
+                <label
+                  htmlFor="ingest-url"
+                  className="text-[13px] font-medium"
                 >
-                  {ex.replace("https://", "")}
-                </button>
-              ))}
-            </div>
-          </div>
+                  Company website or domain
+                </label>
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
+                  <Input
+                    id="ingest-url"
+                    type="url"
+                    inputMode="url"
+                    value={targetUrl}
+                    onChange={(e) => setTargetUrl(e.target.value)}
+                    placeholder="https://example.com"
+                    disabled={isDiscovering}
+                    aria-invalid={!!discoveryError}
+                    aria-describedby={
+                      discoveryError ? "ingest-url-error" : "ingest-url-help"
+                    }
+                    className="h-10 flex-1 font-mono"
+                  />
+                  <Button
+                    type="submit"
+                    disabled={!targetUrl.trim() || isDiscovering}
+                    className="h-10 shrink-0"
+                  >
+                    {isDiscovering ? (
+                      <>
+                        <CircleNotch
+                          className="size-4 animate-spin"
+                          aria-hidden="true"
+                        />
+                        Discovering
+                      </>
+                    ) : (
+                      <>
+                        <MagnifyingGlass
+                          className="size-4"
+                          aria-hidden="true"
+                        />
+                        Discover pages
+                      </>
+                    )}
+                  </Button>
+                </div>
+                <p
+                  id="ingest-url-help"
+                  className="text-xs text-muted-foreground"
+                >
+                  Paste any public company site. No login needed.
+                </p>
+              </form>
 
-          {/* Concurrency Tuning Accordion */}
-          <div className="pt-4 border-t border-zinc-900">
-            <button
-              type="button"
-              onClick={() => setShowTuning(!showTuning)}
-              className="inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 font-mono transition-colors mx-auto block"
-            >
-              <Sliders className="size-3.5" />
-              <span>{showTuning ? "Hide Pipeline Concurrency Tuning" : "Advanced Pipeline Concurrency Tuning"}</span>
-            </button>
+              {discoveryError && (
+                <div
+                  id="ingest-url-error"
+                  role="alert"
+                  className="mt-3 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-[13px]"
+                >
+                  <p className="flex items-center gap-2 font-medium">
+                    <WarningCircle
+                      className="size-4 shrink-0"
+                      aria-hidden="true"
+                    />
+                    Discovery failed
+                  </p>
+                  <p className="mt-1 text-muted-foreground">{discoveryError}</p>
+                  <p className="mt-1 text-muted-foreground">
+                    Check the URL is public and reachable, then try again.
+                  </p>
+                </div>
+              )}
 
-            {showTuning && (
-              <div className="mt-4 p-4 rounded-xl border border-zinc-800/80 bg-zinc-950/60 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-mono">
-                <div>
-                  <label className="text-zinc-500 block mb-1">Fetch Width</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={50}
-                    value={fetchConcurrency}
-                    onChange={(e) => setFetchConcurrency(parseInt(e.target.value, 10) || 25)}
-                    className="h-8 w-full px-2 rounded border border-zinc-800 bg-zinc-900 text-zinc-200 text-xs"
-                  />
-                  <span className="text-[10px] text-zinc-600 block mt-0.5">parallel fetches</span>
-                </div>
-                <div>
-                  <label className="text-zinc-500 block mb-1">Parse Width</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={16}
-                    value={parseConcurrency}
-                    onChange={(e) => setParseConcurrency(parseInt(e.target.value, 10) || 5)}
-                    className="h-8 w-full px-2 rounded border border-zinc-800 bg-zinc-900 text-zinc-200 text-xs"
-                  />
-                  <span className="text-[10px] text-zinc-600 block mt-0.5">parallel parses</span>
-                </div>
-                <div>
-                  <label className="text-zinc-500 block mb-1">Embed Width</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={6}
-                    value={embedConcurrency}
-                    onChange={(e) => setEmbedConcurrency(parseInt(e.target.value, 10) || 3)}
-                    className="h-8 w-full px-2 rounded border border-zinc-800 bg-zinc-900 text-zinc-200 text-xs"
-                  />
-                  <span className="text-[10px] text-zinc-600 block mt-0.5">embedding workers</span>
-                </div>
-                <div>
-                  <label className="text-zinc-500 block mb-1">Host Gap</label>
-                  <input
-                    type="number"
-                    min={50}
-                    max={1000}
-                    value={hostGapMs}
-                    onChange={(e) => setHostGapMs(parseInt(e.target.value, 10) || 150)}
-                    className="h-8 w-full px-2 rounded border border-zinc-800 bg-zinc-900 text-zinc-200 text-xs"
-                  />
-                  <span className="text-[10px] text-zinc-600 block mt-0.5">ms between calls</span>
-                </div>
-              </div>
-            )}
-          </div>
+              <Collapsible className="mt-5 border-t pt-3">
+                <CollapsibleTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground"
+                  >
+                    <Sliders className="size-3.5" aria-hidden="true" />
+                    Advanced crawl settings
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    {[
+                      {
+                        label: "Fetch width",
+                        hint: "parallel fetches",
+                        value: fetchConcurrency,
+                        set: setFetchConcurrency,
+                        min: 1,
+                        max: 50,
+                        fallback: 25,
+                      },
+                      {
+                        label: "Parse width",
+                        hint: "parallel parses",
+                        value: parseConcurrency,
+                        set: setParseConcurrency,
+                        min: 1,
+                        max: 16,
+                        fallback: 5,
+                      },
+                      {
+                        label: "Embed width",
+                        hint: "embedding workers",
+                        value: embedConcurrency,
+                        set: setEmbedConcurrency,
+                        min: 1,
+                        max: 6,
+                        fallback: 3,
+                      },
+                      {
+                        label: "Host gap (ms)",
+                        hint: "ms between calls",
+                        value: hostGapMs,
+                        set: setHostGapMs,
+                        min: 50,
+                        max: 1000,
+                        fallback: 150,
+                      },
+                    ].map((f) => (
+                      <div key={f.label}>
+                        <label className="text-xs text-muted-foreground">
+                          {f.label}
+                        </label>
+                        <Input
+                          type="number"
+                          min={f.min}
+                          max={f.max}
+                          value={f.value}
+                          onChange={(e) =>
+                            f.set(parseInt(e.target.value, 10) || f.fallback)
+                          }
+                          className="mt-1 h-8 font-mono"
+                        />
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">
+                          {f.hint}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            </CardContent>
+          </Card>
 
-          {/* Section: Indexed Companies in Knowledge Base */}
-          <div className="pt-6 border-t border-zinc-900 space-y-3">
-            <div className="flex items-center justify-between">
+          {/* Rail: library of learned sites */}
+          <Card className="min-w-0">
+            <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
-                <Database className="size-4 text-brand-primary" />
-                <h3 className="text-xs font-semibold text-zinc-200 uppercase tracking-wider font-sans">
-                  Indexed Companies ({indexedCompanies.length})
-                </h3>
+                <Database
+                  className="size-4 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <CardTitle className="text-[15px] font-semibold">
+                  Learned sites ({indexedCompanies.length})
+                </CardTitle>
               </div>
-              <span className="text-[10px] font-mono text-zinc-500">
-                PostgreSQL • Qdrant Vector DB
-              </span>
-            </div>
-
-            {loadingCompanies ? (
-              <div className="p-4 rounded-xl border border-zinc-800/80 bg-zinc-900/30 text-center text-xs text-zinc-500 font-mono flex items-center justify-center gap-2">
-                <div className="size-3 rounded-full border-2 border-brand-primary/30 border-t-brand-primary animate-spin" />
-                <span>Loading indexed database records...</span>
-              </div>
-            ) : indexedCompanies.length === 0 ? (
-              <div className="p-4 rounded-xl border border-zinc-800/80 bg-zinc-900/30 text-center text-xs text-zinc-500 font-mono">
-                No indexed companies in knowledge base yet.
-              </div>
-            ) : (
-              <div className="rounded-xl border border-zinc-800/80 bg-zinc-950/60 divide-y divide-zinc-800/60 overflow-hidden shadow-sm">
-                <div className="max-h-72 overflow-y-auto divide-y divide-zinc-900/60 scrollbar-thin">
+              <CardDescription className="text-[13px]">
+                Jump back into any assistant or re-learn it.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-0">
+              {loadingCompanies ? (
+                <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed p-4 text-[13px] text-muted-foreground">
+                  <CircleNotch
+                    className="size-4 animate-spin"
+                    aria-hidden="true"
+                  />
+                  Loading learned sites
+                </div>
+              ) : indexedCompanies.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-4 text-center text-[13px] text-muted-foreground">
+                  Nothing learned yet. Your first site lands here.
+                </div>
+              ) : (
+                <ul className="max-h-80 min-w-0 space-y-1 overflow-y-auto">
                   {indexedCompanies.map((c) => {
-                    const brandColor = c.brand?.tokens?.colors?.primary || "#3b82f6";
-                    const docCount = c.docCount ?? c.latestSnapshot?.pageCount ?? 0;
+                    const brandColor =
+                      c.brand?.tokens?.colors?.primary || "#3b82f6";
+                    const docCount =
+                      c.docCount ?? c.latestSnapshot?.pageCount ?? 0;
                     const chunkCount = c.chunkCount ?? 0;
-                    const isReady = (c.status || c.latestSnapshot?.status) === "READY";
-
+                    const isReady =
+                      (c.status || c.latestSnapshot?.status) === "READY";
                     return (
-                      <div
+                      <li
                         key={c.id}
-                        className="p-3 flex items-center justify-between gap-3 hover:bg-zinc-900/40 transition-colors"
+                        className="flex items-center justify-between gap-2 rounded-lg px-2 py-2 hover:bg-muted/40"
                       >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div
-                            className="size-7 rounded-lg flex items-center justify-center font-bold text-[10px] shrink-0 border border-zinc-800 shadow-inner"
-                            style={{ backgroundColor: `${brandColor}20`, color: brandColor }}
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span
+                            className="flex size-7 shrink-0 items-center justify-center rounded-md text-[10px] font-bold"
+                            style={{
+                              backgroundColor: `${brandColor}20`,
+                              color: brandColor,
+                            }}
                           >
                             {c.name.slice(0, 2).toUpperCase()}
-                          </div>
+                          </span>
                           <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-semibold text-zinc-200 truncate">
-                                {c.name}
-                              </span>
+                            <p className="flex items-center gap-1.5 truncate text-[13px] font-medium">
+                              {c.name}
                               <span
-                                className={`size-1.5 rounded-full ${
-                                  isReady ? "bg-emerald-500" : "bg-blue-500 animate-pulse"
+                                className={`size-1.5 shrink-0 rounded-full ${
+                                  isReady
+                                    ? "bg-emerald-500"
+                                    : "bg-[hsl(var(--chart-1))]"
                                 }`}
                               />
-                            </div>
-                            <span className="text-[10px] font-mono text-zinc-500 truncate block">
-                              {c.domain}
-                            </span>
+                            </p>
+                            <p className="truncate font-mono text-[11px] text-muted-foreground">
+                              {c.domain} · {docCount} docs
+                              {chunkCount > 0
+                                ? ` · ${chunkCount} chunks`
+                                : ""}
+                            </p>
                           </div>
                         </div>
-
-                        <div className="flex items-center gap-3 shrink-0">
-                          <div className="text-right hidden sm:block">
-                            <div className="text-xs font-mono text-zinc-300">
-                              {docCount} docs
-                            </div>
-                            <div className="text-[10px] font-mono text-zinc-500">
-                              {chunkCount > 0 ? `${chunkCount} chunks` : c.status || "Ready"}
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const url = c.url || `https://${c.domain}`;
-                                setTargetUrl(url);
-                                handleDiscover(url);
-                              }}
-                              className="px-2 py-1 rounded text-[11px] font-mono border border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 hover:text-white transition-colors cursor-pointer"
-                              title="Re-run discovery on this domain"
-                            >
-                              Re-index
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                onCompanyIndexed({
-                                  id: c.id,
-                                  name: c.name,
-                                  domain: c.domain,
-                                  description: `Indexed knowledge base for ${c.name} (${c.domain}).`,
-                                  brandColor,
-                                  badge: `${docCount} Docs • Indexed`,
-                                  docCount,
-                                  chunkCount,
-                                  factCount: c.factCount || 0,
-                                  status: c.status || "READY",
-                                  suggestedQueries: [
-                                    `What are the core products and APIs provided by ${c.name}?`,
-                                    `What are the pricing tiers, limits, and plan options?`,
-                                    `Where are ${c.name} headquarters and contact options?`,
-                                  ],
-                                });
-                              }}
-                              className="px-2 py-1 rounded text-[11px] font-mono border border-brand-primary/30 bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary transition-colors flex items-center gap-1 cursor-pointer"
-                            >
-                              <ChatCircleText className="size-3" />
-                              <span>Chat</span>
-                            </button>
-                          </div>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            title="Re-run discovery on this domain"
+                            onClick={() => {
+                              const url = c.url || `https://${c.domain}`;
+                              setTargetUrl(url);
+                              handleDiscover(url);
+                            }}
+                          >
+                            Re-learn
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => {
+                              onCompanyIndexed({
+                                id: c.id,
+                                name: c.name,
+                                domain: c.domain,
+                                description: `Indexed knowledge base for ${c.name} (${c.domain}).`,
+                                brandColor,
+                                badge: `${docCount} Docs • Indexed`,
+                                docCount,
+                                chunkCount,
+                                factCount: c.factCount || 0,
+                                status: c.status || "READY",
+                                suggestedQueries: [
+                                  `What are the core products and APIs provided by ${c.name}?`,
+                                  `What are the pricing tiers, limits, and plan options?`,
+                                  `Where are ${c.name} headquarters and contact options?`,
+                                ],
+                              });
+                            }}
+                          >
+                            Chat
+                          </Button>
                         </div>
-                      </div>
+                      </li>
                     );
                   })}
-                </div>
-              </div>
-            )}
-          </div>
+                </ul>
+              )}
+              <Button
+                variant="link"
+                className="mt-2 h-auto p-0 text-[13px] font-normal"
+                onClick={() => router.push("/knowledge/sources")}
+              >
+                Manage all sources
+              </Button>
+            </CardContent>
+          </Card>
         </div>
       )}
 
       {/* STEP 2: Discovered URLs Table & Page Selector */}
       {step === "discovered" && discoveryData && (
-        <DiscoveryTable
-          discovery={discoveryData}
-          selectedUrls={selectedUrls}
-          onToggleUrl={handleToggleUrl}
-          onSelectAll={handleSelectAll}
-          onSelectNone={handleSelectNone}
-          onSelectTopN={handleSelectTopN}
-          onApplyRange={handleApplyRange}
-          onStartIngest={handleStartIngest}
-        />
+        <div className="mt-4 min-w-0">
+          <DiscoveryTable
+            discovery={discoveryData}
+            selectedUrls={selectedUrls}
+            onToggleUrl={handleToggleUrl}
+            onSelectAll={handleSelectAll}
+            onSelectNone={handleSelectNone}
+            onSelectTopN={handleSelectTopN}
+            onApplyRange={handleApplyRange}
+            onStartIngest={handleStartIngest}
+          />
+        </div>
       )}
 
       {/* STEP 3 & 4: Live Telemetry Stream & Completion */}
       {(step === "ingesting" || step === "done") && (
-        <PipelineTelemetry
-          phase={phase}
-          progress={progress}
-          logs={logs}
-          result={result}
-          error={pipelineError}
-          onReset={handleReset}
-          appearanceActive={appearanceActive}
-        />
+        <div className="mt-4 min-w-0">
+          <PipelineTelemetry
+            phase={phase}
+            progress={progress}
+            logs={logs}
+            result={result}
+            error={pipelineError}
+            onReset={handleReset}
+            appearanceActive={appearanceActive}
+          />
+        </div>
       )}
     </div>
   );
