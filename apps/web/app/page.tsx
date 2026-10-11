@@ -323,7 +323,7 @@ export default function OverviewPage() {
                             <span className="truncate">{s.title}</span>
                           </span>
                           <ArrowUpRight
-                            className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-[hsl(var(--chart-1))]"
+                            className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-primary"
                             aria-hidden="true"
                           />
                         </span>
@@ -372,7 +372,7 @@ export default function OverviewPage() {
                       <p className="mt-1 font-sans text-xl font-semibold tabular-nums tracking-tight">
                         {data.kpis[1]?.value}{" "}
                         <span
-                          className="text-sm font-normal text-emerald-600"
+                          className="text-sm font-normal text-emerald-600 dark:text-emerald-400"
                           title="Week over week: change vs the prior 7 days"
                         >
                           {fmtDelta(data.kpis[1]?.delta ?? "")}
@@ -387,7 +387,7 @@ export default function OverviewPage() {
                       <p className="mt-1 font-sans text-xl font-semibold tabular-nums tracking-tight">
                         {data.kpis[0]?.value}{" "}
                         <span
-                          className="text-sm font-normal text-emerald-600"
+                          className="text-sm font-normal text-emerald-600 dark:text-emerald-400"
                           title="Week over week: change vs the prior 7 days"
                         >
                           {fmtDelta(data.kpis[0]?.delta ?? "")}
@@ -403,7 +403,7 @@ export default function OverviewPage() {
                     {(data.trust.latencyP95 / 1000).toFixed(1)}s.
                     Deltas are week over week, vs the prior 7 days.{" "}
                     <button
-                      className="text-[hsl(var(--chart-1))] hover:underline disabled:opacity-60"
+                      className="text-primary hover:underline disabled:opacity-60"
                       disabled={pendingHref !== null}
                       onClick={() =>
                         navigate("/knowledge/snapshots")
@@ -435,7 +435,7 @@ export default function OverviewPage() {
                           Refresh
                         </Button>
                         <button
-                          className="text-sm text-[hsl(var(--chart-1))] hover:underline disabled:opacity-60"
+                          className="text-sm text-primary hover:underline disabled:opacity-60"
                           disabled={pendingHref !== null}
                           onClick={() => navigate("/analytics/agent")}
                         >
@@ -614,7 +614,7 @@ export default function OverviewPage() {
                       </div>
                     ))}
                     <button
-                      className="text-sm text-[hsl(var(--chart-1))] hover:underline disabled:opacity-60"
+                      className="text-sm text-primary hover:underline disabled:opacity-60"
                       disabled={pendingHref !== null}
                       onClick={() => navigate("/analytics/intent")}
                     >
@@ -638,7 +638,7 @@ export default function OverviewPage() {
                       </CardDescription>
                     </div>
                     <button
-                      className="text-sm text-[hsl(var(--chart-1))] hover:underline disabled:opacity-60"
+                      className="text-sm text-primary hover:underline disabled:opacity-60"
                       disabled={pendingHref !== null}
                       onClick={() =>
                         navigate("/intelligence/intent-radar")
@@ -722,7 +722,7 @@ export default function OverviewPage() {
                               </Badge>
                             </TableCell>
                             <TableCell className="py-3 text-right">
-                              <span className="inline-flex items-center justify-end gap-1 whitespace-nowrap text-[13px] text-[hsl(var(--chart-1))]">
+                              <span className="inline-flex items-center justify-end gap-1 whitespace-nowrap text-[13px] text-primary">
                                 <span className="truncate">
                                   {row.nextStep}
                                 </span>

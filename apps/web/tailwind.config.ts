@@ -77,6 +77,9 @@ const config: Config = {
   		},
   		borderRadius: {
   			brand: 'var(--brand-radius, 0.5rem)'
+  		},
+  		borderColor: {
+  			DEFAULT: 'hsl(var(--border))',
   		}
   	}
   },
