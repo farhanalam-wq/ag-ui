@@ -72,6 +72,15 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 
 function kindIcon(filename: string, sourceKind: string) {
   if (sourceKind === "crawl") return Globe;
@@ -159,6 +168,8 @@ export default function SourcesPage() {
   const [deleting, setDeleting] = useState(false);
   const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const refresh = useCallback(async () => {
     if (!selectedCompany) return;
@@ -224,6 +235,35 @@ export default function SourcesPage() {
       );
     });
   }, [docs, kindFilter, searchQuery]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [docs, kindFilter, searchQuery, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredDocs.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pagedDocs = useMemo(
+    () => filteredDocs.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [filteredDocs, safePage, pageSize]
+  );
+  const rangeStart =
+    filteredDocs.length === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const rangeEnd = Math.min(safePage * pageSize, filteredDocs.length);
+
+  const pageItems = useMemo<(number | "gap")[]>(() => {
+    if (totalPages <= 7)
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    const keep = new Set([1, 2, safePage - 1, safePage, safePage + 1, totalPages - 1, totalPages]);
+    const items: (number | "gap")[] = [];
+    for (let n = 1; n <= totalPages; n++) {
+      if (!keep.has(n)) {
+        if (items[items.length - 1] !== "gap") items.push("gap");
+        continue;
+      }
+      items.push(n);
+    }
+    return items;
+  }, [totalPages, safePage]);
 
   const handleDelete = useCallback(async () => {
     if (!selectedCompany || !deleteTarget) return;
@@ -478,7 +518,7 @@ export default function SourcesPage() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {filteredDocs.map((doc) => {
+                          {pagedDocs.map((doc) => {
                             const Icon = kindIcon(
                               doc.originName || doc.url,
                               doc.sourceKind
@@ -568,6 +608,84 @@ export default function SourcesPage() {
                         </TableBody>
                       </Table>
                     )}
+                    {filteredDocs.length > 0 && (
+                      <div className="flex flex-wrap items-center justify-between gap-3 pt-3">
+                        <p className="font-sans text-xs tabular-nums text-muted-foreground">
+                          Showing {rangeStart} to {rangeEnd} of{" "}
+                          {filteredDocs.length.toLocaleString()}
+                        </p>
+                        <div className="flex items-center gap-1">
+                          {[10, 25, 50, 100].map((n) => (
+                            <Button
+                              key={n}
+                              type="button"
+                              variant={pageSize === n ? "secondary" : "ghost"}
+                              size="sm"
+                              className="h-7 px-2 text-xs tabular-nums"
+                              onClick={() => setPageSize(n)}
+                            >
+                              {n}
+                            </Button>
+                          ))}
+                        </div>
+                        {totalPages > 1 && (
+                          <Pagination className="mx-0 w-auto">
+                            <PaginationContent>
+                              <PaginationItem>
+                                <PaginationPrevious
+                                  href="#"
+                                  aria-disabled={safePage === 1}
+                                  className={
+                                    safePage === 1
+                                      ? "pointer-events-none opacity-50"
+                                      : undefined
+                                  }
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    setPage((p) => Math.max(1, p - 1));
+                                  }}
+                                />
+                              </PaginationItem>
+                              {pageItems.map((item, i) => (
+                                <PaginationItem key={`${item}-${i}`}>
+                                  {item === "gap" ? (
+                                    <PaginationEllipsis />
+                                  ) : (
+                                    <PaginationLink
+                                      href="#"
+                                      isActive={item === safePage}
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        setPage(item);
+                                      }}
+                                    >
+                                      {item}
+                                    </PaginationLink>
+                                  )}
+                                </PaginationItem>
+                              ))}
+                              <PaginationItem>
+                                <PaginationNext
+                                  href="#"
+                                  aria-disabled={safePage === totalPages}
+                                  className={
+                                    safePage === totalPages
+                                      ? "pointer-events-none opacity-50"
+                                      : undefined
+                                  }
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    setPage((p) =>
+                                      Math.min(totalPages, p + 1)
+                                    );
+                                  }}
+                                />
+                              </PaginationItem>
+                            </PaginationContent>
+                          </Pagination>
+                        )}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -635,27 +753,96 @@ export default function SourcesPage() {
           if (!open) setPreview(null);
         }}
       >
-        <SheetContent className="flex w-full flex-col sm:max-w-[480px]">
+        <SheetContent
+          className="flex w-full flex-col sm:max-w-[480px]"
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            document.getElementById("source-preview-title")?.focus();
+          }}
+        >
           <SheetHeader>
-            <SheetTitle className="truncate text-left">
-              {preview?.title}
-            </SheetTitle>
+            <div className="flex items-center gap-2">
+              {preview && (
+                <Badge
+                  variant="secondary"
+                  className="shrink-0 rounded-full text-[11px] font-normal"
+                >
+                  {kindLabel(preview)}
+                </Badge>
+              )}
+              <SheetTitle
+                id="source-preview-title"
+                tabIndex={-1}
+                className="min-w-0 flex-1 truncate text-left outline-none"
+              >
+                {preview?.title}
+              </SheetTitle>
+            </div>
             {preview && (
-              <SheetDescription className="text-left font-mono text-[11px]">
-                {kindLabel(preview)} · {preview.wordCount.toLocaleString()}{" "}
-                words ·{" "}
+              <SheetDescription className="break-all text-left font-mono text-[11px]">
                 {preview.sourceKind === "crawl"
                   ? preview.url
                   : (preview.originName ?? preview.url)}
               </SheetDescription>
             )}
           </SheetHeader>
+          {preview && (
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-y py-3 text-[13px]">
+              <div className="min-w-0">
+                <dt className="text-xs text-muted-foreground">Category</dt>
+                <dd className="truncate font-medium capitalize">
+                  {preview.category || "general"}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-xs text-muted-foreground">Version</dt>
+                <dd className="font-mono text-xs">
+                  {preview.batchId && batchById.get(preview.batchId) ? (
+                    <span>
+                      v{majorVersion}.
+                      {batchById.get(preview.batchId)!.minor}
+                    </span>
+                  ) : (
+                    <span aria-label="No version">–</span>
+                  )}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-xs text-muted-foreground">Words</dt>
+                <dd className="font-sans tabular-nums">
+                  {preview.wordCount.toLocaleString()}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-xs text-muted-foreground">Characters</dt>
+                <dd className="font-sans tabular-nums">
+                  {preview.contentLength.toLocaleString()}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-xs text-muted-foreground">Added</dt>
+                <dd className="font-sans tabular-nums">
+                  {new Date(preview.createdAt).toLocaleDateString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-xs text-muted-foreground">Kind</dt>
+                <dd className="font-medium capitalize">
+                  {preview.sourceKind}
+                </dd>
+              </div>
+            </dl>
+          )}
           <p className="min-h-0 flex-1 overflow-y-auto text-[13px] leading-relaxed whitespace-pre-wrap">
             {preview?.preview}
           </p>
-          <SheetFooter className="gap-2">
+          <SheetFooter className="gap-2 sm:justify-end">
             {preview?.sourceKind === "crawl" && (
-              <Button variant="outline" asChild>
+              <Button variant="outline" size="sm" asChild>
                 <a
                   href={preview.url}
                   target="_blank"
@@ -667,6 +854,7 @@ export default function SourcesPage() {
             )}
             <Button
               variant="destructive"
+              size="sm"
               onClick={() => {
                 if (preview) setDeleteTarget(preview);
               }}
