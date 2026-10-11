@@ -224,7 +224,33 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
             setLogs((prev) => [...prev, `[JOB] Initialized crawl job ${job.jobId}`]);
           },
           onProgress: (prog) => {
-            setProgress(prog as any);
+            // Merge monotonically: a terminal event may carry zeroed
+            // counters, which must never clobber real progress.
+            setProgress((prev) => {
+              const p = prev as any;
+              const next = { ...(prog as any) };
+              for (const k of [
+                "crawled",
+                "docs",
+                "skippedThin",
+                "failed",
+                "chunks",
+                "facts",
+              ] as const) {
+                const a =
+                  typeof p?.[k] === "number" ? (p[k] as number) : 0;
+                const b =
+                  typeof next[k] === "number" ? (next[k] as number) : 0;
+                next[k] = Math.max(a, b);
+              }
+              if (
+                typeof p?.totalSelected === "number" &&
+                typeof next.totalSelected !== "number"
+              ) {
+                next.totalSelected = p.totalSelected;
+              }
+              return next as any;
+            });
             if (prog.stage === "EXTRACTING_APPEARANCE") setAppearanceActive(true);
             setLogs((prev) => [
               ...prev,
@@ -262,13 +288,19 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
           const snap = statusRes.snapshot;
 
           if (job) {
-            setProgress({
-              stage: job.status,
-              crawled: job.crawled,
-              totalSelected: job.selected || selectedUrls.size,
-              docs: job.docs,
-              failed: job.failed,
-            } as any);
+            setProgress((prev) => {
+              const p = (prev ?? {}) as Record<string, number>;
+              const num = (v: unknown) =>
+                typeof v === "number" ? v : 0;
+              return {
+                stage: job.status,
+                crawled: Math.max(num(p.crawled), num(job.crawled)),
+                totalSelected: job.selected || selectedUrls.size,
+                docs: Math.max(num(p.docs), num(job.docs)),
+                failed: Math.max(num(p.failed), num(job.failed)),
+                skippedThin: num(p.skippedThin),
+              } as any;
+            });
 
             setLogs((prev) => [
               ...prev,
