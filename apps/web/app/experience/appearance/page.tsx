@@ -1034,15 +1034,13 @@ export default function AppearancePage() {
                       source site.
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="pt-0 text-[13px]">
+                  <CardContent className="space-y-4 pt-0 text-[13px]">
                     {!hasComponents && (
                       <p className="text-muted-foreground">
                         No component variants detected.
                       </p>
                     )}
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                      <div className="min-w-0 space-y-3">
-                        {linkVariants.length > 0 && (
+                    {linkVariants.length > 0 && (
                           <div className="min-w-0">
                             <p className="mb-1 text-xs text-muted-foreground">
                               Links ({linkVariants.length})
@@ -1051,11 +1049,12 @@ export default function AppearancePage() {
                               {linkVariants.map((l, i) => (
                                 <div
                                   key={`link-${i}`}
-                                  className="flex min-w-0 items-start gap-2"
+                                  title={`${l.color} - hover ${l.hover} - w${l.weight} - ${l.decoration}`}
+                                  className="flex min-w-0 items-center gap-2"
                                 >
                                   <span
                                     aria-hidden="true"
-                                    className="mt-0.5 inline-block size-3.5 shrink-0 rounded-sm border border-border"
+                                    className="inline-block size-3.5 shrink-0 rounded-sm border border-border"
                                     style={{
                                       backgroundColor:
                                         l.color !== "-"
@@ -1063,7 +1062,7 @@ export default function AppearancePage() {
                                           : undefined,
                                     }}
                                   />
-                                  <span className="min-w-0 break-all font-mono text-xs">
+                                  <span className="min-w-0 flex-1 truncate font-mono text-xs">
                                     {l.color}{" "}
                                     <span className="text-muted-foreground">
                                       hover {l.hover} - w{l.weight} -{" "}
@@ -1072,12 +1071,12 @@ export default function AppearancePage() {
                                   </span>
                                 </div>
                               ))}
-                            </div>
-                          </div>
-                        )}
-                        <div className="min-w-0">
-                          <p className="mb-1 text-xs text-muted-foreground">
-                            Buttons ({buttonVariants.length})
+                        </div>
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="mb-1 text-xs text-muted-foreground">
+                        Buttons ({buttonVariants.length})
                             {buttonVariants.length === 0 &&
                               " - none detected"}
                           </p>
@@ -1105,9 +1104,12 @@ export default function AppearancePage() {
                             </div>
                           )}
                         </div>
-                      </div>
-                      <div className="min-w-0 space-y-3">
-                        {inputGroups.length > 0 && (
+                    {(inputGroups.length > 0 ||
+                      badgeInfo.total > 0 ||
+                      badgeInfo.variants.some((v) => v.count > 0)) && (
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div className="min-w-0 space-y-3">
+                          {inputGroups.length > 0 && (
                           <div className="min-w-0">
                             <p className="mb-1 text-xs text-muted-foreground">
                               Inputs
@@ -1124,7 +1126,8 @@ export default function AppearancePage() {
                                   {g.rows.map((r, i) => (
                                     <p
                                       key={`input-${g.type}-${i}`}
-                                      className="break-all font-mono text-xs text-muted-foreground"
+                                      title={`border ${r.border} - radius ${r.radius} - pad ${r.padding} - focus ${r.focus}`}
+                                      className="truncate font-mono text-xs text-muted-foreground"
                                     >
                                       border{" "}
                                       <span className="text-foreground">
@@ -1138,33 +1141,40 @@ export default function AppearancePage() {
                               ))}
                             </div>
                           </div>
-                        )}
-                        {(badgeInfo.total > 0 ||
-                          badgeInfo.variants.some((v) => v.count > 0)) && (
-                          <div className="min-w-0">
+                          )}
+                        </div>
+                        <div className="min-w-0 space-y-3">
+                          {(badgeInfo.total > 0 ||
+                            badgeInfo.variants.some((v) => v.count > 0)) && (
+                            <div className="min-w-0">
                             <p className="mb-1 text-xs text-muted-foreground">
                               Badges ({badgeInfo.total})
                             </p>
-                            <div className="flex flex-wrap gap-1.5">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
                               {badgeInfo.variants
                                 .filter((v) => v.count > 0)
                                 .map((v) => (
-                                  <Badge
+                                  <span
                                     key={`badge-${v.name}`}
-                                    variant="secondary"
-                                    className="rounded-md font-mono text-[11px] font-normal tabular-nums"
+                                    className="inline-flex items-center gap-1.5"
                                   >
-                                    {v.name}{" "}
-                                    <span className="text-muted-foreground">
+                                    <Badge
+                                      variant="secondary"
+                                      className="rounded-md font-mono text-[11px] font-normal tabular-nums"
+                                    >
+                                      {v.name}
+                                    </Badge>
+                                    <span className="font-sans text-[11px] tabular-nums text-muted-foreground">
                                       x{v.count}
                                     </span>
-                                  </Badge>
+                                  </span>
                                 ))}
                             </div>
-                          </div>
-                        )}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </CardContent>
                 </Card>
 
