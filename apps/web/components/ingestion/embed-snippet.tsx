@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Check,
   Copy,
@@ -10,6 +10,9 @@ import {
   ArrowCounterClockwise,
   Code,
 } from "@phosphor-icons/react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useWidgetKeys } from "@/components/integration/use-widget-keys";
 import { buildSnippet, defaultApiBase } from "@/components/integration/snippet-builder";
 import type { PipelineResultData } from "./pipeline-telemetry";
@@ -23,6 +26,7 @@ export function EmbedSnippet({ result }: EmbedSnippetProps) {
   const [apiBase, setApiBase] = useState<string>(() => defaultApiBase());
   const [copied, setCopied] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const rotateToastArmed = useRef(false);
 
   useEffect(() => setMounted(true), []);
 
@@ -38,115 +42,173 @@ export function EmbedSnippet({ result }: EmbedSnippetProps) {
     if (!snippet) return;
     try {
       await navigator.clipboard.writeText(snippet);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast.success("Snippet copied to clipboard", {
+        description: "Paste it before </body> on any site.",
+        icon: <Copy className="size-4" aria-hidden="true" />,
+      });
     } catch {
-      // Clipboard API unavailable (non-secure context) — select fallback below still shows the text.
+      // Clipboard API unavailable (non-secure context). Select fallback below still shows the text.
+      toast.message("Copy blocked by the browser", {
+        description: "Select the snippet text manually to copy it.",
+      });
     }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   }, [snippet]);
 
+  const handleRotate = useCallback(async () => {
+    rotateToastArmed.current = true;
+    await rotate();
+  }, [rotate]);
+
+  useEffect(() => {
+    if (!rotateToastArmed.current) return;
+    if (phase.kind === "ready") {
+      rotateToastArmed.current = false;
+      toast.success("Fresh key issued", {
+        description: "Old embeds stop working immediately.",
+        icon: <ArrowCounterClockwise className="size-4" aria-hidden="true" />,
+      });
+    } else if (phase.kind === "error") {
+      rotateToastArmed.current = false;
+      toast.error("Key rotation failed", {
+        description: phase.message,
+      });
+    }
+  }, [phase]);
+
+  const busy = rotating || phase.kind === "issuing";
+
   return (
-    <div className="pt-4 border-t border-zinc-800/80 space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-200">
+    <div className="space-y-3 border-t border-border pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-xs font-semibold">
           <Code className="size-4" style={{ color: brandColor }} />
-          <span>Deploy chatbot — paste this snippet on any site</span>
-        </div>
+          <span>Deploy chatbot: paste this snippet on any site</span>
+        </p>
         {(phase.kind === "ready" || phase.kind === "existing") && (
-          <button
+          <Button
             type="button"
-            onClick={rotate}
-            disabled={rotating}
-            className="inline-flex items-center gap-1 text-[11px] font-mono text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-40"
-            title="Revoke this key and issue a fresh one (old embeds stop working immediately)"
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={phase.kind === "ready" ? handleCopy : handleRotate}
+            disabled={busy}
           >
-            <ArrowCounterClockwise className={`size-3 ${rotating ? "animate-spin" : ""}`} />
-            <span>{rotating ? "Rotating…" : "Rotate key"}</span>
-          </button>
+            {busy ? (
+              <CircleNotch className="size-3.5 animate-spin" aria-hidden="true" />
+            ) : phase.kind === "ready" ? (
+              <Copy className="size-3.5" aria-hidden="true" />
+            ) : (
+              <ArrowCounterClockwise className="size-3.5" aria-hidden="true" />
+            )}
+            {busy ? "Working" : phase.kind === "ready" ? "Copy embed" : "Rotate key"}
+          </Button>
         )}
       </div>
 
       {phase.kind === "issuing" && (
-        <div className="flex items-center gap-2 p-3 rounded-lg border border-zinc-800 bg-zinc-900/40 text-xs text-zinc-400 font-mono animate-pulse">
+        <div className="flex items-center gap-2 rounded-lg border p-3 font-mono text-xs text-muted-foreground">
           <CircleNotch className="size-3.5 animate-spin" />
-          <span>Issuing secure widget key…</span>
+          <span>Issuing secure widget key</span>
         </div>
       )}
 
       {phase.kind === "error" && (
-        <div className="flex items-start gap-2 p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-xs text-red-300">
-          <WarningCircle className="size-4 shrink-0 mt-0.5" />
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-xs"
+        >
+          <WarningCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
           <div className="flex-1">
-            <div className="font-semibold">Could not issue widget key</div>
-            <div className="font-mono text-[11px] mt-0.5">{phase.message}</div>
-            <button
+            <p className="font-semibold">Could not issue widget key</p>
+            <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+              {phase.message}
+            </p>
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
+              className="mt-2 h-7 text-xs"
               onClick={retry}
-              className="mt-2 px-2.5 py-1 rounded-md border border-red-500/40 hover:bg-red-500/20 text-xs transition-colors"
             >
               Retry
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
       {phase.kind === "existing" && (
-        <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/5 text-xs text-amber-200/90 space-y-1.5">
-          <div className="font-mono text-[11px]">
-            Key <span className="font-semibold">{phase.prefix}…</span> already issued for this
-            company — raws are shown once and never stored. Rotate to get a fresh snippet.
-          </div>
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+          <p className="font-mono text-[11px] text-muted-foreground">
+            Key <span className="font-semibold text-foreground">{phase.prefix}…</span>{" "}
+            already issued for this company. Raws are shown once and never
+            stored. Rotate to get a fresh snippet.
+          </p>
         </div>
       )}
 
       {snippet && raw && (
         <>
           <div className="space-y-2">
-            <label className="text-[11px] font-mono text-zinc-500 block">
+            <label
+              htmlFor="embed-api-base"
+              className="block font-mono text-[11px] text-muted-foreground"
+            >
               API base (edit if the host site must reach a non-local backend)
             </label>
-            <input
+            <Input
+              id="embed-api-base"
               type="text"
               value={apiBase}
               onChange={(e) => setApiBase(e.target.value.trim())}
               spellCheck={false}
-              className="w-full h-9 px-3 rounded-lg border border-zinc-800 bg-zinc-900 text-xs text-zinc-200 font-mono focus:outline-none focus:border-brand-primary"
+              className="h-9 font-mono text-xs"
             />
           </div>
 
-          <div className="relative rounded-lg border border-zinc-800 bg-zinc-950 overflow-hidden">
-            <pre className="p-3 pr-12 text-[11px] font-mono text-zinc-300 whitespace-pre-wrap break-all select-all">
+          <div className="relative overflow-hidden rounded-lg border bg-muted/40">
+            <pre className="select-all whitespace-pre-wrap break-all p-3 pr-12 font-mono text-[11px]">
               {snippet}
             </pre>
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="icon"
+              className="absolute right-2 top-2 size-7"
               onClick={handleCopy}
-              className="absolute top-2 right-2 p-1.5 rounded-md border border-zinc-700 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 transition-colors"
               title="Copy snippet"
+              aria-label="Copy snippet"
             >
-              {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
-            </button>
+              {copied ? (
+                <Check className="size-3.5 text-emerald-500" aria-hidden="true" />
+              ) : (
+                <Copy className="size-3.5" aria-hidden="true" />
+              )}
+            </Button>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             {/* Test opens first-party chat; snippet/preview above remain the embed route */}
-            <a
-              href={`${webOrigin}/playground`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90"
-              style={{ backgroundColor: brandColor }}
-            >
-              <ArrowSquareOut className="size-3.5" />
-              <span>Test live chatbot</span>
-            </a>
-            <span className="text-[11px] font-mono text-zinc-500">
-              Strict CSP sites may need <code className="text-zinc-400">frame-src {webOrigin}</code>
+            <Button asChild style={{ backgroundColor: brandColor }}>
+              <a
+                href={`${webOrigin}/playground`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-white hover:opacity-90"
+              >
+                <ArrowSquareOut className="size-3.5" data-icon="inline-start" />
+                <span>Test live chatbot</span>
+              </a>
+            </Button>
+            <span className="font-mono text-[11px] text-muted-foreground">
+              Strict CSP sites may need{" "}
+              <code>frame-src {webOrigin}</code>
             </span>
           </div>
 
-          <details className="rounded-lg border border-zinc-800/80 overflow-hidden">
-            <summary className="px-3 py-2 text-[11px] font-mono text-zinc-400 hover:text-zinc-200 cursor-pointer bg-zinc-900/40">
+          <details className="overflow-hidden rounded-lg border">
+            <summary className="cursor-pointer bg-muted/40 px-3 py-2 font-mono text-[11px] text-muted-foreground hover:text-foreground">
               Live preview (360×520)
             </summary>
             <iframe
@@ -154,7 +216,7 @@ export function EmbedSnippet({ result }: EmbedSnippetProps) {
               src={`${webOrigin}/embed/${encodeURIComponent(raw)}?api=${encodeURIComponent(apiBase)}`}
               width={360}
               height={520}
-              className="w-full max-w-[360px] h-[520px] bg-zinc-950"
+              className="h-[520px] w-full max-w-[360px] bg-background"
             />
           </details>
         </>
