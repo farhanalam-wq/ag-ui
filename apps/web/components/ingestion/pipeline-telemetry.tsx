@@ -320,7 +320,7 @@ export function PipelineTelemetry({
                   }
                 >
                   <Code className="size-4" aria-hidden="true" />
-                  Copy embed
+                  Get embed code
                 </Button>
                 <Button
                   onClick={() => router.push("/playground")}

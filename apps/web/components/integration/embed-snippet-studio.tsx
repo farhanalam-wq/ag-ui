@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiClient } from "@/lib/api-client";
+import { copyToClipboard } from "@/lib/copy";
 import { useWidgetKeys } from "./use-widget-keys";
 import {
   FRAMEWORK_IDS,
@@ -72,13 +73,12 @@ export function EmbedSnippetStudio({ companyId, companyName, brandColor }: Embed
 
   const handleCopy = useCallback(async () => {
     if (!snippet) return;
-    try {
-      await navigator.clipboard.writeText(snippet);
-    } catch {
-      // non-secure context: text remains selectable below
-    }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const ok = await copyToClipboard(snippet, {
+      successTitle: "Snippet copied to clipboard",
+      successDescription: "Paste it before </body> on any site.",
+    });
+    setCopied(ok);
+    if (ok) setTimeout(() => setCopied(false), 2000);
   }, [snippet]);
 
   const handleRotate = useCallback(async () => {

@@ -11,8 +11,8 @@ import {
   Code,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
+import { copyToClipboard } from "@/lib/copy";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useWidgetKeys } from "@/components/integration/use-widget-keys";
 import { buildSnippet, defaultApiBase } from "@/components/integration/snippet-builder";
 import type { PipelineResultData } from "./pipeline-telemetry";
@@ -23,7 +23,7 @@ interface EmbedSnippetProps {
 
 export function EmbedSnippet({ result }: EmbedSnippetProps) {
   const { phase, rotating, rotate, retry } = useWidgetKeys(result.companyId);
-  const [apiBase, setApiBase] = useState<string>(() => defaultApiBase());
+  const [apiBase] = useState<string>(() => defaultApiBase());
   const [copied, setCopied] = useState(false);
   const [mounted, setMounted] = useState(false);
   const rotateToastArmed = useRef(false);
@@ -40,20 +40,12 @@ export function EmbedSnippet({ result }: EmbedSnippetProps) {
 
   const handleCopy = useCallback(async () => {
     if (!snippet) return;
-    try {
-      await navigator.clipboard.writeText(snippet);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-      toast.success("Snippet copied to clipboard", {
-        description: "Paste it before </body> on any site.",
-        icon: <Copy className="size-4" aria-hidden="true" />,
-      });
-    } catch {
-      // Clipboard API unavailable (non-secure context). Select fallback below still shows the text.
-      toast.message("Copy blocked by the browser", {
-        description: "Select the snippet text manually to copy it.",
-      });
-    }
+    const ok = await copyToClipboard(snippet, {
+      successTitle: "Snippet copied to clipboard",
+      successDescription: "Paste it before </body> on any site.",
+    });
+    setCopied(ok);
+    if (ok) setTimeout(() => setCopied(false), 2000);
   }, [snippet]);
 
   const handleRotate = useCallback(async () => {
@@ -150,22 +142,9 @@ export function EmbedSnippet({ result }: EmbedSnippetProps) {
 
       {snippet && raw && (
         <>
-          <div className="space-y-2">
-            <label
-              htmlFor="embed-api-base"
-              className="block font-mono text-[11px] text-muted-foreground"
-            >
-              API base (edit if the host site must reach a non-local backend)
-            </label>
-            <Input
-              id="embed-api-base"
-              type="text"
-              value={apiBase}
-              onChange={(e) => setApiBase(e.target.value.trim())}
-              spellCheck={false}
-              className="h-9 font-mono text-xs"
-            />
-          </div>
+          <p className="font-mono text-[11px] text-muted-foreground">
+            API base <span className="text-foreground">{apiBase}</span> (fixed — served from our backend, not editable)
+          </p>
 
           <div className="relative overflow-hidden rounded-lg border bg-muted/40">
             <pre className="select-all whitespace-pre-wrap break-all p-3 pr-12 font-mono text-[11px]">
@@ -206,19 +185,6 @@ export function EmbedSnippet({ result }: EmbedSnippetProps) {
               <code>frame-src {webOrigin}</code>
             </span>
           </div>
-
-          <details className="overflow-hidden rounded-lg border">
-            <summary className="cursor-pointer bg-muted/40 px-3 py-2 font-mono text-[11px] text-muted-foreground hover:text-foreground">
-              Live preview (360×520)
-            </summary>
-            <iframe
-              title={`${result.companyName} chatbot preview`}
-              src={`${webOrigin}/embed/${encodeURIComponent(raw)}?api=${encodeURIComponent(apiBase)}`}
-              width={360}
-              height={520}
-              className="h-[520px] w-full max-w-[360px] bg-background"
-            />
-          </details>
         </>
       )}
     </div>
