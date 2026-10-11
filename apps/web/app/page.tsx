@@ -10,6 +10,7 @@ import {
   Funnel,
   ArrowRight,
   ArrowClockwise,
+  ArrowUpRight,
   ChatCircle,
   CircleNotch,
   Code,
@@ -196,18 +197,6 @@ export default function OverviewPage() {
                   variant="outline"
                   size="sm"
                   disabled={pendingHref !== null}
-                  aria-busy={pendingHref === "/playground"}
-                  onClick={() => navigate("/playground")}
-                >
-                  {pendingHref === "/playground" ? (
-                    <NavSpinner />
-                  ) : null}
-                  Test in Playground
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={pendingHref !== null}
                   aria-busy={
                     pendingHref === "/integration/embed-snippet"
                   }
@@ -300,22 +289,28 @@ export default function OverviewPage() {
                         onClick={() => navigate(s.href)}
                         disabled={pendingHref !== null}
                         aria-busy={pending}
-                        className="rounded-lg border bg-card p-4 text-left transition-colors hover:bg-muted/40 disabled:opacity-60"
+                        className="group flex min-h-[104px] flex-col justify-start rounded-lg border bg-card p-4 text-left transition-colors hover:bg-muted/40 disabled:opacity-60"
                       >
-                        <p className="flex items-center gap-2 text-sm font-medium">
-                          {pending ? (
-                            <NavSpinner />
-                          ) : (
-                            <s.icon
-                              className="size-4 text-muted-foreground"
-                              aria-hidden="true"
-                            />
-                          )}
-                          {s.title}
-                        </p>
-                        <p className="mt-1.5 text-[13px] leading-5 text-muted-foreground">
+                        <span className="flex items-start justify-between gap-2">
+                          <span className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+                            {pending ? (
+                              <NavSpinner />
+                            ) : (
+                              <s.icon
+                                className="size-4 shrink-0 text-muted-foreground"
+                                aria-hidden="true"
+                              />
+                            )}
+                            <span className="truncate">{s.title}</span>
+                          </span>
+                          <ArrowUpRight
+                            className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-[hsl(var(--chart-1))]"
+                            aria-hidden="true"
+                          />
+                        </span>
+                        <span className="mt-1.5 block text-[13px] leading-5 text-muted-foreground">
                           {s.body}
-                        </p>
+                        </span>
                       </button>
                     );
                   })}
@@ -406,32 +401,28 @@ export default function OverviewPage() {
               <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3">
                 <Card className="min-w-0 lg:col-span-2">
                   <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <CardTitle className="text-[15px] font-semibold">
                         Monitoring
                       </CardTitle>
-                      <button
-                        className="text-sm text-[hsl(var(--chart-1))] hover:underline disabled:opacity-60"
-                        disabled={pendingHref !== null}
-                        onClick={() => navigate("/analytics/agent")}
-                      >
-                        View all metrics
-                      </button>
-                    </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <span className="inline-flex h-8 items-center rounded-md border px-2.5 text-[13px]">
-                        <span className="mr-1.5 size-1.5 rounded-full bg-emerald-500" />
-                        Live · {rangeLabel}
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8"
-                        onClick={() => setRefreshKey((k) => k + 1)}
-                      >
-                        <ArrowClockwise className="size-3.5" />
-                        Refresh
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => setRefreshKey((k) => k + 1)}
+                        >
+                          <ArrowClockwise className="size-3.5" />
+                          Refresh
+                        </Button>
+                        <button
+                          className="text-sm text-[hsl(var(--chart-1))] hover:underline disabled:opacity-60"
+                          disabled={pendingHref !== null}
+                          onClick={() => navigate("/analytics/agent")}
+                        >
+                          View all metrics
+                        </button>
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -559,110 +550,186 @@ export default function OverviewPage() {
 
                 <Card className="min-w-0">
                   <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <CardTitle className="text-[15px] font-semibold">
-                        {data.blindspots.length} Blindspots
-                      </CardTitle>
-                      <button
-                        className="text-sm text-[hsl(var(--chart-1))] hover:underline disabled:opacity-60"
-                        disabled={pendingHref !== null}
-                        onClick={() =>
-                          navigate("/intelligence/intent-radar")
-                        }
-                      >
-                        View all
-                      </button>
-                    </div>
+                    <CardTitle className="text-[15px] font-semibold">
+                      Intent breakdown
+                    </CardTitle>
                     <CardDescription className="text-[13px]">
-                      Weak answers in {rangeLabel}.
+                      High intent demand in {rangeLabel}.
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="pt-0">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="hover:bg-transparent">
-                          <TableHead className="h-8 text-xs">
-                            Query
-                          </TableHead>
-                          <TableHead className="h-8 w-[86px] text-xs">
-                            Sessions
-                          </TableHead>
-                          <TableHead className="h-8 w-[104px] text-right text-xs">
-                            Confidence
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {data.blindspots.slice(0, 4).map((row) => {
-                          const pending = pendingHref === row.nextHref;
-                          return (
-                            <TableRow
-                              key={row.query}
-                              className="cursor-pointer aria-busy:opacity-60"
-                              aria-busy={pending}
-                              onClick={() => navigate(row.nextHref)}
-                            >
-                              <TableCell className="max-w-0 py-2.5">
-                                <p className="flex items-center gap-1.5 truncate text-[13px] font-medium">
-                                  {pending ? <NavSpinner /> : null}
-                                  <span className="truncate">
-                                    {row.query}
-                                  </span>
-                                </p>
-                                <p className="truncate text-xs text-muted-foreground">
-                                  {row.intent}
-                                </p>
-                              </TableCell>
-                              <TableCell className="py-2.5 font-sans text-[13px] tabular-nums">
-                                {row.volume}
-                              </TableCell>
-                              <TableCell className="py-2.5 text-right">
-                                <Badge
-                                  variant="outline"
-                                  className="rounded-full font-normal"
-                                >
-                                  <span className="mr-1.5 size-1.5 rounded-full bg-amber-500" />
-                                  {row.confidence}%
-                                </Badge>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                    <div className="mt-3 rounded-lg bg-muted/50 p-4">
-                      <Badge
-                        variant="outline"
-                        className="rounded-full border-violet-500/30 bg-violet-500/10 text-xs font-normal text-violet-700 dark:text-violet-300"
-                      >
-                        Signals
-                      </Badge>
-                      <p className="mt-2 text-[13px] leading-5">
-                        No signals from these gaps yet. Turn the top
-                        blindspot into a doc fix or a published Signal.
-                      </p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="mt-3"
-                        disabled={pendingHref !== null}
-                        aria-busy={
-                          pendingHref === "/intelligence/signals"
-                        }
-                        onClick={() =>
-                          navigate("/intelligence/signals")
-                        }
-                      >
-                        {pendingHref === "/intelligence/signals" ? (
-                          <NavSpinner />
-                        ) : null}
-                        Create a signal
-                        <ArrowRight className="size-3.5" />
-                      </Button>
-                    </div>
+                  <CardContent className="space-y-3">
+                    {data.intentBreakdown.slice(0, 5).map((slice, i) => (
+                      <div key={slice.intent}>
+                        <div className="flex items-baseline justify-between gap-2 text-[13px]">
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span
+                              className="size-2 shrink-0 rounded-full"
+                              style={{
+                                backgroundColor:
+                                  INTENT_COLORS[
+                                    i % INTENT_COLORS.length
+                                  ],
+                              }}
+                            />
+                            <span className="truncate">
+                              {slice.intent}
+                            </span>
+                          </span>
+                          <span className="shrink-0 font-sans tabular-nums text-muted-foreground">
+                            {slice.share}% ·{" "}
+                            {slice.sessions.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="mt-1 h-1.5 rounded-full bg-muted">
+                          <div
+                            className="h-1.5 rounded-full"
+                            style={{
+                              width: `${slice.share}%`,
+                              backgroundColor:
+                                INTENT_COLORS[
+                                  i % INTENT_COLORS.length
+                                ],
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                    <button
+                      className="text-sm text-[hsl(var(--chart-1))] hover:underline disabled:opacity-60"
+                      disabled={pendingHref !== null}
+                      onClick={() => navigate("/analytics/intent")}
+                    >
+                      View intent analytics
+                    </button>
                   </CardContent>
                 </Card>
               </div>
+
+              {/* Blindspots: full-width ledger for sentence length */}
+              <Card className="min-w-0">
+                <CardHeader className="pb-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <CardTitle className="text-[15px] font-semibold">
+                        {data.blindspots.length} Blindspots
+                      </CardTitle>
+                      <CardDescription className="mt-1 text-[13px]">
+                        High intent questions answered weakly in{" "}
+                        {rangeLabel}. Each one is a doc fix or a Signal.
+                      </CardDescription>
+                    </div>
+                    <button
+                      className="text-sm text-[hsl(var(--chart-1))] hover:underline disabled:opacity-60"
+                      disabled={pendingHref !== null}
+                      onClick={() =>
+                        navigate("/intelligence/intent-radar")
+                      }
+                    >
+                      View all
+                    </button>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead className="h-8 text-xs">
+                          Query
+                        </TableHead>
+                        <TableHead className="h-8 w-[170px] text-xs">
+                          Intent
+                        </TableHead>
+                        <TableHead className="h-8 w-[86px] text-xs">
+                          Sessions
+                        </TableHead>
+                        <TableHead className="h-8 w-[110px] text-right text-xs">
+                          Confidence
+                        </TableHead>
+                        <TableHead className="h-8 w-[64px] text-right text-xs">
+                          Fix
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {data.blindspots.map((row) => {
+                        const pending = pendingHref === row.nextHref;
+                        return (
+                          <TableRow
+                            key={row.query}
+                            className="cursor-pointer aria-busy:opacity-60"
+                            aria-busy={pending}
+                            onClick={() => navigate(row.nextHref)}
+                          >
+                            <TableCell className="max-w-0 py-3">
+                              <p className="flex items-center gap-1.5 text-[13px] font-medium">
+                                {pending ? <NavSpinner /> : null}
+                                <span>{row.query}</span>
+                              </p>
+                              <p className="mt-0.5 text-xs text-muted-foreground">
+                                {row.evidence}
+                              </p>
+                            </TableCell>
+                            <TableCell className="py-3">
+                              <Badge
+                                variant="outline"
+                                className="rounded-full font-normal"
+                              >
+                                {row.intent}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="py-3 font-sans text-[13px] tabular-nums">
+                              {row.volume}
+                            </TableCell>
+                            <TableCell className="py-3 text-right">
+                              <Badge
+                                variant="outline"
+                                className="rounded-full font-normal"
+                              >
+                                <span className="mr-1.5 size-1.5 rounded-full bg-amber-500" />
+                                {row.confidence}%
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="py-3 text-right text-[13px] text-[hsl(var(--chart-1))]">
+                              {row.nextStep}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/50 p-4">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Badge
+                        variant="outline"
+                        className="shrink-0 rounded-full border-violet-500/30 bg-violet-500/10 text-xs font-normal text-violet-700 dark:text-violet-300"
+                      >
+                        Signals
+                      </Badge>
+                      <p className="text-[13px] leading-5">
+                        No signals from these gaps yet. Turn the top
+                        blindspot into a doc fix or a published Signal.
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={pendingHref !== null}
+                      aria-busy={
+                        pendingHref === "/intelligence/signals"
+                      }
+                      onClick={() =>
+                        navigate("/intelligence/signals")
+                      }
+                    >
+                      {pendingHref === "/intelligence/signals" ? (
+                        <NavSpinner />
+                      ) : null}
+                      Create a signal
+                      <ArrowRight className="size-3.5" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
 
               {/* Funnel + Intent/Health stack */}
               <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3">
@@ -731,55 +798,7 @@ export default function OverviewPage() {
                   </CardContent>
                 </Card>
 
-                <div className="min-w-0 space-y-4">
-                  <Card className="min-w-0">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-[15px] font-semibold">
-                        Intent breakdown
-                      </CardTitle>
-                      <CardDescription className="text-[13px]">
-                        High intent demand in {rangeLabel}.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {data.intentBreakdown.slice(0, 4).map((slice, i) => (
-                        <div key={slice.intent}>
-                          <div className="flex items-baseline justify-between gap-2 text-[13px]">
-                            <span className="flex min-w-0 items-center gap-2">
-                              <span
-                                className="size-2 shrink-0 rounded-full"
-                                style={{
-                                  backgroundColor:
-                                    INTENT_COLORS[
-                                      i % INTENT_COLORS.length
-                                    ],
-                                }}
-                              />
-                              <span className="truncate">
-                                {slice.intent}
-                              </span>
-                            </span>
-                            <span className="shrink-0 font-sans tabular-nums text-muted-foreground">
-                              {slice.share}%
-                            </span>
-                          </div>
-                          <div className="mt-1 h-1.5 rounded-full bg-muted">
-                            <div
-                              className="h-1.5 rounded-full"
-                              style={{
-                                width: `${slice.share}%`,
-                                backgroundColor:
-                                  INTENT_COLORS[
-                                    i % INTENT_COLORS.length
-                                  ],
-                              }}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-
+                <div className="min-w-0">
                   <Card className="min-w-0">
                     <CardHeader className="pb-3">
                       <CardTitle className="text-[15px] font-semibold">
