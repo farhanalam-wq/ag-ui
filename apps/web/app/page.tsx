@@ -167,7 +167,7 @@ export default function OverviewPage() {
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <h1 className="text-[30px] leading-9 tracking-tight font-semibold">
-                Project dashboard
+                Overview
               </h1>
               <p className="text-sm text-muted-foreground mt-1 max-w-[65ch]">
                 Demand, conversion, and blindspots for the selected
