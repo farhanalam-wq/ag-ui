@@ -3,7 +3,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Stack,
   Globe,
   TrayArrowDown,
   CheckCircle,
@@ -18,37 +17,68 @@ import {
 import { StudioShell } from "@/components/studio-shell";
 import { apiClient, type MajorVersion } from "@/lib/api-client";
 import { useSelectedCompany } from "@/stores/use-company-store";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Skeleton } from "@/components/ui/skeleton";
 
-function statusPill(status: string) {
-  const base =
-    "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono border";
-  switch (status) {
-    case "READY":
-      return (
-        <span className={`${base} border-emerald-200 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-300`}>
-          <CheckCircle className="size-3" /> READY
-        </span>
-      );
-    case "FAILED":
-      return (
-        <span className={`${base} border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400`}>
-          <XCircle className="size-3" /> FAILED
-        </span>
-      );
-    case "PROCESSING":
-    case "CRAWLING":
-      return (
-        <span className={`${base} border-amber-200 dark:border-amber-900/50 text-amber-700 dark:text-amber-300`}>
-          <CircleNotch className="size-3 animate-spin" /> {status}
-        </span>
-      );
-    default:
-      return (
-        <span className={`${base} border-zinc-200 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400`}>
-          {status}
-        </span>
-      );
-  }
+function StatusBadge({ status }: { status: string }) {
+  if (status === "READY")
+    return (
+      <Badge
+        variant="outline"
+        className="rounded-full border-emerald-500/30 bg-emerald-500/10 font-normal text-emerald-700 dark:text-emerald-300"
+      >
+        <CheckCircle className="mr-1 size-3" aria-hidden="true" />
+        Ready
+      </Badge>
+    );
+  if (status === "FAILED")
+    return (
+      <Badge
+        variant="outline"
+        className="rounded-full border-destructive/40 bg-destructive/10 font-normal text-destructive"
+      >
+        <XCircle className="mr-1 size-3" aria-hidden="true" />
+        Failed
+      </Badge>
+    );
+  return (
+    <Badge variant="outline" className="rounded-full font-normal">
+      <CircleNotch className="mr-1 size-3 animate-spin" aria-hidden="true" />
+      {status.charAt(0) + status.slice(1).toLowerCase()}
+    </Badge>
+  );
+}
+
+function timeAgo(iso: string): string {
+  const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function majorBrief(v: MajorVersion): string {
@@ -118,34 +148,42 @@ export default function SnapshotsPage() {
   );
 
   const rollbackButton = (key: string, label: string, major: number, minor: number) => (
-    <button
+    <Button
       type="button"
+      variant="outline"
+      size="sm"
+      className="h-7 px-2 text-xs font-normal"
       disabled={rollingBack}
-      onClick={() => void handleRollback(key, major, minor)}
       title={
         confirmRollback === key
           ? `Click again to roll back to ${label}`
-          : `Roll back to ${label} (compensating batch)`
+          : `Roll back to ${label}`
       }
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono border transition-colors disabled:opacity-50 ${
-        confirmRollback === key
-          ? "border-amber-400 text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40"
-          : "border-zinc-200 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
-      }`}
+      onClick={() => void handleRollback(key, major, minor)}
     >
-      <ArrowCounterClockwise className="size-3" />
+      {rollingBack && confirmRollback === null ? (
+        <CircleNotch className="size-3.5 animate-spin" aria-hidden="true" />
+      ) : (
+        <ArrowCounterClockwise className="size-3.5" aria-hidden="true" />
+      )}
       {confirmRollback === key ? "Confirm" : label}
-    </button>
+    </Button>
   );
 
   const urlList = (label: string, entries?: { url: string; title: string }[]) => {
     if (!entries || entries.length === 0) return null;
     return (
-      <div className="mt-1.5">
-        <p className="text-[11px] font-sans uppercase tracking-wider text-zinc-500">{label}</p>
+      <div className="mt-2">
+        <p className="text-xs text-muted-foreground">
+          {label} ({entries.length})
+        </p>
         <ul className="mt-1 space-y-0.5">
           {entries.map((e) => (
-            <li key={e.url} className="text-xs text-zinc-600 dark:text-zinc-300 truncate" title={e.url}>
+            <li
+              key={e.url}
+              className="truncate font-mono text-[11px] text-muted-foreground"
+              title={e.url}
+            >
               {e.title || e.url}
             </li>
           ))}
@@ -154,146 +192,232 @@ export default function SnapshotsPage() {
     );
   };
 
+  const currentId = versions.find((v) => v.status === "READY")?.id ?? null;
+  const liveReady = currentId !== null;
+
   return (
     <StudioShell crumbs={[{ label: "Knowledge" }, { label: "Snapshots" }]}>
-      <div className="flex-1 p-4 sm:p-6 space-y-5 max-w-4xl w-full mx-auto">
-        <div className="flex items-center gap-2.5">
-          <div className="flex items-center justify-center size-9 rounded-xl border border-sidebar-border bg-sidebar-accent shrink-0">
-            <Stack className="size-4 text-muted-foreground" />
-          </div>
+      <div className="min-w-0">
+        {/* PageHeader */}
+        <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-base font-bold tracking-tight">Snapshots</h1>
-            <p className="text-xs text-muted-foreground">
-              {selectedCompany
-                ? `Version history for ${selectedCompany.name} — crawls are majors, uploads are minors.`
-                : "Pick a company to inspect its version history."}
+            <h1 className="text-[30px] leading-9 tracking-tight font-semibold">
+              Snapshots
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1 max-w-[65ch]">
+              Version history for the selected assistant. Crawls are majors,
+              uploads are minors.
             </p>
           </div>
+          {selectedCompany && (
+            <Badge variant="outline" className="rounded-full font-normal">
+              <span
+                className={`mr-1.5 size-1.5 rounded-full ${
+                  liveReady ? "bg-emerald-500" : "bg-amber-500"
+                }`}
+              />
+              {liveReady ? "All OK" : "Indexing"}
+            </Badge>
+          )}
         </div>
 
         {!selectedCompany ? (
-          <div className="flex flex-col items-center gap-3 py-16 text-center">
-            <Buildings className="size-8 text-zinc-400" />
-            <p className="text-sm text-zinc-500">No company selected yet.</p>
-            <button
-              type="button"
-              onClick={() => router.push("/knowledge/ingest")}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-zinc-100 hover:bg-white dark:bg-zinc-100 dark:hover:bg-white text-zinc-950 text-sm font-medium transition-colors"
-            >
-              Index a company <ArrowRight className="size-4" />
-            </button>
-          </div>
+          <Empty className="mt-6">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Buildings aria-hidden="true" />
+              </EmptyMedia>
+              <EmptyTitle>No company selected</EmptyTitle>
+              <EmptyDescription>
+                Pick a company to inspect its version history.
+              </EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
+              <Button onClick={() => router.push("/knowledge/ingest")}>
+                Index a company
+                <ArrowRight className="size-4" data-icon="inline-end" />
+              </Button>
+            </EmptyContent>
+          </Empty>
         ) : (
-          <>
+          <div className="mt-6 min-w-0 space-y-4">
             {error && (
-              <div className="flex items-start gap-2 p-3 rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/30 text-xs text-red-700 dark:text-red-300">
-                <XCircle className="size-4 shrink-0 mt-0.5" />
-                <span>{error}</span>
+              <div
+                role="alert"
+                className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-[13px]"
+              >
+                <p className="font-medium">Could not load snapshots</p>
+                <p className="mt-1 text-muted-foreground">{error}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 h-7 text-xs"
+                  onClick={() => void refresh()}
+                >
+                  Retry
+                </Button>
               </div>
             )}
 
             {loading ? (
-              <div className="flex items-center gap-2 py-10 justify-center text-sm text-zinc-500">
-                <CircleNotch className="size-4 animate-spin" /> Loading versions…
-              </div>
+              <Card className="min-w-0">
+                <CardContent className="space-y-2 pt-5">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Skeleton key={i} className="h-24 w-full rounded-lg" />
+                  ))}
+                </CardContent>
+              </Card>
             ) : versions.length === 0 ? (
-              <p className="text-xs text-zinc-500 py-6 text-center">
-                No snapshots yet — crawl first in Knowledge → Ingest.
-              </p>
+              <Empty>
+                <EmptyHeader>
+                  <EmptyTitle>No snapshots yet</EmptyTitle>
+                  <EmptyDescription>
+                    Crawl a site to create the first version.
+                  </EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent>
+                  <Button onClick={() => router.push("/knowledge/ingest")}>
+                    Ingest a site
+                    <ArrowRight className="size-4" data-icon="inline-end" />
+                  </Button>
+                </EmptyContent>
+              </Empty>
             ) : (
-              <ol className="relative space-y-3 before:absolute before:left-[15px] before:top-2 before:bottom-2 before:w-px before:bg-zinc-200 dark:before:bg-zinc-800">
+              <div className="min-w-0 space-y-4">
                 {versions.map((v) => {
                   const isOpen = expanded.has(v.id);
+                  const isCurrent = v.id === currentId;
                   const readyMinors = v.batches.filter((b) => b.status === "READY");
+                  const maxMinor =
+                    readyMinors.length > 0
+                      ? Math.max(...readyMinors.map((b) => b.minor))
+                      : 0;
+                  const added = v.summary?.added?.length ?? 0;
+                  const removed = v.summary?.removed?.length ?? 0;
+                  const changed = v.summary?.changed?.length ?? 0;
+                  const hasDiff = added + removed + changed > 0;
                   return (
-                    <li key={v.id} className="relative pl-10">
-                      <span className="absolute left-2 top-4 size-2 rounded-full bg-zinc-400 dark:bg-zinc-500" />
-                      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/40 p-4 space-y-2">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="inline-flex items-center gap-1.5 text-sm font-mono font-bold text-zinc-900 dark:text-zinc-100">
-                            <Globe className="size-4 text-zinc-400" />
+                    <Card key={v.id} className="min-w-0">
+                      <CardHeader className="pb-3">
+                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
+                          <span className="inline-flex items-center gap-1.5 font-mono text-[15px] font-semibold tracking-tight">
+                            <Globe
+                              className="size-4 text-muted-foreground"
+                              aria-hidden="true"
+                            />
                             v{v.version}
-                            {readyMinors.length > 0 &&
-                              `.${Math.max(...readyMinors.map((b) => b.minor))}`}
+                            {maxMinor > 0 && `.${maxMinor}`}
                           </span>
-                          {statusPill(v.status)}
+                          {isCurrent && (
+                            <Badge
+                              variant="outline"
+                              className="rounded-full border-emerald-500/30 bg-emerald-500/10 font-normal text-emerald-700 dark:text-emerald-300"
+                            >
+                              Current
+                            </Badge>
+                          )}
+                          <StatusBadge status={v.status} />
                           {v.theme ? (
-                            <span
+                            <Badge
+                              variant="outline"
                               title={`Stylesheet ${v.theme.id.slice(0, 8)} · ${v.theme.status}`}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono border border-fuchsia-200 dark:border-fuchsia-900/50 text-fuchsia-700 dark:text-fuchsia-300"
+                              className="rounded-full font-mono text-[11px] font-normal"
                             >
                               themed · {v.theme.status}
-                            </span>
+                            </Badge>
                           ) : (
-                            <span
+                            <Badge
+                              variant="outline"
                               title="No stylesheet stamped for this version"
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono border border-zinc-200 dark:border-zinc-700 text-zinc-400 dark:text-zinc-500"
+                              className="rounded-full font-mono text-[11px] font-normal text-muted-foreground"
                             >
                               no theme
-                            </span>
+                            </Badge>
                           )}
-                          <span className="text-[11px] font-mono text-zinc-500">
-                            {new Date(v.createdAt).toLocaleString()}
+                          <span className="font-sans text-xs tabular-nums text-muted-foreground">
+                            {timeAgo(v.createdAt)}
                           </span>
-                          {rollbackButton(`major-${v.id}`, `Restore v${v.version}.0`, v.version, 0)}
+                          <span className="ms-auto">
+                            {rollbackButton(
+                              `major-${v.id}`,
+                              `Restore v${v.version}.0`,
+                              v.version,
+                              0
+                            )}
+                          </span>
                         </div>
-                        <p className="text-xs text-zinc-600 dark:text-zinc-300">{majorBrief(v)}</p>
-
-                        {v.batches.length > 0 && (
-                          <div className="space-y-1.5 pt-1">
-                            {v.batches.map((b) => (
-                              <div
-                                key={b.id}
-                                className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300"
-                              >
-                                <TrayArrowDown className="size-3.5 text-zinc-400 shrink-0" />
-                                <span className="font-mono">
-                                  v{v.version}.{b.minor}
-                                </span>
-                                {statusPill(b.status)}
-                                <span className="font-mono text-[11px] text-zinc-500 truncate">
-                                  {b.status === "READY" && b.summary?.added
-                                    ? `+${b.summary.added.length} files: ${b.summary.added.slice(0, 3).join(", ")}${
-                                        b.summary.added.length > 3 ? ` +${b.summary.added.length - 3} more` : ""
-                                      }`
-                                    : `${b.fileCount} files`}
-                                </span>
-                                {b.status === "READY" &&
-                                  rollbackButton(
-                                    `minor-${b.id}`,
-                                    `Restore v${v.version}.${b.minor}`,
-                                    v.version,
-                                    b.minor
-                                  )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {(v.summary?.added?.length || v.summary?.removed?.length || v.summary?.changed?.length) ? (
-                          <button
-                            type="button"
-                            onClick={() => toggle(v.id)}
-                            className="inline-flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 pt-1"
+                        <CardDescription className="text-[13px]">
+                          {majorBrief(v)}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-1 pt-0">
+                        {v.batches.map((b) => (
+                          <div
+                            key={b.id}
+                            className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 text-[13px] hover:bg-muted/40"
                           >
-                            {isOpen ? <CaretDown className="size-3.5" /> : <CaretRight className="size-3.5" />}
-                            {isOpen ? "Hide details" : "Show details"}
-                          </button>
-                        ) : null}
+                            <TrayArrowDown
+                              className="size-3.5 shrink-0 text-muted-foreground"
+                              aria-hidden="true"
+                            />
+                            <span className="font-mono text-xs">
+                              v{v.version}.{b.minor}
+                            </span>
+                            <StatusBadge status={b.status} />
+                            <span className="font-sans tabular-nums text-muted-foreground">
+                              {b.fileCount} files · {b.docs} docs
+                              {b.failed > 0 && ` · ${b.failed} failed`}
+                            </span>
+                            {b.status === "READY" && (
+                              <span className="ms-auto">
+                                {rollbackButton(
+                                  `minor-${b.id}`,
+                                  `Restore v${v.version}.${b.minor}`,
+                                  v.version,
+                                  b.minor
+                                )}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                        {hasDiff && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-muted-foreground"
+                            onClick={() => toggle(v.id)}
+                          >
+                            {isOpen ? (
+                              <CaretDown
+                                className="size-3.5"
+                                aria-hidden="true"
+                              />
+                            ) : (
+                              <CaretRight
+                                className="size-3.5"
+                                aria-hidden="true"
+                              />
+                            )}
+                            {isOpen
+                              ? "Hide details"
+                              : `Show details · +${added} −${removed} ~${changed}`}
+                          </Button>
+                        )}
                         {isOpen && (
-                          <div className="pt-1">
+                          <div className="pb-1">
                             {urlList("Added", v.summary?.added)}
                             {urlList("Removed", v.summary?.removed)}
                             {urlList("Changed", v.summary?.changed)}
                           </div>
                         )}
-                      </div>
-                    </li>
+                      </CardContent>
+                    </Card>
                   );
                 })}
-              </ol>
+              </div>
             )}
-          </>
+          </div>
         )}
       </div>
     </StudioShell>
