@@ -255,7 +255,15 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
       }
 
       // Per-key origin gate (zero rules = open). Never burns rate-limit budget.
-      const gate = await assertOriginAllowed(resolved.row.id, request);
+      // DB failures here must read as unavailable, never leak internals.
+      let gate;
+      try {
+        gate = await assertOriginAllowed(resolved.row.id, request);
+      } catch (err) {
+        logger.error(`[EMBED] Config gate unavailable: ${(err as Error)?.message ?? err}`);
+        set.status = 503;
+        return { error: "Assistant unavailable - try again shortly", code: "CONFIG_UNAVAILABLE" };
+      }
       if (set.headers) set.headers["vary"] = "Origin";
       if (!gate.allowed) {
         logger.warn(
@@ -369,7 +377,16 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
       }
 
       // Per-key origin gate runs before snapshot + rate-limit work.
-      const gate = await assertOriginAllowed(resolved.row.id, request);
+      // DB failures here must read as unavailable, never leak internals.
+      let gate;
+      try {
+        gate = await assertOriginAllowed(resolved.row.id, request);
+      } catch (err) {
+        logger.error(`[EMBED CHAT] Gate unavailable: ${(err as Error)?.message ?? err}`);
+        set.status = 503;
+        yield { event: "error", data: { message: "Assistant unavailable - try again shortly", code: "CONFIG_UNAVAILABLE" } };
+        return;
+      }
       if (!gate.allowed) {
         logger.warn(
           `[EMBED] Blocked chat for key ${resolved.row.keyPrefix}… reason=${gate.reason} referer=${safeRefererForLog(request.headers.get("referer"))}`

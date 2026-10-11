@@ -613,9 +613,22 @@ class ApiClient {
     getConfig: async (widgetKey: string, customBase?: string): Promise<EmbedConfig> => {
       const base = this.embed.baseFor(customBase);
       const res = await fetch(`${base}/api/embed/${encodeURIComponent(widgetKey)}/config`);
-      if (res.status === 404) throw new Error("Assistant offline — widget key not found");
+      if (res.status === 404) throw new Error("Assistant offline - widget key not found");
       if (res.status === 410) throw new Error("This assistant was disabled");
-      if (!res.ok) throw new Error(`Failed to load assistant: HTTP ${res.status}`);
+      if (!res.ok) {
+        let serverMessage: string | null = null;
+        try {
+          const body = await res.json();
+          if (body && typeof body.error === "string" && body.error.trim()) {
+            serverMessage = body.error;
+          }
+        } catch {
+          // non-JSON body, fall through to status copy below
+        }
+        if (serverMessage) throw new Error(serverMessage);
+        if (res.status === 503) throw new Error("Assistant unavailable - try again shortly");
+        throw new Error(`Failed to load assistant: HTTP ${res.status}`);
+      }
       return res.json();
     },
 
