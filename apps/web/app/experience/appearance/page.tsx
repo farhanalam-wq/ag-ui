@@ -774,6 +774,30 @@ export default function AppearancePage() {
 
                 <div className="grid min-w-0 items-start gap-4 lg:grid-cols-12">
                   <div className="min-w-0 space-y-4 lg:col-span-7">
+                {/* Brand mark */}
+                {(latest?.brand?.logoUrl || activeSheet?.screenshotUrl) && (
+                  <Card className="min-w-0">
+                    <CardContent className="flex flex-wrap items-center gap-4 pt-5">
+                      {latest?.brand?.logoUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={latest.brand.logoUrl}
+                          alt="Brand logo"
+                          className="h-10 w-auto rounded border border-border bg-background"
+                        />
+                      )}
+                      {activeSheet?.screenshotUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={activeSheet.screenshotUrl}
+                          alt="Source site screenshot"
+                          className="max-h-24 w-auto rounded-lg border border-border"
+                        />
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
                 {/* Colors */}
                 <Card className="min-w-0">
                   <CardHeader className="pb-3">
@@ -1264,32 +1288,7 @@ export default function AppearancePage() {
                   </Card>
                 )}
                   </div>
-                  <div className="min-w-0 lg:col-span-5">
-                    <div className="space-y-4 lg:sticky lg:top-20">
-                      {/* Brand mark */}
-                      {(latest?.brand?.logoUrl ||
-                        activeSheet?.screenshotUrl) && (
-                        <Card className="min-w-0">
-                          <CardContent className="flex flex-wrap items-center gap-4 pt-5">
-                            {latest?.brand?.logoUrl && (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={latest.brand.logoUrl}
-                                alt="Brand logo"
-                                className="h-10 w-auto rounded border border-border bg-background"
-                              />
-                            )}
-                            {activeSheet?.screenshotUrl && (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={activeSheet.screenshotUrl}
-                                alt="Source site screenshot"
-                                className="max-h-24 w-auto rounded-lg border border-border"
-                              />
-                            )}
-                          </CardContent>
-                        </Card>
-                      )}
+                  <div className="min-w-0 space-y-4 lg:col-span-5 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)] lg:self-start lg:overflow-y-auto">
                       {/* Widget preview */}
                       <Card className="min-w-0">
                         <CardHeader className="pb-3">
@@ -1313,7 +1312,6 @@ export default function AppearancePage() {
                           />
                         </CardContent>
                       </Card>
-                    </div>
                   </div>
                 </div>
               </>
