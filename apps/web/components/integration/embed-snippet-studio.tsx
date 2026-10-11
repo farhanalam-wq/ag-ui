@@ -10,6 +10,13 @@ import {
   WarningCircle,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiClient } from "@/lib/api-client";
 import { copyToClipboard } from "@/lib/copy";
@@ -39,7 +46,7 @@ function timeAgo(ts: number): string {
 
 export function EmbedSnippetStudio({ companyId, companyName, brandColor }: EmbedSnippetStudioProps) {
   const { phase, rotating, rotate, retry } = useWidgetKeys(companyId);
-  // API base is fixed from env (NEXT_PUBLIC_API_URL) — not user-editable.
+  // API base is fixed from env (NEXT_PUBLIC_API_URL), not user-editable.
   const [apiBase] = useState<string>(() => defaultApiBase());
   const [position, setPosition] = useState<"bottom-right" | "bottom-left">("bottom-right");
   const [framework, setFramework] = useState<FrameworkId>("html");
@@ -87,100 +94,112 @@ export function EmbedSnippetStudio({ companyId, companyName, brandColor }: Embed
   }, [rotate]);
 
   return (
-    <div className="grid gap-4 lg:grid-cols-12">
+    <div className="grid min-w-0 items-start gap-4 lg:grid-cols-12">
       {/* Left: form */}
-      <div className="space-y-4 lg:col-span-5">
-        <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4 space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-xs font-semibold text-zinc-200">Widget key</div>
-            {(phase.kind === "ready" || phase.kind === "existing") && (
-              <Button variant="outline" size="sm" onClick={handleRotate} disabled={rotating} title="Revoke this key and issue a fresh one (old embeds stop working immediately)">
-                <ArrowCounterClockwise className={rotating ? "animate-spin" : ""} />
-                <span>{rotating ? "Rotating…" : "Rotate key"}</span>
-              </Button>
-            )}
-          </div>
-
-          {phase.kind === "issuing" && (
-            <div className="flex items-center gap-2 text-xs text-zinc-400 font-mono">
-              <CircleNotch className="size-3.5 animate-spin" />
-              <span>Issuing secure widget key…</span>
+      <div className="min-w-0 space-y-4 lg:col-span-5">
+        <Card className="min-w-0">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-[15px] font-semibold">Widget key</CardTitle>
+              {(phase.kind === "ready" || phase.kind === "existing") && (
+                <Button variant="outline" size="sm" onClick={handleRotate} disabled={rotating} title="Revoke this key and issue a fresh one (old embeds stop working immediately)">
+                  <ArrowCounterClockwise className={rotating ? "animate-spin" : ""} />
+                  <span>{rotating ? "Rotating..." : "Rotate key"}</span>
+                </Button>
+              )}
             </div>
-          )}
-          {phase.kind === "error" && (
-            <div className="flex items-start gap-2 p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-xs text-red-300">
-              <WarningCircle className="size-4 shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <div className="font-semibold">Could not issue widget key</div>
-                <div className="font-mono text-[11px] mt-0.5">{phase.message}</div>
-                <Button variant="outline" size="sm" className="mt-2" onClick={retry}>Retry</Button>
+          </CardHeader>
+          <CardContent className="space-y-3 pt-0">
+            {phase.kind === "issuing" && (
+              <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
+                <CircleNotch className="size-3.5 animate-spin" />
+                <span>Issuing secure widget key...</span>
+              </div>
+            )}
+            {phase.kind === "error" && (
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-xs"
+              >
+                <WarningCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
+                <div className="flex-1">
+                  <div className="font-semibold">Could not issue widget key</div>
+                  <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">{phase.message}</div>
+                  <Button variant="outline" size="sm" className="mt-2" onClick={retry}>Retry</Button>
+                </div>
+              </div>
+            )}
+            {phase.kind === "existing" && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+                <span className="font-mono text-[11px] text-muted-foreground">
+                  Key <span className="font-semibold text-foreground">{phase.prefix}...</span> already issued - raws are shown once and never stored. Rotate to get a fresh snippet.
+                </span>
+              </div>
+            )}
+            {phase.kind === "ready" && (
+              <div className="font-mono text-[11px] text-muted-foreground">
+                Key <span className="text-emerald-500">{phase.prefix}...</span> active
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <span className="block font-mono text-[11px] text-muted-foreground">Position</span>
+              <div className="flex gap-2" aria-label="Widget position">
+                {(["bottom-left", "bottom-right"] as const).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPosition(p)}
+                    aria-pressed={position === p}
+                    className={`rounded-lg border px-3 py-1.5 font-mono text-xs transition-colors ${
+                      position === p
+                        ? "border-foreground bg-foreground text-background"
+                        : "border-border bg-muted/40 text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    {p === "bottom-left" ? "Bottom left" : "Bottom right"}
+                  </button>
+                ))}
               </div>
             </div>
-          )}
-          {phase.kind === "existing" && (
-            <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/5 text-xs text-amber-200/90">
-              <span className="font-mono text-[11px]">
-                Key <span className="font-semibold">{phase.prefix}…</span> already issued — raws are shown once and never stored. Rotate to get a fresh snippet.
-              </span>
-            </div>
-          )}
-          {phase.kind === "ready" && (
-            <div className="text-[11px] font-mono text-zinc-400">
-              Key <span className="text-emerald-400">{phase.prefix}…</span> active
-            </div>
-          )}
+          </CardContent>
+        </Card>
 
-          <div className="space-y-2">
-            <span className="text-[11px] font-mono text-zinc-500 block">Position</span>
-            <div className="flex gap-2">
-              {(["bottom-right", "bottom-left"] as const).map((p) => (
+        <Card className="min-w-0">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-[15px] font-semibold">Framework setup</CardTitle>
+            <CardDescription className="text-[13px]">
+              Same snippet everywhere. Pick a guide for install notes.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 pt-0">
+            <div className="flex flex-wrap gap-1.5" aria-label="Framework guides">
+              {FRAMEWORK_IDS.map((id) => (
                 <button
-                  key={p}
+                  key={id}
                   type="button"
-                  onClick={() => setPosition(p)}
-                  aria-pressed={position === p}
-                  className={`px-3 py-1.5 rounded-lg border text-xs font-mono transition-colors ${
-                    position === p
-                      ? "border-zinc-100 bg-zinc-100 text-zinc-950"
-                      : "border-zinc-800 bg-zinc-900/60 text-zinc-300 hover:bg-zinc-800"
+                  aria-pressed={framework === id}
+                  onClick={() => setFramework(id)}
+                  className={`rounded-md border px-2.5 py-1 font-mono text-[11px] transition-colors ${
+                    framework === id
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-border bg-muted/40 text-muted-foreground hover:bg-muted"
                   }`}
                 >
-                  {p === "bottom-right" ? "Bottom right" : "Bottom left"}
+                  {FRAMEWORK_NOTES[id].label}
                 </button>
               ))}
             </div>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4 space-y-3">
-          <div className="text-xs font-semibold text-zinc-200">Framework setup</div>
-          <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Framework guides">
-            {FRAMEWORK_IDS.map((id) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={framework === id}
-                onClick={() => setFramework(id)}
-                className={`px-2.5 py-1 rounded-md border text-[11px] font-mono transition-colors ${
-                  framework === id
-                    ? "border-zinc-100 bg-zinc-100 text-zinc-950"
-                    : "border-zinc-800 bg-zinc-900/60 text-zinc-300 hover:bg-zinc-800"
-                }`}
-              >
-                {FRAMEWORK_NOTES[id].label}
-              </button>
-            ))}
-          </div>
-          <p className="text-[11px] font-mono text-zinc-500">{FRAMEWORK_NOTES[framework].note}</p>
-        </div>
+            <p className="font-mono text-[11px] text-muted-foreground">{FRAMEWORK_NOTES[framework].note}</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Right: snippet + ping + preview */}
-      <div className="space-y-4 lg:col-span-7 lg:sticky lg:top-20 self-start">
-        <div className="rounded-xl border border-zinc-800 bg-zinc-950 overflow-hidden">
-          <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-zinc-800">
-            <span className="text-[11px] font-mono text-zinc-500">Snippet — paste on any site</span>
+      <div className="min-w-0 space-y-4 lg:col-span-7 lg:sticky lg:top-20 lg:self-start">
+        <Card className="min-w-0 overflow-hidden">
+          <CardHeader className="flex-row items-center justify-between gap-2 space-y-0 border-b border-border px-3 py-2">
+            <span className="font-mono text-[11px] text-muted-foreground">Snippet - paste on any site</span>
             <Button
               variant="outline"
               size="sm"
@@ -189,64 +208,71 @@ export function EmbedSnippetStudio({ companyId, companyName, brandColor }: Embed
               aria-label="Copy snippet"
               title={!snippet ? "Snippet unavailable until a key is issued" : "Copy snippet"}
             >
-              {copied ? <Check className="text-emerald-400" /> : <Copy />}
+              {copied ? <Check className="text-emerald-500" /> : <Copy />}
               <span>{copied ? "Copied" : "Copy"}</span>
             </Button>
-          </div>
-          {phase.kind === "issuing" || !mounted ? (
-            <div className="p-3 space-y-2">
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-11/12" />
-              <Skeleton className="h-4 w-3/4" />
-            </div>
-          ) : (
-            <pre className="p-3 text-[11px] font-mono text-zinc-300 whitespace-pre-wrap break-all select-all">
-              {snippet ?? "Snippet unavailable — issue a key first."}
-            </pre>
-          )}
-        </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {phase.kind === "issuing" || !mounted ? (
+              <div className="space-y-2 p-3">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-11/12" />
+                <Skeleton className="h-4 w-3/4" />
+              </div>
+            ) : (
+              <pre className="select-all overflow-x-auto whitespace-pre p-3 font-mono text-[11px] text-foreground">
+                {snippet ?? "Snippet unavailable - issue a key first."}
+              </pre>
+            )}
+          </CardContent>
+        </Card>
 
         <div className="flex flex-wrap items-center gap-2" aria-live="polite">
           {lastHandshake ? (
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-emerald-400">
+            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-emerald-500">
               <span className="size-1.5 rounded-full bg-emerald-500 motion-safe:animate-pulse" />
-              Last handshake {timeAgo(lastHandshake)} · {new Date(lastHandshake).toLocaleTimeString()}
+              Last handshake {timeAgo(lastHandshake)} - {new Date(lastHandshake).toLocaleTimeString()}
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-zinc-500">
-              <span className="size-1.5 rounded-full bg-zinc-600" />
+            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+              <span className="size-1.5 rounded-full bg-muted-foreground/40" />
               No handshake yet
             </span>
           )}
-          <span className="text-[11px] font-mono text-zinc-500">
-            Strict CSP sites may need <code className="text-zinc-400">frame-src {webOrigin || "…"}</code>
+          <span className="font-mono text-[11px] text-muted-foreground">
+            Strict CSP sites may need <code>frame-src {webOrigin || "..."}</code>
           </span>
-          <a
-            href={`${webOrigin}/playground`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ backgroundColor: brandColor }}
-          >
-            <ArrowSquareOut className="size-3.5" />
-            <span>Test live chatbot</span>
-          </a>
+          <Button size="sm" asChild style={{ backgroundColor: brandColor }}>
+            <a
+              href={`${webOrigin}/playground`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-white hover:opacity-90"
+            >
+              <ArrowSquareOut className="size-3.5" data-icon="inline-start" />
+              <span>Test live chatbot</span>
+            </a>
+          </Button>
         </div>
 
         {raw && (
-          <details className="rounded-xl border border-zinc-800 overflow-hidden" open>
-            <summary className="px-3 py-2 text-[11px] font-mono text-zinc-400 hover:text-zinc-200 cursor-pointer bg-zinc-900/40">
-              Live preview (360×520)
-            </summary>
-            <iframe
-              title={`${companyName} chatbot preview`}
-              src={`${webOrigin}/embed/${encodeURIComponent(raw)}?api=${encodeURIComponent(apiBase.trim())}`}
-              width={360}
-              height={520}
-              onLoad={() => setLastHandshake(Date.now())}
-              className="w-full max-w-[360px] h-[520px] bg-zinc-950"
-            />
-          </details>
+          <Card className="min-w-0 overflow-hidden">
+            <CardHeader className="border-b border-border bg-muted/40 px-3 py-2">
+              <span className="font-mono text-[11px] text-muted-foreground">
+                Live preview (360x520)
+              </span>
+            </CardHeader>
+            <CardContent className="flex justify-center bg-muted/40 p-3">
+              <iframe
+                title={`${companyName} chatbot preview`}
+                src={`${webOrigin}/embed/${encodeURIComponent(raw)}?api=${encodeURIComponent(apiBase.trim())}`}
+                width={360}
+                height={520}
+                onLoad={() => setLastHandshake(Date.now())}
+                className="h-[520px] w-full max-w-[360px] rounded-lg border border-border bg-background"
+              />
+            </CardContent>
+          </Card>
         )}
       </div>
     </div>
