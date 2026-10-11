@@ -982,19 +982,23 @@ export default function AppearancePage() {
                             ({spacingInfo.scaleType} grid)
                           </span>
                         </p>
-                        <div className="flex flex-wrap gap-1.5">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
                           {spacingInfo.rows.map((s) => (
-                            <Badge
+                            <span
                               key={s.px}
-                              variant="secondary"
                               title={`${s.px} (${s.rem}) used ${s.count}x`}
-                              className="rounded-md font-mono text-[11px] font-normal tabular-nums"
+                              className="inline-flex items-center gap-1.5"
                             >
-                              {s.px}{" "}
-                              <span className="text-muted-foreground">
+                              <Badge
+                                variant="secondary"
+                                className="rounded-md font-mono text-[11px] font-normal tabular-nums"
+                              >
+                                {s.px}
+                              </Badge>
+                              <span className="font-sans text-[11px] tabular-nums text-muted-foreground">
                                 x{s.count}
                               </span>
-                            </Badge>
+                            </span>
                           ))}
                         </div>
                       </div>
