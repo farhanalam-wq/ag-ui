@@ -4,9 +4,6 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChartLineUp,
-  Flask,
-  CheckCircle,
-  WarningCircle,
   Funnel,
   ArrowRight,
   ArrowClockwise,
@@ -14,6 +11,7 @@ import {
   ChatCircle,
   CircleNotch,
   Code,
+  Copy,
   Database,
   Users,
   Info,
@@ -22,6 +20,10 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  PolarAngleAxis,
+  PolarGrid,
+  Radar,
+  RadarChart,
   ReferenceArea,
   XAxis,
   YAxis,
@@ -62,6 +64,10 @@ import { getOverviewMock } from "@/mocks/overview";
 const trendConfig = {
   assisted: { label: "Assisted", color: "hsl(var(--chart-1))" },
   baseline: { label: "Baseline", color: "hsl(var(--chart-7))" },
+} satisfies ChartConfig;
+
+const radarConfig = {
+  share: { label: "Demand share", color: "hsl(var(--chart-1))" },
 } satisfies ChartConfig;
 
 const INTENT_COLORS = [
@@ -134,6 +140,15 @@ export default function OverviewPage() {
     return worst?.stage ?? null;
   }, [data]);
 
+  const radarData = useMemo(() => {
+    if (!data) return [];
+    return data.intentBreakdown.slice(0, 5).map((s) => ({
+      intent: s.intent.split(" ")[0],
+      full: s.intent,
+      share: s.share,
+    }));
+  }, [data]);
+
   function navigate(href: string) {
     if (pendingHref) return;
     setPendingHref(href);
@@ -161,6 +176,21 @@ export default function OverviewPage() {
             </div>
             {data && (
               <div className="flex flex-wrap items-center gap-2">
+                <Badge
+                  variant="outline"
+                  className="rounded-full font-normal"
+                >
+                  <span
+                    className={`mr-1.5 size-1.5 rounded-full ${
+                      data.health.crawlStatus === "READY"
+                        ? "bg-emerald-500"
+                        : "bg-amber-500"
+                    }`}
+                  />
+                  {data.health.crawlStatus === "READY"
+                    ? "All OK"
+                    : data.health.crawlStatus}
+                </Badge>
                 <label className="inline-flex h-8 items-center rounded-md border px-2 text-[13px] text-muted-foreground">
                   Range
                   <select
@@ -178,21 +208,6 @@ export default function OverviewPage() {
                     </option>
                   </select>
                 </label>
-                <Badge
-                  variant="outline"
-                  className="rounded-full font-normal"
-                >
-                  <span
-                    className={`mr-1.5 size-1.5 rounded-full ${
-                      data.health.crawlStatus === "READY"
-                        ? "bg-emerald-500"
-                        : "bg-amber-500"
-                    }`}
-                  />
-                  {data.health.crawlStatus === "READY"
-                    ? "All OK"
-                    : data.health.crawlStatus}
-                </Badge>
                 <Button
                   variant="outline"
                   size="sm"
@@ -206,7 +221,9 @@ export default function OverviewPage() {
                 >
                   {pendingHref === "/integration/embed-snippet" ? (
                     <NavSpinner />
-                  ) : null}
+                  ) : (
+                    <Copy className="size-3.5" aria-hidden="true" />
+                  )}
                   Copy embed
                 </Button>
                 <Button
@@ -217,7 +234,9 @@ export default function OverviewPage() {
                 >
                   {pendingHref === "/knowledge/ingest" ? (
                     <NavSpinner />
-                  ) : null}
+                  ) : (
+                    <Database className="size-3.5" aria-hidden="true" />
+                  )}
                   Ingest site
                 </Button>
               </div>
@@ -633,10 +652,10 @@ export default function OverviewPage() {
                   <Table>
                     <TableHeader>
                       <TableRow className="hover:bg-transparent">
-                        <TableHead className="h-8 text-xs">
+                        <TableHead className="h-8 min-w-[300px] text-xs">
                           Query
                         </TableHead>
-                        <TableHead className="h-8 w-[170px] text-xs">
+                        <TableHead className="h-8 w-[190px] text-xs">
                           Intent
                         </TableHead>
                         <TableHead className="h-8 w-[86px] text-xs">
@@ -645,7 +664,7 @@ export default function OverviewPage() {
                         <TableHead className="h-8 w-[110px] text-right text-xs">
                           Confidence
                         </TableHead>
-                        <TableHead className="h-8 w-[64px] text-right text-xs">
+                        <TableHead className="h-8 w-[220px] text-right text-xs">
                           Fix
                         </TableHead>
                       </TableRow>
@@ -663,18 +682,31 @@ export default function OverviewPage() {
                             <TableCell className="max-w-0 py-3">
                               <p className="flex items-center gap-1.5 text-[13px] font-medium">
                                 {pending ? <NavSpinner /> : null}
-                                <span>{row.query}</span>
+                                <span
+                                  className="block truncate"
+                                  title={row.query}
+                                >
+                                  {row.query}
+                                </span>
                               </p>
-                              <p className="mt-0.5 text-xs text-muted-foreground">
+                              <p
+                                className="mt-0.5 truncate text-xs text-muted-foreground"
+                                title={row.evidence}
+                              >
                                 {row.evidence}
                               </p>
                             </TableCell>
                             <TableCell className="py-3">
                               <Badge
                                 variant="outline"
-                                className="rounded-full font-normal"
+                                className="max-w-[170px] rounded-full px-3 font-normal"
                               >
-                                {row.intent}
+                                <span
+                                  className="truncate"
+                                  title={row.intent}
+                                >
+                                  {row.intent}
+                                </span>
                               </Badge>
                             </TableCell>
                             <TableCell className="py-3 font-sans text-[13px] tabular-nums">
@@ -689,8 +721,16 @@ export default function OverviewPage() {
                                 {row.confidence}%
                               </Badge>
                             </TableCell>
-                            <TableCell className="py-3 text-right text-[13px] text-[hsl(var(--chart-1))]">
-                              {row.nextStep}
+                            <TableCell className="py-3 text-right">
+                              <span className="inline-flex items-center justify-end gap-1 whitespace-nowrap text-[13px] text-[hsl(var(--chart-1))]">
+                                <span className="truncate">
+                                  {row.nextStep}
+                                </span>
+                                <ArrowUpRight
+                                  className="size-3.5 shrink-0"
+                                  aria-hidden="true"
+                                />
+                              </span>
                             </TableCell>
                           </TableRow>
                         );
@@ -731,8 +771,8 @@ export default function OverviewPage() {
                 </CardContent>
               </Card>
 
-              {/* Funnel + Intent/Health stack */}
-              <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3">
+              {/* Funnel + coverage radar */}
+              <div className="grid min-w-0 grid-cols-1 items-stretch gap-4 lg:grid-cols-3">
                 <Card className="min-w-0 lg:col-span-2">
                   <CardHeader>
                     <div className="flex items-center gap-2">
@@ -798,56 +838,50 @@ export default function OverviewPage() {
                   </CardContent>
                 </Card>
 
-                <div className="min-w-0">
-                  <Card className="min-w-0">
+                <div className="flex min-w-0 flex-col">
+                  <Card className="flex min-w-0 flex-1 flex-col">
                     <CardHeader className="pb-3">
                       <CardTitle className="text-[15px] font-semibold">
-                        Knowledge health
+                        Intent coverage radar
                       </CardTitle>
+                      <CardDescription className="text-[13px]">
+                        Demand concentration in {rangeLabel}.
+                      </CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-2.5 text-sm">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-muted-foreground">
-                          Snapshot
-                        </span>
-                        <span className="font-sans tabular-nums">
-                          {data.health.snapshotVersion}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-muted-foreground">
-                          Crawl
-                        </span>
-                        <span className="inline-flex items-center gap-1.5">
-                          {data.health.crawlStatus === "READY" ? (
-                            <CheckCircle
-                              className="size-4 text-emerald-500"
-                              aria-hidden="true"
-                            />
-                          ) : (
-                            <WarningCircle
-                              className="size-4 text-amber-500"
-                              aria-hidden="true"
-                            />
-                          )}
-                          {data.health.crawlStatus} · {data.health.lastCrawl}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-muted-foreground">
-                          Citation clicks
-                        </span>
-                        <span className="font-sans tabular-nums">
-                          {data.trust.citationCtr}%
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-                        <Flask
-                          className="size-4 shrink-0"
-                          aria-hidden="true"
-                        />
-                        Preview data, live analytics wire up next.
-                      </div>
+                    <CardContent className="flex min-h-0 flex-1 flex-col">
+                      <ChartContainer
+                        config={radarConfig}
+                        className="min-h-[280px] w-full flex-1"
+                      >
+                        <RadarChart
+                          data={radarData}
+                          outerRadius="68%"
+                          margin={{ top: 8, right: 16, bottom: 8, left: 16 }}
+                        >
+                          <PolarGrid stroke="hsl(var(--border))" />
+                          <PolarAngleAxis
+                            dataKey="intent"
+                            tick={{
+                              fill: "hsl(var(--muted-foreground))",
+                              fontSize: 11,
+                            }}
+                          />
+                          <ChartTooltip content={<ChartTooltipContent />} />
+                          <Radar
+                            dataKey="share"
+                            stroke="var(--color-share)"
+                            fill="var(--color-share)"
+                            fillOpacity={0.3}
+                            strokeWidth={2}
+                            dot={false}
+                          />
+                        </RadarChart>
+                      </ChartContainer>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {data.intentBreakdown[0]?.intent} leads at{" "}
+                        {data.intentBreakdown[0]?.share}% of high intent
+                        demand. Preview data.
+                      </p>
                     </CardContent>
                   </Card>
                 </div>
