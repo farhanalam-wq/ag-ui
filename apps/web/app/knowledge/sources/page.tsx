@@ -14,9 +14,7 @@ import {
   FileHtml,
   FileCode,
   FileText,
-  Eye,
   Trash,
-  X,
   CheckCircle,
   XCircle,
   CircleNotch,
@@ -28,6 +26,7 @@ import { StudioShell } from "@/components/studio-shell";
 import { UploadPanel } from "@/components/knowledge/upload-panel";
 import { apiClient, type SourceDocument, type EnrichmentBatch, type CompanySummary } from "@/lib/api-client";
 import { useCompanyStore, useSelectedCompany } from "@/stores/use-company-store";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -46,6 +45,33 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Skeleton } from "@/components/ui/skeleton";
 
 function kindIcon(filename: string, sourceKind: string) {
   if (sourceKind === "crawl") return Globe;
@@ -129,7 +155,7 @@ export default function SourcesPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<SourceDocument | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<SourceDocument | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -199,26 +225,28 @@ export default function SourcesPage() {
     });
   }, [docs, kindFilter, searchQuery]);
 
-  const handleDelete = useCallback(
-    async (docId: string) => {
-      if (!selectedCompany) return;
-      if (confirmDelete !== docId) {
-        setConfirmDelete(docId);
-        return;
-      }
-      setConfirmDelete(null);
-      setDeleting(true);
-      try {
-        await apiClient.uploads.deleteDocuments(selectedCompany.id, [docId]);
-        await refresh();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Delete failed");
-      } finally {
-        setDeleting(false);
-      }
-    },
-    [confirmDelete, selectedCompany, refresh]
-  );
+  const handleDelete = useCallback(async () => {
+    if (!selectedCompany || !deleteTarget) return;
+    setDeleting(true);
+    try {
+      await apiClient.uploads.deleteDocuments(selectedCompany.id, [
+        deleteTarget.id,
+      ]);
+      toast.success("Source deleted", {
+        description: `${deleteTarget.title} was removed from the library.`,
+      });
+      setDeleteTarget(null);
+      setPreview((p) => (p?.id === deleteTarget.id ? null : p));
+      await refresh();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Delete failed";
+      setError(message);
+      toast.error("Delete failed", { description: message });
+    } finally {
+      setDeleting(false);
+    }
+  }, [deleteTarget, selectedCompany, refresh]);
 
   return (
     <StudioShell crumbs={[{ label: "Knowledge" }, { label: "Sources" }]}>
@@ -256,23 +284,23 @@ export default function SourcesPage() {
         </div>
 
         {!selectedCompany ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            <Buildings
-              className="size-8 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <p className="mt-3 text-sm font-medium">No company selected</p>
-            <p className="mt-1 text-sm text-muted-foreground max-w-[45ch]">
-              Pick a company to inspect its knowledge sources.
-            </p>
-            <Button
-              className="mt-4"
-              onClick={() => router.push("/knowledge/ingest")}
-            >
-              Index a company
-              <ArrowRight className="size-4" data-icon="inline-end" />
-            </Button>
-          </div>
+          <Empty className="mt-6">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Buildings aria-hidden="true" />
+              </EmptyMedia>
+              <EmptyTitle>No company selected</EmptyTitle>
+              <EmptyDescription>
+                Pick a company to inspect its knowledge sources.
+              </EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
+              <Button onClick={() => router.push("/knowledge/ingest")}>
+                Index a company
+                <ArrowRight className="size-4" data-icon="inline-end" />
+              </Button>
+            </EmptyContent>
+          </Empty>
         ) : (
           <div className="mt-6 min-w-0 space-y-4">
             {/* Snapshot strip */}
@@ -347,13 +375,13 @@ export default function SourcesPage() {
             )}
 
             {loading ? (
-              <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                <CircleNotch
-                  className="size-4 animate-spin"
-                  aria-hidden="true"
-                />
-                Loading sources
-              </div>
+              <Card className="min-w-0">
+                <CardContent className="space-y-2 pt-5">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full rounded-lg" />
+                  ))}
+                </CardContent>
+              </Card>
             ) : (
               <>
                 {/* Ledger */}
@@ -400,11 +428,34 @@ export default function SourcesPage() {
                   </CardHeader>
                   <CardContent className="pt-0">
                     {filteredDocs.length === 0 ? (
-                      <p className="py-6 text-center text-[13px] text-muted-foreground">
-                        {docs.length === 0
-                          ? "Nothing here yet. Ingest a site or upload files below."
-                          : "No matches. Clear the search or switch the filter."}
-                      </p>
+                      <Empty>
+                        <EmptyHeader>
+                          <EmptyTitle>
+                            {docs.length === 0
+                              ? "Library is empty"
+                              : "No matches"}
+                          </EmptyTitle>
+                          <EmptyDescription>
+                            {docs.length === 0
+                              ? "Ingest a site or upload files below to add the first source."
+                              : "No sources match this search. Clear it or switch the filter."}
+                          </EmptyDescription>
+                        </EmptyHeader>
+                        {docs.length > 0 && (
+                          <EmptyContent>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSearchQuery("");
+                                setKindFilter("all");
+                              }}
+                            >
+                              Clear search and filters
+                            </Button>
+                          </EmptyContent>
+                        )}
+                      </Empty>
                     ) : (
                       <Table>
                         <TableHeader>
@@ -492,37 +543,16 @@ export default function SourcesPage() {
                                   {doc.wordCount.toLocaleString()}
                                 </TableCell>
                                 <TableCell className="py-2.5 text-right">
-                                  <span className="inline-flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="size-7"
-                                      title="Preview"
-                                      aria-label={`Preview ${doc.title}`}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setPreview(doc);
-                                      }}
-                                    >
-                                      <Eye
-                                        className="size-3.5"
-                                        aria-hidden="true"
-                                      />
-                                    </Button>
+                                  <span className="inline-flex items-center opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
                                     <Button
                                       variant="ghost"
                                       size="icon"
                                       className="size-7 hover:text-destructive"
-                                      disabled={deleting}
-                                      title={
-                                        confirmDelete === doc.id
-                                          ? "Click again to confirm delete"
-                                          : "Delete"
-                                      }
+                                      title="Delete"
                                       aria-label={`Delete ${doc.title}`}
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        void handleDelete(doc.id);
+                                        setDeleteTarget(doc);
                                       }}
                                     >
                                       <Trash
@@ -599,41 +629,87 @@ export default function SourcesPage() {
         )}
       </div>
 
-      {preview && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
-          onClick={() => setPreview(null)}
-        >
-          <div
-            className="w-full max-w-lg rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-5 space-y-3"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
-                  {preview.title}
-                </h3>
-                <p className="text-[11px] font-mono text-zinc-500 mt-0.5">
-                  {kindLabel(preview)} · {preview.wordCount} words ·{" "}
-                  {preview.sourceKind === "crawl"
-                    ? preview.url
-                    : (preview.originName ?? preview.url)}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPreview(null)}
-                className="p-1.5 rounded text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 shrink-0"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-            <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap max-h-80 overflow-y-auto">
-              {preview.preview}
-            </p>
-          </div>
-        </div>
-      )}
+      <Sheet
+        open={preview !== null}
+        onOpenChange={(open) => {
+          if (!open) setPreview(null);
+        }}
+      >
+        <SheetContent className="flex w-full flex-col sm:max-w-[480px]">
+          <SheetHeader>
+            <SheetTitle className="truncate text-left">
+              {preview?.title}
+            </SheetTitle>
+            {preview && (
+              <SheetDescription className="text-left font-mono text-[11px]">
+                {kindLabel(preview)} · {preview.wordCount.toLocaleString()}{" "}
+                words ·{" "}
+                {preview.sourceKind === "crawl"
+                  ? preview.url
+                  : (preview.originName ?? preview.url)}
+              </SheetDescription>
+            )}
+          </SheetHeader>
+          <p className="min-h-0 flex-1 overflow-y-auto text-[13px] leading-relaxed whitespace-pre-wrap">
+            {preview?.preview}
+          </p>
+          <SheetFooter className="gap-2">
+            {preview?.sourceKind === "crawl" && (
+              <Button variant="outline" asChild>
+                <a
+                  href={preview.url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open original
+                </a>
+              </Button>
+            )}
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (preview) setDeleteTarget(preview);
+              }}
+            >
+              Delete source
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {deleteTarget?.title}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              One document leaves the answers immediately. Restorable from
+              Snapshots with a rollback.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>
+              Keep it
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => {
+                e.preventDefault();
+                void handleDelete();
+              }}
+            >
+              {deleting ? "Deleting" : "Delete source"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </StudioShell>
   );
 }
