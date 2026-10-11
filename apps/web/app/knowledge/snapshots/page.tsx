@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Globe,
-  TrayArrowDown,
   CheckCircle,
   XCircle,
   CircleNotch,
@@ -292,7 +291,7 @@ export default function SnapshotsPage() {
                 </EmptyContent>
               </Empty>
             ) : (
-              <div className="min-w-0 space-y-4">
+              <div className="relative min-w-0 space-y-4 before:absolute before:bottom-3 before:left-[11px] before:top-3 before:w-0.5 before:bg-border">
                 {versions.map((v) => {
                   const isOpen = expanded.has(v.id);
                   const isCurrent = v.id === currentId;
@@ -306,7 +305,17 @@ export default function SnapshotsPage() {
                   const changed = v.summary?.changed?.length ?? 0;
                   const hasDiff = added + removed + changed > 0;
                   return (
-                    <Card key={v.id} className="min-w-0">
+                    <div key={v.id} className="relative min-w-0 pl-9">
+                      <span
+                        aria-hidden="true"
+                        title={isCurrent ? "Current live version" : `Version ${v.version}`}
+                        className={`absolute left-[5px] top-7 size-3 rounded-full border-2 ${
+                          isCurrent
+                            ? "border-emerald-500 bg-emerald-500/30"
+                            : "border-muted-foreground/50 bg-background"
+                        }`}
+                      />
+                    <Card className="min-w-0">
                       <CardHeader className="pb-3">
                         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
                           <span className="inline-flex items-center gap-1.5 font-mono text-[15px] font-semibold tracking-tight">
@@ -359,34 +368,45 @@ export default function SnapshotsPage() {
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-1 pt-0">
-                        {v.batches.map((b) => (
-                          <div
-                            key={b.id}
-                            className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 text-[13px] hover:bg-muted/40"
-                          >
-                            <TrayArrowDown
-                              className="size-3.5 shrink-0 text-muted-foreground"
-                              aria-hidden="true"
-                            />
-                            <span className="font-mono text-xs">
-                              v{v.version}.{b.minor}
-                            </span>
-                            <StatusBadge status={b.status} />
-                            <span className="font-sans tabular-nums text-muted-foreground">
-                              {b.fileCount} files · {b.docs} docs
-                              {b.failed > 0 && ` · ${b.failed} failed`}
-                            </span>
-                            {b.status === "READY" && (
-                              <span className="ms-auto">
-                                {rollbackButton(
-                                  `Restore v${v.version}.${b.minor}`,
-                                  v.version,
-                                  b.minor
+                        {v.batches.length > 0 && (
+                          <div className="ml-1 space-y-0.5 border-l border-border pl-4">
+                            {v.batches.map((b) => (
+                              <div
+                                key={b.id}
+                                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 text-[13px] hover:bg-muted/40"
+                              >
+                                <span
+                                  aria-hidden="true"
+                                  title={`Batch ${b.minor} ${b.status}`}
+                                  className={`size-[7px] shrink-0 rounded-full ${
+                                    b.status === "READY"
+                                      ? "bg-muted-foreground"
+                                      : b.status === "FAILED"
+                                        ? "border border-destructive bg-transparent"
+                                        : "border border-muted-foreground bg-transparent"
+                                  }`}
+                                />
+                                <span className="font-mono text-xs">
+                                  v{v.version}.{b.minor}
+                                </span>
+                                <StatusBadge status={b.status} />
+                                <span className="font-sans tabular-nums text-muted-foreground">
+                                  {b.fileCount} files · {b.docs} docs
+                                  {b.failed > 0 && ` · ${b.failed} failed`}
+                                </span>
+                                {b.status === "READY" && (
+                                  <span className="ms-auto">
+                                    {rollbackButton(
+                                      `Restore v${v.version}.${b.minor}`,
+                                      v.version,
+                                      b.minor
+                                    )}
+                                  </span>
                                 )}
-                              </span>
-                            )}
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        )}
                         {hasDiff && (
                           <Button
                             type="button"
@@ -420,6 +440,7 @@ export default function SnapshotsPage() {
                         )}
                       </CardContent>
                     </Card>
+                    </div>
                   );
                 })}
               </div>
