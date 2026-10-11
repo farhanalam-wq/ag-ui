@@ -171,6 +171,16 @@ ranked excerpts with scores, `--json` pipes through `jq`.
 - Priority scheduling: `priority` integer, 0 normal, 1 demo or preview jump. The picker always takes the oldest live job with the highest priority first. Starvation guard: any P0 job waiting longer than 10 minutes is treated as P1 for ordering only (column value unchanged, ordering key computed at pick time). Cap P1 jobs at 1 concurrent pick so bulk backfills can never fully starve normal jobs.
 - Acceptance: two owners submitting simultaneously each hit their own live job cap independently; a P1 demo job submitted after a P0 bulk job is picked first; a third owner reading another owner's job id gets 403; the rate limiter rejects the 6th submit inside the hour with 429.
 
+## 19. Manual sitemap plus URL list input (P0) (Pipeline impact #16)
+
+- Files: `apps/api/src/routes/crawler.ts` (new `POST /api/crawler/discover-sitemap`), `packages/crawler/src/discovery.ts` (reuse sitemap parse helpers), `apps/web/components/ingestion/ingestion-studio.tsx` (source selector), `apps/web/lib/api-client.ts` (new client method).
+- Input sources, all optional and combinable in one request: (a) 1 to 3 uploaded `.xml` or `.xml.gz` files, 5MB max each, (b) one pasted sitemap URL fetched server side, (c) pasted manual URL list, one per line, for specific routes without a sitemap file.
+- Parse rules: support `urlset` plus `sitemapindex` with one level of child recursion plus gzip decode, reuse the same parser used by auto discovery. Normalize URLs (trim, drop fragments, lowercase host), dedupe across all three sources, pick primary domain from first valid URL, drop cross domain URLs and report `droppedCrossDomain` count. Cap total at `maxSitemapUrls` (default 2000) and log truncation.
+- Validation and safety: reject non XML content, empty urlset, and oversize files with 400 plus a plain message. Pasted sitemap URL goes through `validateSafeUrl` SSRF check like `/discover`. Manual URLs must be http or https and pass the same host check against the primary domain.
+- Response contract: return standard `DiscoveryResponse` with `source: "sitemap"` on parsed items and `source: "manual"` on pasted URLs, so `DiscoveryTable` selection plus `ingestStream` plus telemetry work unchanged. No changes to crawl, parse, chunk, embed, Qdrant, or brand extraction paths.
+- Frontend: source selector with three tabs (Website, Sitemap files, Specific routes) in the input card of `ingestion-studio.tsx`. Sitemap tab holds multi file dropzone plus sitemap URL input plus parsed count preview. Routes tab holds textarea with live valid count. All three converge to `setDiscoveryData` with default top 20 selection. Shared Advanced crawl settings. shadcn primitives plus semantic tokens only, Phosphor icons only.
+- Acceptance: upload of 2 sitemap files plus 5 manual URLs yields one deduped `DiscoveryResponse`, cross domain URLs are dropped with a visible count, index plus gzip fixtures parse, selection and ingest stream run unchanged to READY, and invalid files return 400 with a toast and no state change.
+
 ## Demo verification checklist (run in order) (P0) (Verification)
 
 Ran Oct 2026 against nescafe.com scoped to 100 pages (instead of the resend 50/1000 below):
