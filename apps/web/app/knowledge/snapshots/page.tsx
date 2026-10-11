@@ -17,6 +17,7 @@ import {
 import { StudioShell } from "@/components/studio-shell";
 import { apiClient, type MajorVersion } from "@/lib/api-client";
 import { useSelectedCompany } from "@/stores/use-company-store";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -35,6 +36,16 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 function StatusBadge({ status }: { status: string }) {
   if (status === "READY")
@@ -96,7 +107,11 @@ export default function SnapshotsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [confirmRollback, setConfirmRollback] = useState<string | null>(null);
+  const [rollbackTarget, setRollbackTarget] = useState<{
+    major: number;
+    minor: number;
+    label: string;
+  } | null>(null);
   const [rollingBack, setRollingBack] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -126,47 +141,41 @@ export default function SnapshotsPage() {
     });
   };
 
-  const handleRollback = useCallback(
-    async (key: string, major: number, minor: number) => {
-      if (!selectedCompany) return;
-      if (confirmRollback !== key) {
-        setConfirmRollback(key);
-        return;
-      }
-      setConfirmRollback(null);
-      setRollingBack(true);
-      try {
-        await apiClient.uploads.rollback(selectedCompany.id, major, minor);
-        await refresh();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Rollback failed");
-      } finally {
-        setRollingBack(false);
-      }
-    },
-    [confirmRollback, selectedCompany, refresh]
-  );
+  const handleRollback = useCallback(async () => {
+    if (!selectedCompany || !rollbackTarget) return;
+    setRollingBack(true);
+    try {
+      await apiClient.uploads.rollback(
+        selectedCompany.id,
+        rollbackTarget.major,
+        rollbackTarget.minor
+      );
+      toast.success(`Rolled back to ${rollbackTarget.label}`, {
+        description: "Answers follow that snapshot from here on.",
+      });
+      setRollbackTarget(null);
+      await refresh();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Rollback failed";
+      setError(message);
+      toast.error("Rollback failed", { description: message });
+    } finally {
+      setRollingBack(false);
+    }
+  }, [rollbackTarget, selectedCompany, refresh]);
 
-  const rollbackButton = (key: string, label: string, major: number, minor: number) => (
+  const rollbackButton = (label: string, major: number, minor: number) => (
     <Button
       type="button"
       variant="outline"
       size="sm"
       className="h-7 px-2 text-xs font-normal"
-      disabled={rollingBack}
-      title={
-        confirmRollback === key
-          ? `Click again to roll back to ${label}`
-          : `Roll back to ${label}`
-      }
-      onClick={() => void handleRollback(key, major, minor)}
+      title={`Roll back to ${label}`}
+      onClick={() => setRollbackTarget({ major, minor, label })}
     >
-      {rollingBack && confirmRollback === null ? (
-        <CircleNotch className="size-3.5 animate-spin" aria-hidden="true" />
-      ) : (
-        <ArrowCounterClockwise className="size-3.5" aria-hidden="true" />
-      )}
-      {confirmRollback === key ? "Confirm" : label}
+      <ArrowCounterClockwise className="size-3.5" aria-hidden="true" />
+      {label}
     </Button>
   );
 
@@ -339,7 +348,6 @@ export default function SnapshotsPage() {
                           </span>
                           <span className="ms-auto">
                             {rollbackButton(
-                              `major-${v.id}`,
                               `Restore v${v.version}.0`,
                               v.version,
                               0
@@ -371,7 +379,6 @@ export default function SnapshotsPage() {
                             {b.status === "READY" && (
                               <span className="ms-auto">
                                 {rollbackButton(
-                                  `minor-${b.id}`,
                                   `Restore v${v.version}.${b.minor}`,
                                   v.version,
                                   b.minor
@@ -419,6 +426,41 @@ export default function SnapshotsPage() {
             )}
           </div>
         )}
+
+        <AlertDialog
+          open={rollbackTarget !== null}
+          onOpenChange={(open) => {
+            if (!open && !rollingBack) setRollbackTarget(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Roll back to {rollbackTarget?.label}?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Answers revert to that snapshot. Newer additions leave the
+                answers while earlier deletions come back, recorded as a new
+                batch. Nothing is erased.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={rollingBack}>
+                Keep current
+              </AlertDialogCancel>
+              <AlertDialogAction
+                disabled={rollingBack}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={(e) => {
+                  e.preventDefault();
+                  void handleRollback();
+                }}
+              >
+                {rollingBack ? "Rolling back" : "Roll back"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </StudioShell>
   );
