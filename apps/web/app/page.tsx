@@ -327,10 +327,10 @@ export default function OverviewPage() {
                 <CardContent className="pt-5">
                   <div className="grid grid-cols-2 gap-y-4 md:grid-cols-4 md:divide-x md:divide-border">
                     <div className="min-w-0 pr-4">
-                      <p className="flex items-center gap-1 text-[13px] text-muted-foreground">
+                      <div className="flex items-center gap-1 text-[13px] text-muted-foreground">
                         Assisted rate
                         <MetricInfo metric="assisted" />
-                      </p>
+                      </div>
                       <p className="mt-1 font-sans text-xl font-semibold tabular-nums tracking-tight">
                         {data.hero.assistedRate}%{" "}
                         <span className="text-sm font-normal text-muted-foreground">
@@ -339,10 +339,10 @@ export default function OverviewPage() {
                       </p>
                     </div>
                     <div className="min-w-0 pr-4 md:px-5">
-                      <p className="flex items-center gap-1 text-[13px] text-muted-foreground">
+                      <div className="flex items-center gap-1 text-[13px] text-muted-foreground">
                         Grounded answers
                         <MetricInfo metric="grounded" />
-                      </p>
+                      </div>
                       <p className="mt-1 font-sans text-xl font-semibold tabular-nums tracking-tight">
                         {data.trust.groundedCoverage}{" "}
                         <span className="text-sm font-normal text-muted-foreground">
@@ -351,10 +351,10 @@ export default function OverviewPage() {
                       </p>
                     </div>
                     <div className="min-w-0 pr-4 md:px-5">
-                      <p className="flex items-center gap-1 text-[13px] text-muted-foreground">
+                      <div className="flex items-center gap-1 text-[13px] text-muted-foreground">
                         Blindspot rate
                         <MetricInfo metric="blindspot" />
-                      </p>
+                      </div>
                       <p className="mt-1 font-sans text-xl font-semibold tabular-nums tracking-tight">
                         {data.kpis[1]?.value}{" "}
                         <span
@@ -366,10 +366,10 @@ export default function OverviewPage() {
                       </p>
                     </div>
                     <div className="min-w-0 md:pl-5">
-                      <p className="flex items-center gap-1 text-[13px] text-muted-foreground">
+                      <div className="flex items-center gap-1 text-[13px] text-muted-foreground">
                         High-intent sessions
                         <MetricInfo metric="intent" />
-                      </p>
+                      </div>
                       <p className="mt-1 font-sans text-xl font-semibold tabular-nums tracking-tight">
                         {data.kpis[0]?.value}{" "}
                         <span
