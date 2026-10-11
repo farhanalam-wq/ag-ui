@@ -424,7 +424,14 @@ export default function OverviewPage() {
                       <CardTitle className="text-[15px] font-semibold">
                         Monitoring
                       </CardTitle>
-                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2">
+                        <button
+                            className="text-sm text-primary hover:underline disabled:opacity-60"
+                            disabled={pendingHref !== null}
+                            onClick={() => navigate("/analytics/agent")}
+                          >
+                            View all metrics
+                        </button>
                         <Button
                           variant="outline"
                           size="sm"
@@ -434,13 +441,6 @@ export default function OverviewPage() {
                           <ArrowClockwise className="size-3.5" />
                           Refresh
                         </Button>
-                        <button
-                          className="text-sm text-primary hover:underline disabled:opacity-60"
-                          disabled={pendingHref !== null}
-                          onClick={() => navigate("/analytics/agent")}
-                        >
-                          View all metrics
-                        </button>
                       </div>
                     </div>
                   </CardHeader>
