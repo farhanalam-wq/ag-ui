@@ -402,15 +402,16 @@ export default function OverviewPage() {
                     {(data.trust.latencyP50 / 1000).toFixed(1)}s / p95{" "}
                     {(data.trust.latencyP95 / 1000).toFixed(1)}s.
                     Deltas are week over week, vs the prior 7 days.{" "}
-                    <button
-                      className="text-primary hover:underline disabled:opacity-60"
+                    <Button
+                      variant="link"
+                      className="h-auto p-0 text-sm font-normal"
                       disabled={pendingHref !== null}
                       onClick={() =>
                         navigate("/knowledge/snapshots")
                       }
                     >
                       Learn more
-                    </button>
+                    </Button>
                     .
                   </p>
                 </CardContent>
@@ -424,14 +425,15 @@ export default function OverviewPage() {
                       <CardTitle className="text-[15px] font-semibold">
                         Monitoring
                       </CardTitle>
-                        <div className="flex items-center gap-2">
-                        <button
-                            className="text-sm text-primary hover:underline disabled:opacity-60"
-                            disabled={pendingHref !== null}
-                            onClick={() => navigate("/analytics/agent")}
-                          >
-                            View all metrics
-                        </button>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="link"
+                          className="h-auto p-0 text-sm font-normal"
+                          disabled={pendingHref !== null}
+                          onClick={() => navigate("/analytics/agent")}
+                        >
+                          View all metrics
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
@@ -613,13 +615,14 @@ export default function OverviewPage() {
                         </div>
                       </div>
                     ))}
-                    <button
-                      className="text-sm text-primary hover:underline disabled:opacity-60"
+                    <Button
+                      variant="link"
+                      className="h-auto p-0 text-sm font-normal"
                       disabled={pendingHref !== null}
                       onClick={() => navigate("/analytics/intent")}
                     >
                       View intent analytics
-                    </button>
+                    </Button>
                   </CardContent>
                 </Card>
               </div>
@@ -637,15 +640,16 @@ export default function OverviewPage() {
                         {rangeLabel}. Each one is a doc fix or a Signal.
                       </CardDescription>
                     </div>
-                    <button
-                      className="text-sm text-primary hover:underline disabled:opacity-60"
+                    <Button
+                      variant="link"
+                      className="h-auto p-0 text-sm font-normal"
                       disabled={pendingHref !== null}
                       onClick={() =>
                         navigate("/intelligence/intent-radar")
                       }
                     >
                       View all
-                    </button>
+                    </Button>
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0">
