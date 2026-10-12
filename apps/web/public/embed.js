@@ -72,6 +72,11 @@
       "api=" + encodeURIComponent(apiBase) +
       "&title=" + encodeURIComponent(title) +
       "&color=" + encodeURIComponent(color);
+    // Shell pair from the last /config theme (set by applyOrbTheme): lets a
+    // light brand first-paint on the right surface instead of flashing dark.
+    if (themeSurface && themeText) {
+      q += "&surface=" + encodeURIComponent(themeSurface) + "&text=" + encodeURIComponent(themeText);
+    }
     return webOrigin + "/embed/" + encodeURIComponent(widgetKey) + "?" + q;
   }
 
@@ -116,6 +121,10 @@
   var orbThemeVersion = null;
   var orbFetchedAt = 0;
   var ORB_STALE_MS = 5 * 60 * 1000;
+  // Last known good shell pair from /config (hex-only; applicability was
+  // already contrast-gated server-side via bodySurface).
+  var themeSurface = null;
+  var themeText = null;
 
   function applyOrbTheme(cfg) {
     if (!cfg) return;
@@ -146,6 +155,23 @@
       orb.style.display = "inline-flex";
       orb.style.alignItems = "center";
       orb.style.justifyContent = "center";
+    }
+
+    // Shell pair for the chat panel: forwarded into the iframe via
+    // ?surface=&text= for first paint, and applied to the frame element
+    // itself so the pre-load letterbox matches instead of staying black.
+    var th = (cfg && cfg.theme) || {};
+    var bodyOk = th.bodySurface !== undefined ? th.bodySurface : th.fullSurface;
+    var surf = isHex(th.surface) ? th.surface.trim().toLowerCase() : null;
+    var txt = isHex(th.text) ? th.text.trim().toLowerCase() : null;
+    if (bodyOk && surf && txt) {
+      themeSurface = surf;
+      themeText = txt;
+      frame.style.background = surf;
+      var frameBorder = isHex(th.secondary)
+        ? th.secondary.trim().toLowerCase()
+        : (isHex(colors.primary) ? colors.primary.trim().toLowerCase() : null);
+      if (frameBorder) frame.style.borderColor = frameBorder;
     }
   }
 

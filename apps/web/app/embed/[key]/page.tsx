@@ -17,6 +17,8 @@ import { ChatMessageItem } from "@/components/chat-message";
 import { apiClient, type EmbedConfig } from "@/lib/api-client";
 import {
   applyWidgetTheme,
+  contrastRatio,
+  isLightSurface,
   mapBrandToWidgetTheme,
   widgetThemeVars,
   type WidgetTheme,
@@ -50,6 +52,10 @@ export default function EmbedChatPage() {
   const apiBase = searchParams.get("api") || undefined;
   const titleOverride = searchParams.get("title") || undefined;
   const colorOverride = searchParams.get("color") || undefined;
+  // First-paint surface forwarded by embed.js (?surface=&text=, mirrored
+  // from the last /config theme so a light brand doesn't flash dark).
+  const surfaceParam = searchParams.get("surface") || undefined;
+  const textParam = searchParams.get("text") || undefined;
 
   const [phase, setPhase] = useState<"loading" | "indexing" | "chat" | "error">("loading");
   const [config, setConfig] = useState<EmbedConfig | null>(null);
@@ -65,16 +71,15 @@ export default function EmbedChatPage() {
     openDrawerWithEvidence,
   } = useCompanyChat();
 
-  const brandColor =
-    config?.brand?.tokens?.colors?.primary || colorOverride || "#2563eb";
   const displayName = titleOverride || config?.name || "Assistant";
 
   // Full per-company theme (sanitized). Server `theme` wins when present;
-  // otherwise map locally. colorOverride wins for primary only.
+  // otherwise map locally. colorOverride wins for primary only (and re-gates
+  // accents so an unreadable host override can't claim fullSurface).
   const appliedThemeVersion = React.useRef<string | null>(null);
   const theme: WidgetTheme = React.useMemo(() => {
     const server = config?.theme;
-    const base: WidgetTheme =
+    let base: WidgetTheme =
       server && typeof server.primary === "string"
         ? {
             primary: server.primary,
@@ -84,13 +89,45 @@ export default function EmbedChatPage() {
             text: server.text,
             logoUrl: server.logoUrl,
             fullSurface: server.fullSurface,
+            bodySurface: server.bodySurface ?? server.fullSurface,
+            accentOnSurface: server.accentOnSurface ?? server.fullSurface,
+            surfaceSource: (server.surfaceSource as WidgetTheme["surfaceSource"]) ?? "tokens",
           }
         : mapBrandToWidgetTheme(config?.brand?.tokens, config?.brand?.logoUrl);
+    // First paint (config not yet loaded): trust the loader-forwarded pair
+    // only when the pair passes body contrast on its own — a crafted URL
+    // can never paint unreadable text.
+    if (!config && isHexParam(surfaceParam) && isHexParam(textParam)) {
+      const s = surfaceParam.trim().toLowerCase();
+      const tx = textParam.trim().toLowerCase();
+      if (contrastRatio(tx, s) >= 4.5) {
+        const accent = contrastRatio(base.primary, s) >= 3;
+        base = {
+          ...base,
+          surface: s,
+          text: tx,
+          bodySurface: true,
+          accentOnSurface: accent,
+          fullSurface: accent,
+          surfaceSource: "embed-query",
+        };
+      }
+    }
     if (colorOverride && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(colorOverride.trim())) {
-      return { ...base, primary: colorOverride.trim().toLowerCase() };
+      const primary = colorOverride.trim().toLowerCase();
+      const accentOnSurface = contrastRatio(primary, base.surface) >= 3;
+      return { ...base, primary, accentOnSurface, fullSurface: base.bodySurface && accentOnSurface };
     }
     return base;
-  }, [config?.brand, config?.theme, colorOverride]);
+  }, [config, colorOverride, surfaceParam, textParam]);
+
+  function isHexParam(v: unknown): v is string {
+    return typeof v === "string" && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v.trim());
+  }
+
+  const brandColor = theme.primary;
+  // Light brand shell: dark-designed pills/badges need readable text treatment.
+  const lightShell = theme.bodySurface && isLightSurface(theme.surface);
 
   const loadConfig = useCallback(async () => {
     if (!widgetKey) {
@@ -172,13 +209,19 @@ export default function EmbedChatPage() {
   return (
     <div
       className="flex flex-col h-[100dvh] w-full bg-background text-foreground antialiased"
-      style={{ ...widgetThemeVars(theme), "--brand-primary": brandColor } as React.CSSProperties}
+      style={
+        {
+          ...widgetThemeVars(theme),
+          "--brand-primary": brandColor,
+          ...(theme.bodySurface ? { backgroundColor: theme.surface, color: theme.text } : null),
+        } as React.CSSProperties
+      }
     >
       {/* Header */}
       <header
         className="flex h-12 shrink-0 items-center gap-2 border-b border-zinc-800 bg-zinc-950/90 px-3"
         style={
-          theme.fullSurface
+          theme.bodySurface
             ? { backgroundColor: theme.surface, borderColor: theme.secondary, color: theme.text }
             : undefined
         }
@@ -207,13 +250,24 @@ export default function EmbedChatPage() {
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-semibold text-zinc-100 truncate">{displayName}</div>
-          <div className="text-[10px] font-mono text-zinc-500 truncate">
+          <div
+            className="text-xs font-semibold text-zinc-100 truncate"
+            style={theme.bodySurface ? { color: theme.text } : undefined}
+          >
+            {displayName}
+          </div>
+          <div
+            className="text-[10px] font-mono text-zinc-500 truncate"
+            style={theme.bodySurface ? { color: theme.text, opacity: 0.65 } : undefined}
+          >
             {config?.domain || "Company assistant"}
           </div>
         </div>
         {phase === "chat" && (
-          <span className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-400">
+          <span
+            className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-400"
+            style={lightShell ? { color: theme.text } : undefined}
+          >
             <span className="size-1.5 rounded-full bg-emerald-500" />
             Ready
           </span>
@@ -229,7 +283,10 @@ export default function EmbedChatPage() {
       {/* Body */}
       {phase === "loading" && (
         <div className="flex-1 flex items-center justify-center">
-          <div className="flex items-center gap-2 text-xs text-zinc-500 font-mono animate-pulse">
+          <div
+            className="flex items-center gap-2 text-xs text-zinc-500 font-mono animate-pulse"
+            style={lightShell ? { color: theme.text } : undefined}
+          >
             <CircleNotch className="size-4 animate-spin" />
             <span>Loading assistant…</span>
           </div>
@@ -238,8 +295,14 @@ export default function EmbedChatPage() {
 
       {phase === "error" && (
         <div className="flex-1 flex items-center justify-center p-4">
-          <div className="flex items-start gap-2 p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-xs text-red-300 max-w-sm">
-            <WarningCircle className="size-4 shrink-0 mt-0.5" />
+          <div
+            className="flex items-start gap-2 p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-xs text-red-300 max-w-sm"
+            style={lightShell ? { color: theme.text } : undefined}
+          >
+            <WarningCircle
+              className="size-4 shrink-0 mt-0.5"
+              style={lightShell ? { color: "#dc2626" } : undefined}
+            />
             <div>
               <div className="font-semibold">Assistant unavailable</div>
               <div className="font-mono text-[11px] mt-0.5">{error}</div>
@@ -262,11 +325,17 @@ export default function EmbedChatPage() {
       {phase === "indexing" && (
         <div className="flex-1 flex items-center justify-center p-4">
           <div className="text-center space-y-2 max-w-xs">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-300 animate-pulse font-mono">
+            <div
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-300 animate-pulse font-mono"
+              style={lightShell ? { color: theme.text } : undefined}
+            >
               <CircleNotch className="size-3.5 animate-spin" />
               <span>Indexing {config?.domain || "company"}…</span>
             </div>
-            <p className="text-[11px] text-zinc-500">
+            <p
+              className="text-[11px] text-zinc-500"
+              style={lightShell ? { color: theme.text, opacity: 0.75 } : undefined}
+            >
               The knowledge base is being built. Chat opens automatically when ready.
             </p>
           </div>
@@ -278,7 +347,10 @@ export default function EmbedChatPage() {
           <main className="flex-1 overflow-y-auto p-3 space-y-4">
             {messages.length === 0 && config && (
               <div className="space-y-2 pt-2">
-                <p className="text-xs text-zinc-400">
+                <p
+                  className="text-xs text-zinc-400"
+                  style={theme.bodySurface ? { color: theme.text, opacity: 0.75 } : undefined}
+                >
                   Ask anything about {config.name}:
                 </p>
                 {suggestedQueriesFor(config.name).map((q) => (
@@ -310,7 +382,14 @@ export default function EmbedChatPage() {
             <div ref={messagesEndRef} />
           </main>
 
-          <div className="shrink-0 p-2 border-t border-zinc-800 bg-zinc-950/90">
+          <div
+            className="shrink-0 p-2 border-t border-zinc-800 bg-zinc-950/90"
+            style={
+              theme.bodySurface
+                ? { backgroundColor: theme.surface, borderColor: theme.secondary }
+                : undefined
+            }
+          >
             <VoiceSession
               key={widgetKey}
               widgetKey={widgetKey}

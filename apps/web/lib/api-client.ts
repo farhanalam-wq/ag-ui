@@ -175,6 +175,11 @@ export interface EmbedConfig {
     text: string;
     logoUrl: string | null;
     fullSurface: boolean;
+    /** Text-on-surface >= 4.5: shell (bg + body copy) may use surface/text. */
+    bodySurface?: boolean;
+    /** Primary-on-surface >= 3: accents may sit on the surface. */
+    accentOnSurface?: boolean;
+    surfaceSource?: string;
   } | null;
   /** Latest READY stylesheet id; clients skip re-apply when unchanged. */
   themeVersion?: string | null;

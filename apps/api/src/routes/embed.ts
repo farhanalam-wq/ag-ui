@@ -4,6 +4,7 @@ import {
   companies,
   companySnapshots,
   brands,
+  brandStylesheets,
   documents,
   chunks,
   facts,
@@ -283,10 +284,24 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
         .limit(1);
 
       // Server-sanitized theme + version, scoped to the ACTIVE snapshot so
-      // theme follows knowledge rollbacks. Clients skip re-apply when
-      // `themeVersion` is unchanged.
+      // theme follows knowledge rollbacks. The observed WCAG pairs come
+      // from the SAME stylesheet row (best measured pair wins the shell);
+      // missing/empty pairs fall back to brand tokens, then neutral shell.
       const themeVersion = await resolveThemeStylesheetId(company.id, snapshot?.id ?? null);
-      const theme = mapBrandToWidgetTheme(brand?.tokens, brand?.logoUrl);
+      let stylesheetWcag: unknown;
+      try {
+        if (themeVersion) {
+          const [sheet] = await db
+            .select({ wcag: brandStylesheets.wcag })
+            .from(brandStylesheets)
+            .where(eq(brandStylesheets.id, themeVersion))
+            .limit(1);
+          stylesheetWcag = sheet?.wcag ?? undefined;
+        }
+      } catch {
+        stylesheetWcag = undefined;
+      }
+      const theme = mapBrandToWidgetTheme(brand?.tokens, brand?.logoUrl, stylesheetWcag);
 
       let docCount = 0;
       let chunkCount = 0;
