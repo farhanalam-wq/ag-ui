@@ -15,15 +15,11 @@ import {
   Buildings,
   Sparkle,
   ArrowRight,
+  ArrowDown,
   CircleNotch,
   ArrowCounterClockwise,
   Sidebar as SidebarIcon,
 } from "@phosphor-icons/react";
-import {
-  Conversation,
-  ConversationContent,
-  ConversationScrollButton,
-} from "@/components/ai-elements/conversation";
 import { useCompanyChat } from "@/hooks/use-company-chat";
 import { ChatMessageItem } from "@/components/chat-message";
 // Evidence drawer only renders when opened: load on demand. Same props once loaded.
@@ -95,13 +91,46 @@ export default function PlaygroundPage() {
 
   const isConversationActive = messages.length > 0;
 
+  // Page owns the scroll (SidebarInset scrolls). Follow streaming only
+  // while the user is already near the bottom; otherwise offer a jump button.
+  const listEndRef = useRef<HTMLDivElement>(null);
+  const nearBottomRef = useRef(true);
+  const activeRef = useRef(false);
+  activeRef.current = isConversationActive;
+  const [showJump, setShowJump] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => {
+      const near =
+        window.innerHeight + window.scrollY >
+        document.documentElement.scrollHeight - 240;
+      nearBottomRef.current = near;
+      setShowJump(activeRef.current && !near);
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    if (isConversationActive && nearBottomRef.current) {
+      listEndRef.current?.scrollIntoView({ block: "end" });
+    }
+  }, [messages, isStreaming, isConversationActive]);
+
+  const jumpToLatest = () => {
+    nearBottomRef.current = true;
+    setShowJump(false);
+    listEndRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  };
+
   return (
     <StudioShell
       crumbs={[{ label: "Playground" }]}
       onSelectCompany={handleSelectCompany}
     >
-      {/* Fixed-height Lab column: header + scroll region + dock (no page scroll) */}
-      <div className="flex h-[calc(100dvh-6.5rem)] min-h-[480px] flex-col gap-3">
+      {/* Centered Lab measure: header, chat, and dock share one left edge */}
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-3">
       {/* PageHeader: title + sub left, controls right */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -142,14 +171,14 @@ export default function PlaygroundPage() {
       </div>
 
       {isLoadingCompanies ? (
-        <div className="flex w-full flex-1 flex-col items-center justify-center p-4 sm:p-6">
+        <div className="flex min-h-[50dvh] w-full flex-col items-center justify-center p-4 sm:p-6">
           <div className="flex flex-col items-center gap-3 text-muted-foreground">
             <CircleNotch className="size-6 animate-spin" />
             <p className="text-xs">Loading companies…</p>
           </div>
         </div>
       ) : !selectedCompany ? (
-        <div className="flex w-full flex-1 flex-col items-center justify-center p-4 sm:p-6">
+        <div className="flex min-h-[50dvh] w-full flex-col items-center justify-center p-4 sm:p-6">
           <div className="flex w-full max-w-md flex-col items-center gap-4 text-center">
             <div className="flex size-12 items-center justify-center rounded-xl border border-border bg-muted">
               <Buildings className="size-6 text-muted-foreground" />
@@ -170,10 +199,10 @@ export default function PlaygroundPage() {
           </div>
         </div>
       ) : (
-        <div className="flex min-h-0 w-full flex-1 flex-col gap-4">
-          {/* When Empty: status + suggestions (left-aligned to PageHeader) */}
+        <div className="flex min-h-[calc(100dvh-6.5rem)] flex-col gap-3">
+          {/* When Empty: status + suggestions */}
           {!isConversationActive && (
-            <div className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col items-center justify-center gap-6 overflow-y-auto py-4 text-center">
+            <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center justify-center gap-6 py-8 text-center">
               <div className="flex w-full max-w-2xl flex-col items-center gap-2">
                 <p className="text-xs tabular-nums text-muted-foreground">
                   Snapshot {selectedCompany.status} &middot; {selectedCompany.docCount} docs
@@ -209,26 +238,24 @@ export default function PlaygroundPage() {
             </div>
           )}
 
-          {/* When Active: Conversation Messages Stream (scroll owned by Conversation) */}
+          {/* When Active: message list (page scrolls) */}
           {isConversationActive && (
-            <Conversation className="mx-auto min-h-0 w-full max-w-4xl min-w-0 flex-1">
-              <ConversationContent className="gap-6 p-0">
-                {messages.map((msg) => (
-                  <ChatMessageItem
-                    key={msg.id}
-                    message={msg}
-                    companyName={selectedCompany.name}
-                    brandColor={selectedCompany.brandColor}
-                    onInspectEvidence={(item) => openDrawerWithEvidence(item)}
-                  />
-                ))}
-              </ConversationContent>
-              <ConversationScrollButton />
-            </Conversation>
+            <div className="flex w-full flex-col gap-6 py-2">
+              {messages.map((msg) => (
+                <ChatMessageItem
+                  key={msg.id}
+                  message={msg}
+                  companyName={selectedCompany.name}
+                  brandColor={selectedCompany.brandColor}
+                  onInspectEvidence={(item) => openDrawerWithEvidence(item)}
+                />
+              ))}
+              <div ref={listEndRef} />
+            </div>
           )}
 
           {/* Bottom Docked PromptInput + Voice Call */}
-          <div className="mx-auto w-full max-w-4xl">
+          <div className="sticky bottom-4 z-20 mt-auto w-full">
           <VoiceSession
             key={selectedCompany.id}
             companyId={selectedCompany.id}
@@ -278,6 +305,19 @@ export default function PlaygroundPage() {
         </div>
       )}
       </div>
+
+      {/* Jump to latest (page scroll) */}
+      {isConversationActive && showJump && (
+        <Button
+          type="button"
+          size="icon"
+          onClick={jumpToLatest}
+          aria-label="Jump to latest"
+          className="fixed right-6 bottom-24 z-20 rounded-full shadow-lg"
+        >
+          <ArrowDown />
+        </Button>
+      )}
 
       {/* Collapsible Evidence Drawer */}
       <EvidenceDrawer
