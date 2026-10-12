@@ -9,20 +9,16 @@ import {
   PromptInputTextarea,
   PromptInputFooter,
   PromptInputTools,
-  PromptInputBadge,
   PromptInputSubmit,
 } from "@/components/ai-elements/prompt-input";
 import {
   Buildings,
-  Stack,
   Sparkle,
   ArrowRight,
-  Database,
   CircleNotch,
   ArrowCounterClockwise,
   Sidebar as SidebarIcon,
 } from "@phosphor-icons/react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Conversation,
   ConversationContent,
@@ -30,8 +26,6 @@ import {
 } from "@/components/ai-elements/conversation";
 import { useCompanyChat } from "@/hooks/use-company-chat";
 import { ChatMessageItem } from "@/components/chat-message";
-import { EvidenceInspector } from "@/components/evidence-inspector";
-import { PromptDebugger } from "@/components/prompt-debugger";
 // Evidence drawer only renders when opened: load on demand. Same props once loaded.
 const EvidenceDrawer = dynamic(
   () =>
@@ -51,7 +45,6 @@ import {
 } from "@/components/voice/voice-chat-button";
 import { StudioShell } from "@/components/studio-shell";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import type { CompanyItem } from "@/components/sidebar/company-switcher";
 import { useCompanyStore, useSelectedCompany } from "@/stores/use-company-store";
 
@@ -177,37 +170,19 @@ export default function PlaygroundPage() {
           </div>
         </div>
       ) : (
-        <div className="flex min-h-0 w-full flex-1 gap-4">
-        <div className="mx-auto flex min-h-0 w-full max-w-4xl min-w-0 flex-1 flex-col gap-4">
-          {/* When Empty: title + suggestions (left-aligned Lab canvas) */}
+        <div className="flex min-h-0 w-full flex-1 flex-col gap-4">
+          {/* When Empty: status + suggestions (left-aligned to PageHeader) */}
           {!isConversationActive && (
-            <div className="flex min-h-0 w-full flex-1 flex-col justify-center gap-6 overflow-y-auto py-4">
-              <div className="flex max-w-2xl flex-col items-start gap-3">
-                <Badge variant="outline" className="gap-2 font-medium text-muted-foreground">
-                  <Stack className="size-3.5" />
-                  <span>Hybrid Retrieval &bull; Fact Extraction &bull; Text Answers</span>
-                </Badge>
-
-                <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-                  {selectedCompany.name} Intelligence
-                </h2>
-
-                <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
-                  {selectedCompany.description}
+            <div className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col items-center justify-center gap-6 overflow-y-auto py-4 text-center">
+              <div className="flex w-full max-w-2xl flex-col items-center gap-2">
+                <p className="text-xs tabular-nums text-muted-foreground">
+                  Snapshot {selectedCompany.status} &middot; {selectedCompany.docCount} docs
                 </p>
-
-                <Alert className="max-w-2xl">
-                  <Database className="size-4" />
-                  <AlertDescription className="tabular-nums">
-                    Snapshot {selectedCompany.status} &bull; {selectedCompany.docCount} docs
-                    &bull; {selectedCompany.chunkCount} chunks &bull; {selectedCompany.factCount} facts
-                  </AlertDescription>
-                </Alert>
               </div>
 
               {/* Suggested Inquiries */}
               <div className="flex w-full max-w-2xl flex-col gap-2.5">
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
                   <Sparkle className="size-3.5" />
                   <span>Suggested Inquiries for {selectedCompany.name}:</span>
                 </div>
@@ -236,7 +211,7 @@ export default function PlaygroundPage() {
 
           {/* When Active: Conversation Messages Stream (scroll owned by Conversation) */}
           {isConversationActive && (
-            <Conversation className="min-h-0 w-full flex-1">
+            <Conversation className="mx-auto min-h-0 w-full max-w-4xl min-w-0 flex-1">
               <ConversationContent className="gap-6 p-0">
                 {messages.map((msg) => (
                   <ChatMessageItem
@@ -244,8 +219,7 @@ export default function PlaygroundPage() {
                     message={msg}
                     companyName={selectedCompany.name}
                     brandColor={selectedCompany.brandColor}
-                    onSelectEvidence={selectEvidence}
-                    onInspectEvidence={() => openDrawerWithEvidence()}
+                    onInspectEvidence={(item) => openDrawerWithEvidence(item)}
                   />
                 ))}
               </ConversationContent>
@@ -254,6 +228,7 @@ export default function PlaygroundPage() {
           )}
 
           {/* Bottom Docked PromptInput + Voice Call */}
+          <div className="mx-auto w-full max-w-4xl">
           <VoiceSession
             key={selectedCompany.id}
             companyId={selectedCompany.id}
@@ -266,62 +241,40 @@ export default function PlaygroundPage() {
             }}
           >
             {() => (
-            <div className="flex w-full flex-col gap-1">
+            <div className="w-full">
             <PromptInput
               value={query}
               onValueChange={setQuery}
               onSubmit={handleQuerySubmit}
               isSubmitting={isStreaming}
+              className="rounded-3xl border-border bg-card shadow-none backdrop-blur-none"
             >
               <PromptInputBody>
                 <PromptInputTextarea
-                  placeholder={`Ask anything about ${selectedCompany.name} (e.g. pricing tiers, API limits, HQ location)...`}
+                  placeholder=""
                   minHeight={52}
                 />
               </PromptInputBody>
 
-              <PromptInputFooter>
+              <PromptInputFooter className="border-t-0 pt-1">
                 <PromptInputTools>
-                  <PromptInputBadge
-                    icon={Buildings}
-                    label={selectedCompany.domain}
-                  />
-                  <PromptInputBadge
-                    icon={Stack}
-                    label="Qdrant HNSW"
-                    className="hidden sm:inline-flex"
-                  />
                   <VoiceErrorChip />
                 </PromptInputTools>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <VoiceAmplitudeBars />
-                  <VoiceChatButton />
-                  <span className="hidden text-[11px] text-muted-foreground sm:inline-block">
-                    Return to send
-                  </span>
+                  <VoiceChatButton className="rounded-full border-transparent bg-transparent" />
                   <PromptInputSubmit
-                    className="bg-primary text-primary-foreground hover:bg-primary/90"
+                    className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-100 dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary/90"
                     aria-label="Submit prompt"
                   />
                 </div>
               </PromptInputFooter>
             </PromptInput>
-            <PromptDebugger />
             </div>
             )}
           </VoiceSession>
-        </div>
-
-        {/* Desktop inspector (mobile uses the Sheet) */}
-        <aside className="hidden min-h-0 w-[380px] shrink-0 flex-col lg:flex" aria-label="Citation inspector">
-          <EvidenceInspector
-            evidence={activeEvidence}
-            selectedEvidence={selectedEvidence}
-            onSelect={selectEvidence}
-            isStreaming={isStreaming}
-          />
-        </aside>
+          </div>
         </div>
       )}
       </div>

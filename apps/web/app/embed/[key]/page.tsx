@@ -304,7 +304,6 @@ export default function EmbedChatPage() {
                 companyName={config?.name || displayName}
                 brandColor={brandColor}
                 compact
-                onSelectEvidence={handleOpenEvidence}
                 onInspectEvidence={handleOpenEvidence}
               />
             ))}

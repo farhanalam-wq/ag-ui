@@ -41,10 +41,10 @@ function toCompanyItem(apiComp: ApiCompany): CompanyItem {
     factCount: apiComp.factCount ?? 0,
     status: apiComp.status || apiComp.latestSnapshot?.status || "READY",
     suggestedQueries: [
-      `What are the core products and APIs provided by ${apiComp.name}?`,
-      `What are the pricing tiers, limits, and plan options?`,
-      `Where are ${apiComp.name} headquarters and contact options?`,
-      `What compliance certifications and security features exist?`,
+      `What does ${apiComp.name} offer?`,
+      `How much does it cost, and what are the options?`,
+      `Where are they located, and how do I contact them?`,
+      `What is new or noteworthy?`,
     ],
   };
 }

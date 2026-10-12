@@ -5,7 +5,6 @@ import {
   Message,
   MessageContent,
   MessageResponse,
-  MessageActions,
   MessageAction,
 } from "@/components/ai-elements/message";
 import {
@@ -23,7 +22,6 @@ import {
   Check,
   Stack,
   WarningCircle,
-  Eye,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import type { ChatMessage as ChatMessageType, EvidenceItem } from "@/hooks/use-company-chat";
@@ -34,10 +32,8 @@ interface ChatMessageProps {
   companyName: string;
   brandColor?: string;
   compact?: boolean;
-  /** Select a citation inline (drives the inspector). Never opens the drawer. */
-  onSelectEvidence: (item?: EvidenceItem) => void;
-  /** Open the evidence drawer/sheet (mobile reading surface). */
-  onInspectEvidence: () => void;
+  /** Open the evidence sheet, preselecting the given citation. */
+  onInspectEvidence: (item?: EvidenceItem) => void;
 }
 
 function extractTextWithoutOpenUI(content: string): string {
@@ -108,7 +104,6 @@ export function ChatMessageItem({
   companyName,
   brandColor = "#3b82f6",
   compact = false,
-  onSelectEvidence,
   onInspectEvidence,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
@@ -217,53 +212,26 @@ export function ChatMessageItem({
 
           {/* Citations Footer */}
           {message.evidence && message.evidence.length > 0 && (
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="mr-1 flex items-center gap-1 text-[11px] text-muted-foreground">
-                  <Stack className="size-3" />
-                  Sources:
+            <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onInspectEvidence(message.evidence?.[0])}
+                className="gap-1.5 text-xs text-muted-foreground"
+              >
+                <Stack data-icon="inline-start" />
+                <span className="tabular-nums">
+                  Sources ({message.evidence.length})
                 </span>
-                {message.evidence.slice(0, 4).map((ev, idx) => (
-                  <button
-                    key={ev.id || idx}
-                    type="button"
-                    onClick={() => onSelectEvidence(ev)}
-                    className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-                  >
-                    <span className="tabular-nums">[{idx + 1}]</span>
-                    <span className="max-w-[120px] truncate">{ev.title || "Doc"}</span>
-                  </button>
-                ))}
-                {message.evidence.length > 4 && (
-                  <button
-                    type="button"
-                    onClick={onInspectEvidence}
-                    className="ml-1 text-[11px] text-muted-foreground underline hover:text-foreground"
-                  >
-                    +{message.evidence.length - 4} more
-                  </button>
-                )}
-              </div>
-
-              <MessageActions>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={onInspectEvidence}
-                  className="gap-1 text-xs text-muted-foreground"
-                >
-                  <Eye data-icon="inline-start" />
-                  <span>Inspect Evidence ({message.evidence.length})</span>
-                </Button>
-                <MessageAction
-                  tooltip="Copy response"
-                  label="Copy response"
-                  onClick={handleCopy}
-                >
-                  {copied ? <Check /> : <Copy />}
-                </MessageAction>
-              </MessageActions>
+              </Button>
+              <MessageAction
+                tooltip="Copy response"
+                label="Copy response"
+                onClick={handleCopy}
+              >
+                {copied ? <Check /> : <Copy />}
+              </MessageAction>
             </div>
           )}
         </MessageContent>
