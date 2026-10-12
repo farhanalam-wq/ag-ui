@@ -42,6 +42,12 @@ export interface CrawlResult {
   pagesCrawled: number;
 }
 
+/**
+ * @deprecated Legacy single-shot crawler. New code must use `runIngestPipeline` from
+ * `@ag-ui/ingest` (the canonical pipeline: discover → crawl/parse → chunk/embed →
+ * Postgres + Qdrant). This class is retained only for the background worker until it is
+ * migrated; do not build new call sites on it.
+ */
 export class CompanyCrawler {
   /**
    * Executes a full autonomous crawl of a company website.

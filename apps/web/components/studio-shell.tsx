@@ -79,61 +79,66 @@ export function StudioShell({ crumbs, children }: StudioShellProps) {
   }, []);
 
   return (
-    <SidebarProvider defaultOpen={true}>
-      <div className="flex min-h-screen w-full bg-background text-foreground transition-colors duration-200">
-        {selectedCompany && (
-          <AppSidebar
-            companies={companies}
-            selectedCompany={selectedCompany}
-            onSelectCompany={(comp) => {
-              useCompanyStore.getState().select(comp.id);
-            }}
-            onOpenAddCompany={() => router.push("/knowledge/ingest")}
-          />
-        )}
+    <SidebarProvider
+      defaultOpen={true}
+      className="bg-background text-foreground"
+    >
+      {selectedCompany && (
+        <AppSidebar
+          companies={companies}
+          selectedCompany={selectedCompany}
+          onSelectCompany={(comp) => {
+            useCompanyStore.getState().select(comp.id);
+          }}
+          onOpenAddCompany={() => router.push("/knowledge/ingest")}
+        />
+      )}
 
-        <SidebarInset className="flex flex-col bg-background min-h-screen transition-colors duration-200">
-          <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between border-b px-4 backdrop-blur-md">
-            <div className="flex items-center gap-2">
-              <SidebarTrigger className="-ml-1" />
-              <Separator orientation="vertical" className="mr-2 h-4" />
-              <Breadcrumb>
-                <BreadcrumbList className="text-xs">
-                  {crumbs.map((crumb, i) => {
-                    const isLast = i === crumbs.length - 1;
-                    return (
-                      <React.Fragment key={`${crumb.label}-${i}`}>
-                        {i > 0 && <BreadcrumbSeparator />}
-                        <BreadcrumbItem>
-                          {isLast || !crumb.href ? (
-                            <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
-                          ) : (
-                            <BreadcrumbLink
-                              href={crumb.href}
-                              onClick={(e) => {
-                                e.preventDefault();
-                                router.push(crumb.href!);
-                              }}
-                            >
-                              {crumb.label}
-                            </BreadcrumbLink>
-                          )}
-                        </BreadcrumbItem>
-                      </React.Fragment>
-                    );
-                  })}
-                </BreadcrumbList>
-              </Breadcrumb>
-            </div>
+      <SidebarInset className="min-w-0 flex-1 overflow-x-clip bg-background transition-colors duration-200">
+        <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur-md">
+          <div className="flex min-w-0 items-center gap-2">
+            <SidebarTrigger className="-ml-1" />
+            <Separator orientation="vertical" className="mr-2 h-4" />
+            <Breadcrumb>
+              <BreadcrumbList className="text-xs">
+                {crumbs.map((crumb, i) => {
+                  const isLast = i === crumbs.length - 1;
+                  return (
+                    <React.Fragment key={`${crumb.label}-${i}`}>
+                      {i > 0 && <BreadcrumbSeparator />}
+                      <BreadcrumbItem>
+                        {isLast || !crumb.href ? (
+                          <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
+                        ) : (
+                          <BreadcrumbLink
+                            href={crumb.href}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              router.push(crumb.href!);
+                            }}
+                          >
+                            {crumb.label}
+                          </BreadcrumbLink>
+                        )}
+                      </BreadcrumbItem>
+                    </React.Fragment>
+                  );
+                })}
+              </BreadcrumbList>
+            </Breadcrumb>
+          </div>
 
-            <div className="flex items-center gap-2">
-              <ModeToggle />
-            </div>
-          </header>
+          <div className="flex items-center gap-2">
+            <ModeToggle />
+          </div>
+        </header>
 
-          <main className="flex flex-1 flex-col overflow-y-auto">{children}</main>
-        </SidebarInset>
-      </div>
+        <div className="flex min-w-0 flex-1 flex-col overflow-x-clip">
+          <div className="mx-auto w-full min-w-0 max-w-[1400px] px-4 py-6 md:px-6">
+            {children}
+          </div>
+        </div>
+      </SidebarInset>
     </SidebarProvider>
   );
 }

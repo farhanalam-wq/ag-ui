@@ -75,11 +75,10 @@ export async function listKeysByCompany(companyId: string): Promise<
   return rows;
 }
 
-export async function revokeWidgetKey(id: string): Promise<WidgetKeyRow | null> {
+export async function deleteWidgetKey(id: string): Promise<Pick<WidgetKeyRow, "id" | "keyPrefix"> | null> {
   const [row] = await db
-    .update(widgetKeys)
-    .set({ revoked: true, updatedAt: new Date() })
+    .delete(widgetKeys)
     .where(eq(widgetKeys.id, id))
-    .returning();
-  return (row as WidgetKeyRow) ?? null;
+    .returning({ id: widgetKeys.id, keyPrefix: widgetKeys.keyPrefix });
+  return row ?? null;
 }

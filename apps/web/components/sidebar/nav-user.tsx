@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import {
   CaretUpDown,
   User,
@@ -44,6 +45,7 @@ const DEFAULT_USER: UserProfile = {
 
 export function NavUser({ user = DEFAULT_USER }: { user?: UserProfile }) {
   const { isMobile } = useSidebar();
+  const router = useRouter();
 
   return (
     <SidebarMenu>
@@ -101,22 +103,22 @@ export function NavUser({ user = DEFAULT_USER }: { user?: UserProfile }) {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => router.push("/settings/account")}>
                 <User />
                 Account Profile
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => router.push("/settings/api")}>
                 <Key />
                 API & Webhooks
               </DropdownMenuItem>
-              <DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => router.push("/settings/billing")}>
                 <CreditCard />
                 Usage & Billing
               </DropdownMenuItem>
-              <DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => router.push("/settings/team")}>
                 <Users />
                 Team
               </DropdownMenuItem>

@@ -31,7 +31,7 @@ export function ComingSoon({ title, description, icon, backHref = "/", backLabel
           <Icon className="size-6 text-muted-foreground" />
         </div>
         <div className="space-y-2">
-          <span className="inline-block rounded-full border border-sidebar-border bg-sidebar-accent px-2.5 py-0.5 text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+          <span className="inline-block rounded-full border border-sidebar-border bg-sidebar-accent px-2.5 py-0.5 text-[11px] font-sans uppercase tracking-wider text-muted-foreground">
             Coming soon
           </span>
           <h1 className="text-xl font-bold tracking-tight">{title}</h1>

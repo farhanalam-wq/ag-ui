@@ -142,7 +142,11 @@ export function ChatMessageItem({
                         {children}
                       </ol>
                     ),
-                    li: ({ children }) => <li className="text-zinc-700 dark:text-zinc-300">{children}</li>,
+                    li: ({ children }) => (
+                      <li className="text-zinc-700 dark:text-zinc-300 [&>p]:inline [&>p]:m-0">
+                        {children}
+                      </li>
+                    ),
                     strong: ({ children }) => (
                       <strong className="font-semibold text-zinc-900 dark:text-zinc-100">{children}</strong>
                     ),

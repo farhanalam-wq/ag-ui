@@ -10,6 +10,10 @@ const config: Config = {
   ],
   theme: {
   	extend: {
+  		fontFamily: {
+  			sans: ['"Hanken Grotesk Variable"', '"Inter Tight"', 'system-ui', 'sans-serif'],
+  			mono: ['"JetBrains Mono Variable"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+  		},
   		colors: {
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
@@ -44,6 +48,16 @@ const config: Config = {
   			border: 'hsl(var(--border))',
   			input: 'hsl(var(--input))',
   			ring: 'hsl(var(--ring))',
+  			chart: {
+  				'1': 'hsl(var(--chart-1))',
+  				'2': 'hsl(var(--chart-2))',
+  				'3': 'hsl(var(--chart-3))',
+  				'4': 'hsl(var(--chart-4))',
+  				'5': 'hsl(var(--chart-5))',
+  				'6': 'hsl(var(--chart-6))',
+  				'7': 'hsl(var(--chart-7))',
+  				'8': 'hsl(var(--chart-8))',
+  			},
   			brand: {
   				primary: 'var(--brand-primary, #2563eb)',
   				secondary: 'var(--brand-secondary, #3b82f6)',
@@ -63,6 +77,9 @@ const config: Config = {
   		},
   		borderRadius: {
   			brand: 'var(--brand-radius, 0.5rem)'
+  		},
+  		borderColor: {
+  			DEFAULT: 'hsl(var(--border))',
   		}
   	}
   },

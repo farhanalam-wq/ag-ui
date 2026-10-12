@@ -15,7 +15,7 @@ import {
   findActiveKeyByLabel,
   resolveWidgetKeyByHash,
   listKeysByCompany,
-  revokeWidgetKey,
+  deleteWidgetKey,
   checkEmbedRateLimit,
   resolveThemeStylesheetId,
   listDomainsByKey,
@@ -145,20 +145,21 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
       detail: { summary: "List widget keys", description: "Lists key prefixes and revocation status for a company." },
     }
   )
-  // 3. Revoke a key by row id. Revoked keys immediately 410 on config/chat.
+  // 3. Revoke a key by row id. The row is hard deleted (domains cascade),
+  // so deleted keys 404 on config/chat like never issued ones.
   .post(
     "/keys/:keyId/revoke",
     async ({ params, set }) => {
-      const revoked = await revokeWidgetKey(params.keyId);
-      if (!revoked) {
+      const deleted = await deleteWidgetKey(params.keyId);
+      if (!deleted) {
         set.status = 404;
         return { error: "Widget key not found" };
       }
-      return { revoked: true, id: revoked.id, keyPrefix: revoked.keyPrefix };
+      return { deleted: true, id: deleted.id, keyPrefix: deleted.keyPrefix };
     },
     {
       params: t.Object({ keyId: t.String({ format: "uuid" }) }),
-      detail: { summary: "Revoke widget key", description: "Revokes a widget key; public config/chat return 410 afterwards." },
+      detail: { summary: "Revoke widget key", description: "Deletes a widget key and its domains; public config/chat return 404 afterwards." },
     }
   )
   // 3b. List allowed origins for a key (prefixes never leave as raw).
@@ -256,7 +257,15 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
       }
 
       // Per-key origin gate (zero rules = open). Never burns rate-limit budget.
-      const gate = await assertOriginAllowed(resolved.row.id, request);
+      // DB failures here must read as unavailable, never leak internals.
+      let gate;
+      try {
+        gate = await assertOriginAllowed(resolved.row.id, request);
+      } catch (err) {
+        logger.error(`[EMBED] Config gate unavailable: ${(err as Error)?.message ?? err}`);
+        set.status = 503;
+        return { error: "Assistant unavailable - try again shortly", code: "CONFIG_UNAVAILABLE" };
+      }
       if (set.headers) set.headers["vary"] = "Origin";
       if (!gate.allowed) {
         logger.warn(
@@ -384,7 +393,16 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
       }
 
       // Per-key origin gate runs before snapshot + rate-limit work.
-      const gate = await assertOriginAllowed(resolved.row.id, request);
+      // DB failures here must read as unavailable, never leak internals.
+      let gate;
+      try {
+        gate = await assertOriginAllowed(resolved.row.id, request);
+      } catch (err) {
+        logger.error(`[EMBED CHAT] Gate unavailable: ${(err as Error)?.message ?? err}`);
+        set.status = 503;
+        yield { event: "error", data: { message: "Assistant unavailable - try again shortly", code: "CONFIG_UNAVAILABLE" } };
+        return;
+      }
       if (!gate.allowed) {
         logger.warn(
           `[EMBED] Blocked chat for key ${resolved.row.keyPrefix}… reason=${gate.reason} referer=${safeRefererForLog(request.headers.get("referer"))}`

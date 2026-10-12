@@ -166,6 +166,8 @@ To ensure strict retrieval grounding, anti-hallucination compliance, and safety 
 
 ## 4. Master Sidebar Navigation & Studio Nomenclature
 
+> Frozen to shipped labels (Oct 2026). Code (`nav-config.ts`) is the source of truth; this block follows it. Order follows the lifecycle Behaviour → Interaction → Intent → Outcome. Conversions lives ONLY under Analytics. Settings lives in the profile popup, not the sidebar. Entity Graph dropped (no graph DB).
+
 ```text
 ┌────────────────────────────────────┐
 │ Acme Holdings                    ▾ │
@@ -173,48 +175,46 @@ To ensure strict retrieval grounding, anti-hallucination compliance, and safety 
 │                                    │
 │  Overview                          │
 │                                    │
-│  KNOWLEDGE FOUNDRY                 │
-│    Crawl Runner                    │
+│  KNOWLEDGE                         │
+│    Ingest                          │
 │    Sources                         │
-│    Version Vault                   │
-│    Entity Graph                    │
+│    Snapshots                       │
 │                                    │
-│  AGENT ORCHESTRATION               │
+│  AGENTS                            │
 │    Agents                          │
 │                                    │
-│  PERSONA STUDIO                    │
-│    Brand Styling                   │
-│    Voice & Tone                    │
-│    Trigger Rules                   │
+│  EXPERIENCE                        │
+│    Appearance                      │
+│    Personality                     │
+│    Behavior                        │
 │                                    │
-│  AUDITION LAB                      │
+│  Playground                        │
 │                                    │
-│  CLIENT RUNTIME                    │
-│    Script & SDK                    │
-│    Allowed Origins                 │
+│  INTEGRATION                       │
+│    Embed Snippet                   │
+│    Allowed Domains                 │
 │                                    │
-│  UNIFIED TELEMETRY                 │
-│    Website Analytics               │
-│    Agent Analytics                 │
-│    Intent Analytics                │
-│    Conversion Attribution          │
+│  ANALYTICS                         │
+│    Website                         │
+│    Agent                           │
+│    Intent                          │
+│    Conversions                     │
 │                                    │
-│  DEMAND RADAR                      │
+│  INTELLIGENCE                      │
 │    Intent Radar                    │
-│    Signals (Auto-Patch)            │
+│    Signals                         │
 │                                    │
-│  PROSPECT LEDGER                   │
-│    Live Sessions                   │
-│    Lead Dossiers                   │
+│  VISITORS                          │
+│    Conversations                   │
+│    Leads                           │
 │                                    │
 │  OPERATIONS                        │
-│    Activity Log                    │
-│    Error Tracing                   │
+│    Activity                        │
+│    Errors                          │
 │                                    │
-│  SETTINGS                          │
-│    API & Webhooks                  │
-│    Usage & Billing                 │
-│    Team Management                 │
+│  (Profile popup: Account,          │
+│   API & Webhooks, Usage &          │
+│   Billing, Team)                   │
 │                                    │
 └────────────────────────────────────┘
 ```
@@ -230,9 +230,9 @@ To ensure strict retrieval grounding, anti-hallucination compliance, and safety 
 
 ---
 
-### Module 2: Knowledge Foundry (`/knowledge`)
+### Module 2: KNOWLEDGE — Knowledge Foundry (`/knowledge`)
 
-#### 2.1 Crawl Runner (`/knowledge/ingest`)
+#### 2.1 Ingest — Crawl Runner (`/knowledge/ingest`)
 * **Execution Trigger**: The in-app counterpart of `/onboarding`. Enter root URLs, trigger XML sitemap parsing, and execute crawling.
 * **Crawler Parameters**: Crawl depth sliders (levels 1–5), subdomain toggles, and exclusion regex (e.g., `/admin/*`, `/checkout/*`, `*?ref=*`).
 * **Live Extraction Visualizer**: Real-time execution logs streaming:
@@ -246,12 +246,12 @@ To ensure strict retrieval grounding, anti-hallucination compliance, and safety 
 * **Manual Snippet Editor**: Rapid text-entry editor for private company FAQs or contact details absent from the public website.
 * **Crawler Directives Inspector**: Read-only display of the target domain's active `robots.txt` and canonical URL structures.
 
-#### 2.3 Version Vault (`/knowledge/snapshots`)
+#### 2.3 Snapshots — Version Vault (`/knowledge/snapshots`)
 * **Snapshot Archives**: Immutable, point-in-time snapshots of the indexed knowledge base.
 * **1-Click Rollback**: Instantly revert the production assistant's vector index to a previous snapshot if a recent website change introduced errors.
 * **Diff Inspector**: Side-by-side comparison showing content added, updated, or removed between crawl snapshots.
 
-#### 2.4 Entity Graph (`/knowledge/graph`)
+#### 2.4 Entity Graph — DROPPED (no graph DB; blindspot surfacing lives in Signals)
 * **Interactive Node-Link Map**: Visual representation of the extracted company entity network.
 * **Entities & Relationships**: Visual nodes for Products, Pricing Tiers, Integrations, and Policies, connected by contextual relationships.
 * **Orphan Node Detection**: Highlights unlinked or incomplete topics extracted from the site.
@@ -264,9 +264,9 @@ To ensure strict retrieval grounding, anti-hallucination compliance, and safety 
 
 ---
 
-### Module 4: Persona Studio (`/experience`)
+### Module 4: EXPERIENCE — Persona Studio (`/experience`)
 
-#### 4.1 Brand Styling (`/experience/appearance`)
+#### 4.1 Appearance — Brand Styling (`/experience/appearance`)
 * **Scraped Design Tokens**: Automatic extraction of primary brand hex colors, typography, border radii, and brand logos from the site's stylesheet.
 * **Widget Geometry**: Placement selection (bottom-right vs. bottom-left), desktop offset margins, and mobile responsive behavior (drawer vs. full sheet).
 * **Theme Modes**: Native synchronization with host website dark/light mode classes.
@@ -277,7 +277,7 @@ To ensure strict retrieval grounding, anti-hallucination compliance, and safety 
   * **Screenshot proof** — viewport capture persisted once object storage lands (`screenshotUrl` column already exists).
 * **Theme drift tracking** — token-hash per stylesheet row; Appearance + Snapshots surface a "colors moved since last extract" flag. Informational minor-level signal only: knowledge versions never bump on theme changes.
 
-#### 4.2 Voice & Tone (`/experience/personality`)
+#### 4.2 Personality — Voice & Tone (`/experience/personality`)
 * **Linguistic Character**: Tone presets (e.g., *Concise & Technical*, *Warm & Consultative*, *Corporate & Authoritative*).
 * **Admin Custom Directives**: Open markdown editor for fine-tuning edge-case business rules:
   * Nomenclature enforcement (e.g., *"Always refer to users as Members"*).
@@ -292,7 +292,7 @@ To ensure strict retrieval grounding, anti-hallucination compliance, and safety 
   * **Fine-Tuning Controls**: Speed sliders ($0.8\text{x}$ to $1.25\text{x}$), expressiveness range, and interruption sensitivity.
   * **Runtime Sentiment Modulation**: Automatically tempers vocal cheerfulness when detecting frustrated user inputs, shifting to a calm, empathetic tone.
 
-#### 4.3 Trigger Rules (`/experience/behavior`)
+#### 4.3 Behavior — Trigger Rules (`/experience/behavior`)
 * **Proactive Engagement Interceptors**:
   * Dwell time triggers (e.g., trigger widget after 30 seconds on `/pricing`).
   * Exit-intent cursor velocity triggers.
@@ -301,16 +301,16 @@ To ensure strict retrieval grounding, anti-hallucination compliance, and safety 
 
 ---
 
-### Module 5: Audition Lab (`/playground`)
+### Module 5: Playground — Audition Lab (`/playground`)
 * **Dual-Modality Sandbox**: Staging environment supporting real-time text chat and live microphone voice streaming.
 * **Citation & Chunk Inspector**: Side panel displaying the exact retrieved vector chunks, source URLs, similarity confidence scores, and token latency metrics.
 * **Prompt Debugger**: View compiled prompt layers (Base + Admin + Runtime Context) for any message turn.
 
 ---
 
-### Module 6: Client Runtime (`/integration`)
+### Module 6: INTEGRATION — Client Runtime (`/integration`)
 
-#### 6.1 Script & SDK (`/integration/embed`)
+#### 6.1 Embed Snippet — Script & SDK (`/integration/embed-snippet`)
 * **Single-Line Script**: Lightweight CDN script tag ready for standard HTML headers:
   ```html
   <script src="https://cdn.ag-ui.com/widget.js" data-agent-id="ag_live_982f1" async></script>
@@ -321,13 +321,13 @@ To ensure strict retrieval grounding, anti-hallucination compliance, and safety 
 * **Framework Quick-Starts**: Implementation guides for Next.js, React, Webflow, Shopify, WordPress, and Google Tag Manager.
 * **Health & Ping Indicator**: Live visual indicator verifying active script handshakes with the host domain.
 
-#### 6.2 Allowed Origins (`/integration/domains`)
+#### 6.2 Allowed Domains — Origin Whitelisting (`/integration/allowed-domains`)
 * **CORS Origin Whitelisting**: Restricts script execution strictly to authorized domains (e.g., `company.com`, `staging.company.com`), preventing unauthorized token consumption.
 * **Path Inclusion & Exclusion**: Enable the widget globally while blocking it on sensitive paths like `/checkout` or internal portals.
 
 ---
 
-### Module 7: Unified Telemetry Engine (`/analytics`)
+### Module 7: ANALYTICS — Unified Telemetry Engine (`/analytics`)
 
 #### 7.1 Website Analytics (`/analytics/website`)
 * Captures passive visitor behavior across the host domain without requiring third-party analytics scripts.
@@ -359,7 +359,7 @@ To ensure strict retrieval grounding, anti-hallucination compliance, and safety 
 
 ---
 
-### Module 8: Demand Radar & Reverse AEO (`/intelligence`)
+### Module 8: INTELLIGENCE — Demand Radar & Reverse AEO (`/intelligence`)
 
 #### 8.1 Intent Radar (`/intelligence/intent-radar`)
 * **Demand Clusters**: Groups conversational queries into emergent semantic themes (e.g., *EU Data Residency*, *Shopify Plus Migration*).
@@ -373,13 +373,13 @@ To ensure strict retrieval grounding, anti-hallucination compliance, and safety 
 
 ---
 
-### Module 9: Prospect Ledger (`/visitors`)
+### Module 9: VISITORS — Prospect Ledger (`/visitors`)
 
-#### 9.1 Live Sessions (`/visitors/conversations`)
+#### 9.1 Conversations — Live Sessions (`/visitors/conversations`)
 * **Full Transcript Viewer**: Timestamped message log, audio playback recordings, and visitor feedback ratings (thumbs up/down).
 * **Context Metadata**: Visitor country, device type, referral URL, entry page path, and cited chunk IDs.
 
-#### 9.2 Lead Dossiers (`/visitors/leads`)
+#### 9.2 Leads — Lead Dossiers (`/visitors/leads`)
 * **Zero-Form Extraction**: Automatically pulls contact details (phone numbers, email addresses, names) provided naturally during conversation.
 * **BANT Qualification Tagging**: Automatically detects buyer intent, budget cues, timeline urgency, and technical stack details.
 * **Webhook & CRM Handoff**: Instantly syncs qualified lead dossiers to Slack, HubSpot, Salesforce, or custom webhooks.

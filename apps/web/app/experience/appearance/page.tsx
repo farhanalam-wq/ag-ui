@@ -1,10 +1,60 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import {
+  ArrowCounterClockwise,
+  ArrowRight,
+  Buildings,
+  CaretDown,
+  CaretRight,
+  CheckCircle,
+  CircleNotch,
+  Copy,
+  XCircle,
+} from "@phosphor-icons/react";
 import { StudioShell } from "@/components/studio-shell";
-import { apiClient, type BrandLatestResponse, type BrandStylesheet } from "@/lib/api-client";
-import { useCompanyStore, useSelectedCompany } from "@/stores/use-company-store";
+import {
+  apiClient,
+  type BrandLatestResponse,
+  type BrandStylesheet,
+} from "@/lib/api-client";
+import { useSelectedCompany } from "@/stores/use-company-store";
+import { copyToClipboard } from "@/lib/copy";
+import { mapBrandToWidgetTheme } from "@ag-ui/shared/client";
+import { WidgetPreview } from "@/components/experience/widget-preview";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type StatusKind = "empty" | "queued" | "extracting" | "ready" | "failed";
 
@@ -13,7 +63,14 @@ function normalizeStatus(s?: string | null): StatusKind {
   if (v === "READY" || v === "DONE") return "ready";
   if (v === "FAILED" || v === "ERROR") return "failed";
   if (v === "QUEUED" || v === "PENDING") return "queued";
-  if (v === "EXTRACTING" || v === "EXTRACTING_APPEARANCE" || v === "CRAWLING" || v === "PARSING" || v === "RUNNING" || v === "IN_PROGRESS")
+  if (
+    v === "EXTRACTING" ||
+    v === "EXTRACTING_APPEARANCE" ||
+    v === "CRAWLING" ||
+    v === "PARSING" ||
+    v === "RUNNING" ||
+    v === "IN_PROGRESS"
+  )
     return "extracting";
   return "empty";
 }
@@ -22,27 +79,71 @@ function statusLabel(kind: StatusKind, raw?: string | null): string {
   if (kind === "ready") return "Ready";
   if (kind === "failed") return "Failed";
   if (kind === "queued") return "Queued";
-  if (kind === "extracting") return raw === "EXTRACTING_APPEARANCE" ? "Extracting stylesheet…" : "Extracting…";
+  if (kind === "extracting")
+    return raw === "EXTRACTING_APPEARANCE"
+      ? "Extracting stylesheet..."
+      : "Extracting...";
   return "No stylesheet yet";
 }
 
-function formatSheetDate(iso?: string | null): string {
-  if (!iso) return "unknown date";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+function StatusBadge({ status }: { status: string }) {
+  if (status === "READY")
+    return (
+      <Badge
+        variant="outline"
+        className="rounded-full border-emerald-500/30 bg-emerald-500/10 font-normal text-emerald-700 dark:text-emerald-300"
+      >
+        <CheckCircle className="mr-1 size-3" aria-hidden="true" />
+        Ready
+      </Badge>
+    );
+  if (status === "FAILED")
+    return (
+      <Badge
+        variant="outline"
+        className="rounded-full border-destructive/40 bg-destructive/10 font-normal text-destructive"
+      >
+        <XCircle className="mr-1 size-3" aria-hidden="true" />
+        Failed
+      </Badge>
+    );
+  return (
+    <Badge variant="outline" className="rounded-full font-normal">
+      <CircleNotch className="mr-1 size-3 animate-spin" aria-hidden="true" />
+      {status.charAt(0) + status.slice(1).toLowerCase()}
+    </Badge>
+  );
 }
 
-function statusClasses(kind: StatusKind): string {
-  if (kind === "ready") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
-  if (kind === "failed") return "border-red-500/30 bg-red-500/10 text-red-300";
-  if (kind === "queued") return "border-amber-500/30 bg-amber-500/10 text-amber-300";
-  if (kind === "extracting") return "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-300 animate-pulse";
-  return "border-zinc-800 bg-zinc-900/60 text-zinc-400";
+function timeAgo(iso?: string | null): string {
+  if (!iso) return "unknown";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "unknown";
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
-function asRecord(v: unknown): Record<string, any> {
-  return v && typeof v === "object" ? (v as Record<string, any>) : {};
+function asRecord(v: unknown): Record<string, unknown> {
+  return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+}
+
+function str(v: unknown, fallback = "-"): string {
+  return typeof v === "string" ? v : fallback;
+}
+
+function countOf(v: unknown): number {
+  return typeof v === "number" ? v : 0;
 }
 
 function stringifyForCopy(v: unknown): string {
@@ -55,46 +156,63 @@ function stringifyForCopy(v: unknown): string {
   }
 }
 
-function CopyButton({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false);
-  if (!value) return null;
+function ExportBlock({
+  title,
+  text,
+  copyLabel,
+}: {
+  title: string;
+  text: string;
+  copyLabel: string;
+}) {
+  const [open, setOpen] = useState(false);
   return (
-    <button
-      type="button"
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(value);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        } catch {
-          // clipboard unavailable — no-op
-        }
-      }}
-      className="px-2 py-1 rounded-md border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-[11px] font-mono text-zinc-300 transition-colors"
-    >
-      {copied ? "Copied!" : label}
-    </button>
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <div className="flex flex-wrap items-center gap-2">
+        <CollapsibleTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs text-muted-foreground"
+          >
+            {open ? (
+              <CaretDown className="size-3.5" aria-hidden="true" />
+            ) : (
+              <CaretRight className="size-3.5" aria-hidden="true" />
+            )}
+            {title}
+          </Button>
+        </CollapsibleTrigger>
+        {text && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="ms-auto h-7 px-2 text-xs font-normal"
+            onClick={() =>
+              void copyToClipboard(text, {
+                successTitle: `${copyLabel} copied to clipboard`,
+              })
+            }
+          >
+            <Copy className="size-3.5" aria-hidden="true" />
+            {copyLabel}
+          </Button>
+        )}
+      </div>
+      <CollapsibleContent>
+        <pre className="mt-2 whitespace-pre-wrap break-all rounded-lg border border-border bg-muted/40 p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
+          {text || "Not available for this stylesheet."}
+        </pre>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
 export default function AppearancePage() {
-  const searchParams = useSearchParams();
-  const companyParam = searchParams.get("company");
+  const router = useRouter();
   const selectedCompany = useSelectedCompany();
-  const companies = useCompanyStore((s) => s.companies);
-
-  const companyId = useMemo(() => {
-    if (companyParam) return companyParam;
-    return selectedCompany?.id ?? null;
-  }, [companyParam, selectedCompany?.id]);
-
-  const companyName = useMemo(() => {
-    if (!companyId) return null;
-    const found =
-      companies.find((c) => c.id === companyId) ??
-      (selectedCompany?.id === companyId ? selectedCompany : null);
-    return found?.name ?? null;
-  }, [companies, selectedCompany, companyId]);
 
   const [latest, setLatest] = useState<BrandLatestResponse | null>(null);
   const [history, setHistory] = useState<BrandStylesheet[]>([]);
@@ -102,7 +220,6 @@ export default function AppearancePage() {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
-  const [retryMsg, setRetryMsg] = useState<string | null>(null);
 
   const fetchLatest = useCallback(async (id: string) => {
     setLoading(true);
@@ -111,13 +228,15 @@ export default function AppearancePage() {
       const res = await apiClient.brand.getLatest(id);
       setLatest(res);
       setSelectedSheetId((prev) => prev ?? res.stylesheet?.id ?? null);
-      // Fire-and-forget history (non-blocking for main view)
+      // History loads without blocking the main view
       apiClient.brand
         .getHistory(id)
         .then((h) => setHistory(h.items || []))
         .catch(() => setHistory([]));
-    } catch (err: any) {
-      setLoadError(err?.message || "Failed to load appearance");
+    } catch (err) {
+      setLoadError(
+        err instanceof Error ? err.message : "Failed to load appearance"
+      );
       setLatest(null);
     } finally {
       setLoading(false);
@@ -125,14 +244,14 @@ export default function AppearancePage() {
   }, []);
 
   useEffect(() => {
-    if (!companyId) {
+    if (!selectedCompany) {
       setLatest(null);
       setHistory([]);
       return;
     }
     setSelectedSheetId(null);
-    fetchLatest(companyId);
-  }, [companyId, fetchLatest]);
+    void fetchLatest(selectedCompany.id);
+  }, [selectedCompany, fetchLatest]);
 
   const activeSheet: BrandStylesheet | null = useMemo(() => {
     if (!latest?.stylesheet) return null;
@@ -145,43 +264,59 @@ export default function AppearancePage() {
 
   const statusKind = normalizeStatus(activeSheet?.status);
 
-  const handleRetry = async () => {
-    if (!companyId) return;
+  const handleRetry = useCallback(async () => {
+    if (!selectedCompany) return;
     setRetrying(true);
-    setRetryMsg(null);
     try {
-      await apiClient.brand.retry(companyId);
-      setRetryMsg("Re-extraction queued. Refresh in a few seconds.");
-    } catch (err: any) {
-      setRetryMsg(err?.message || "Retry failed");
+      await apiClient.brand.retry(selectedCompany.id);
+      toast.success("Re-extraction queued", {
+        description: "Refresh in a few seconds to see the new stylesheet.",
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Retry failed";
+      toast.error("Retry failed", { description: message });
     } finally {
       setRetrying(false);
     }
-  };
+  }, [selectedCompany]);
 
-  // ---- Token derivations (defensive: backend shapes may vary) ----
+  // Token derivations, defensive because backend shapes may vary
   const tokens = asRecord(latest?.brand?.tokens);
   const raw = asRecord(activeSheet?.raw);
-  const rawColors = asRecord(raw.colors ?? raw.palette ?? tokens.colors);
+  const rawColors = asRecord(
+    raw.colors ?? raw.palette ?? tokens.colors
+  );
   const tokenColors = asRecord(tokens.colors);
 
   const swatches: { key: string; value: string }[] = useMemo(() => {
     const out: { key: string; value: string }[] = [];
     const push = (key: string, value: unknown) => {
-      if (typeof value === "string" && /^#([0-9a-f]{3,8})$/i.test(value.trim())) {
+      if (
+        typeof value === "string" &&
+        /^#([0-9a-f]{3,8})$/i.test(value.trim())
+      ) {
         out.push({ key, value: value.trim() });
       }
     };
     for (const [k, v] of Object.entries(tokenColors)) push(k, v);
-    const palette = (rawColors as any)?.palette;
+    const palette = (
+      rawColors as Record<string, unknown>
+    ).palette;
     if (Array.isArray(palette)) {
-      palette.slice(0, 12).forEach((entry: any, i: number) => {
+      palette.slice(0, 12).forEach((entry: unknown, i: number) => {
         if (typeof entry === "string") push(`palette-${i}`, entry);
         else if (entry && typeof entry === "object") {
-          const hex = entry.hex ?? entry.value ?? entry.color;
-          const conf = entry.confidence;
-          if (conf != null && typeof conf === "number" && conf < 0.5) return;
-          push(entry.name ?? `palette-${i}`, hex);
+          const r = asRecord(entry);
+          const hex = r.hex ?? r.value ?? r.color;
+          const conf = r.confidence;
+          if (conf != null && typeof conf === "number" && conf < 0.5)
+            return;
+          const name = r.name;
+          push(
+            typeof name === "string" ? name : `palette-${i}`,
+            hex
+          );
         }
       });
     } else {
@@ -202,51 +337,76 @@ export default function AppearancePage() {
       .slice(0, 12);
   }, [tokenColors, rawColors]);
 
-  const typographyRows: { label: string; family: string; size: string; weight: string; uses?: string }[] = useMemo(() => {
-    const typo = asRecord(raw.typography ?? tokens.typography ?? (raw as any)?.fonts);
-    // dembrandt shape: { styles: [{ family, size, weight, context, count, lineHeight, ... }] }
-    const styles = Array.isArray((typo as any).styles) ? (typo as any).styles : null;
+  const typographyRows: {
+    label: string;
+    family: string;
+    size: string;
+    weight: string;
+    uses?: string;
+  }[] = useMemo(() => {
+    const typo = asRecord(
+      raw.typography ?? tokens.typography ?? asRecord(raw).fonts
+    );
+    // Native extractor shape: styles array with family, size, weight, context, count
+    const stylesRaw = (typo as Record<string, unknown>).styles;
+    const styles = Array.isArray(stylesRaw) ? stylesRaw : null;
     if (styles) {
-      return styles.slice(0, 12).map((s: any, i: number) => {
+      return styles.slice(0, 12).map((s: unknown, i: number) => {
         const r = asRecord(s);
-        if (typeof s === "string") return { label: `style-${i + 1}`, family: s, size: "—", weight: "—" };
+        if (typeof s === "string")
+          return { label: `style-${i + 1}`, family: s, size: "-", weight: "-" };
         return {
-          label: String(r.context ?? r.role ?? r.usage ?? `style-${i + 1}`),
-          family: String(r.family ?? r.fontFamily ?? r.font ?? "—"),
-          size: String(r.size ?? r.fontSize ?? "—"),
-          weight: String(r.weight ?? r.fontWeight ?? "—"),
-          uses: r.count != null ? `${r.count}×` : undefined,
+          label: str(
+            r.context ?? r.role ?? r.usage ?? `style-${i + 1}`
+          ),
+          family: str(r.family ?? r.fontFamily ?? r.font),
+          size: str(r.size ?? r.fontSize),
+          weight: str(r.weight ?? r.fontWeight),
+          uses:
+            r.count != null && typeof r.count === "number"
+              ? `${r.count}x`
+              : undefined,
         };
       });
     }
     const entries = Object.entries(typo);
     if (entries.length === 0) return [];
     return entries.slice(0, 12).map(([label, v]) => {
-      if (typeof v === "string") return { label, family: v, size: "—", weight: "—" };
+      if (typeof v === "string")
+        return { label, family: v, size: "-", weight: "-" };
       const r = asRecord(v);
       return {
         label,
-        family: String(r.family ?? r.fontFamily ?? r.font ?? "—"),
-        size: String(r.size ?? r.fontSize ?? "—"),
-        weight: String(r.weight ?? r.fontWeight ?? "—"),
+        family: str(r.family ?? r.fontFamily ?? r.font),
+        size: str(r.size ?? r.fontSize),
+        weight: str(r.weight ?? r.fontWeight),
       };
     });
   }, [raw, tokens]);
 
-  // ---- Structured shape / elevation / spacing (dembrandt native shapes) ----
-  const radiusRows: { value: string; count: number; elements: string; confidence?: string }[] = useMemo(() => {
-    const br = asRecord(raw.borderRadius ?? raw.radius);
-    const vals = Array.isArray(br.values) ? br.values : Array.isArray(br) ? br : [];
-    return vals
-      .map((e: any) => {
-        if (typeof e === "string" || typeof e === "number") return { value: String(e), count: 0, elements: "—" };
+  const radiusRows: {
+    value: string;
+    count: number;
+    elements: string;
+  }[] = useMemo(() => {
+    const source = raw.borderRadius ?? raw.radius;
+    const br = asRecord(source);
+    const brVals = (br as Record<string, unknown>).values;
+    const list: unknown[] = Array.isArray(brVals)
+      ? (brVals as unknown[])
+      : Array.isArray(source)
+        ? (source as unknown[])
+        : [];
+    return list
+      .map((e: unknown) => {
+        if (typeof e === "string" || typeof e === "number")
+          return { value: String(e), count: 0, elements: "-" };
         const r = asRecord(e);
-        const els = Array.isArray(r.elements) ? r.elements.join(", ") : "—";
+        const els = r.elements;
         return {
-          value: String(r.value ?? r.radius ?? "—"),
-          count: typeof r.count === "number" ? r.count : 0,
-          elements: els,
-          confidence: typeof r.confidence === "string" ? r.confidence : undefined,
+          value: str(r.value ?? r.radius),
+          count: countOf(r.count),
+          elements: Array.isArray(els) ? els.join(", ") : "-",
         };
       })
       .sort((a, b) => b.count - a.count)
@@ -254,33 +414,38 @@ export default function AppearancePage() {
   }, [raw]);
 
   const shadowRows: { shadow: string; count: number }[] = useMemo(() => {
-    const list = Array.isArray(raw.shadows) ? raw.shadows : Array.isArray(raw.shadow) ? raw.shadow : [];
-    return list
-      .map((e: any) => {
+    const listRaw = raw.shadows ?? raw.shadow;
+    const list = Array.isArray(listRaw) ? listRaw : [];
+    return (list as unknown[])
+      .map((e: unknown) => {
         if (typeof e === "string") return { shadow: e, count: 0 };
         const r = asRecord(e);
         return {
-          shadow: String(r.shadow ?? r.value ?? "—"),
-          count: typeof r.count === "number" ? r.count : 0,
+          shadow: str(r.shadow ?? r.value),
+          count: countOf(r.count),
         };
       })
-      .filter((r) => r.shadow !== "—")
+      .filter((r) => r.shadow !== "-")
       .sort((a, b) => b.count - a.count)
       .slice(0, 6);
   }, [raw]);
 
-  const spacingInfo: { scaleType: string; rows: { px: string; rem: string; count: number }[] } = useMemo(() => {
+  const spacingInfo: {
+    scaleType: string;
+    rows: { px: string; rem: string; count: number }[];
+  } = useMemo(() => {
     const sp = asRecord(raw.spacing);
-    const vals = Array.isArray(sp.commonValues) ? sp.commonValues : [];
+    const valsRaw = (sp as Record<string, unknown>).commonValues;
+    const vals = Array.isArray(valsRaw) ? valsRaw : [];
     return {
-      scaleType: String(sp.scaleType ?? "—"),
-      rows: vals
-        .map((e: any) => {
+      scaleType: str(sp.scaleType),
+      rows: (vals as unknown[])
+        .map((e: unknown) => {
           const r = asRecord(e);
           return {
-            px: String(r.px ?? r.display ?? r.value ?? "—"),
-            rem: String(r.rem ?? "—"),
-            count: typeof r.count === "number" ? r.count : 0,
+            px: str(r.px ?? r.display ?? r.value),
+            rem: str(r.rem),
+            count: countOf(r.count),
           };
         })
         .sort((a, b) => b.count - a.count)
@@ -288,60 +453,92 @@ export default function AppearancePage() {
     };
   }, [raw]);
 
-  // ---- Structured components (dembrandt native shapes) ----
-  const linkVariants: { color: string; hover: string; weight: string; decoration: string }[] = useMemo(() => {
-    const list = (raw.components as any)?.links;
+  const linkVariants: {
+    color: string;
+    hover: string;
+    weight: string;
+    decoration: string;
+  }[] = useMemo(() => {
+    const comps = asRecord(raw.components);
+    const list = comps.links;
     if (!Array.isArray(list)) return [];
-    return list.slice(0, 6).map((e: any) => {
+    return (list as unknown[]).slice(0, 6).map((e: unknown) => {
       const r = asRecord(e);
       const states = asRecord(r.states);
       const def = asRecord(states.default);
       const hov = asRecord(states.hover);
       return {
-        color: String(r.color ?? def.color ?? "—"),
-        hover: String(hov.color ?? "—"),
-        weight: String(r.fontWeight ?? r.weight ?? "—"),
-        decoration: String(r.textDecoration ?? def.textDecoration ?? "—"),
+        color: str(r.color ?? def.color),
+        hover: str(hov.color),
+        weight: str(r.fontWeight ?? r.weight),
+        decoration: str(r.textDecoration ?? def.textDecoration),
       };
     });
   }, [raw]);
 
-  const buttonVariants: { label: string; background: string; color: string; radius: string; border: string }[] = useMemo(() => {
-    const list = (raw.components as any)?.buttons;
+  const buttonVariants: {
+    label: string;
+    background: string;
+    color: string;
+    radius: string;
+    border: string;
+  }[] = useMemo(() => {
+    const comps = asRecord(raw.components);
+    const list = comps.buttons;
     if (!Array.isArray(list)) return [];
-    return list.slice(0, 6).map((e: any, i: number) => {
-      if (typeof e === "string") return { label: `variant-${i + 1}`, background: e, color: "#ffffff", radius: "—", border: "—" };
+    return (list as unknown[]).slice(0, 6).map((e: unknown, i: number) => {
+      if (typeof e === "string")
+        return {
+          label: `variant-${i + 1}`,
+          background: e,
+          color: "#ffffff",
+          radius: "-",
+          border: "-",
+        };
       const r = asRecord(e);
       const states = asRecord(r.states);
-      const def = asRecord(states.default ?? states.rest ?? states.base);
+      const def = asRecord(
+        states.default ?? states.rest ?? states.base
+      );
       return {
-        label: String(r.variant ?? r.name ?? r.kind ?? `variant-${i + 1}`),
-        background: String(r.backgroundColor ?? r.background ?? def.backgroundColor ?? def.background ?? "#3b82f6"),
-        color: String(r.color ?? def.color ?? "#ffffff"),
-        radius: String(r.borderRadius ?? r.radius ?? def.borderRadius ?? "—"),
-        border: String(r.border ?? def.border ?? "—"),
+        label: str(r.variant ?? r.name ?? r.kind ?? `variant-${i + 1}`),
+        background: str(
+          r.backgroundColor ??
+            r.background ??
+            def.backgroundColor ??
+            def.background ??
+            "#3b82f6",
+          "#3b82f6"
+        ),
+        color: str(r.color ?? def.color ?? "#ffffff", "#ffffff"),
+        radius: str(r.borderRadius ?? r.radius ?? def.borderRadius),
+        border: str(r.border ?? def.border),
       };
     });
   }, [raw]);
 
-  const inputGroups: { type: string; rows: { border: string; radius: string; padding: string; focus: string }[] }[] = useMemo(() => {
-    const inputs = asRecord((raw.components as any)?.inputs);
+  const inputGroups: {
+    type: string;
+    rows: { border: string; radius: string; padding: string; focus: string }[];
+  }[] = useMemo(() => {
+    const comps = asRecord(raw.components);
+    const inputs = asRecord(comps.inputs);
     return Object.entries(inputs)
       .slice(0, 4)
       .map(([type, v]) => {
         const list = Array.isArray(v) ? v.slice(0, 3) : [v];
         return {
           type,
-          rows: list.map((e: any) => {
+          rows: (list as unknown[]).map((e: unknown) => {
             const r = asRecord(e);
             const states = asRecord(r.states);
             const def = asRecord(states.default);
             const foc = asRecord(states.focus);
             return {
-              border: String(def.border ?? def.borderColor ?? "—"),
-              radius: String(def.borderRadius ?? "—"),
-              padding: String(def.padding ?? "—"),
-              focus: String(foc.borderColor ?? foc.outline ?? "—"),
+              border: str(def.border ?? def.borderColor),
+              radius: str(def.borderRadius),
+              padding: str(def.padding),
+              focus: str(foc.borderColor ?? foc.outline),
             };
           }),
         };
@@ -349,32 +546,48 @@ export default function AppearancePage() {
       .filter((g) => g.rows.length > 0);
   }, [raw]);
 
-  const badgeInfo: { total: number; variants: { name: string; count: number }[] } = useMemo(() => {
-    const badges = asRecord((raw.components as any)?.badges);
-    const all = Array.isArray(badges.all) ? badges.all.length : 0;
+  const badgeInfo: {
+    total: number;
+    variants: { name: string; count: number }[];
+  } = useMemo(() => {
+    const comps = asRecord(raw.components);
+    const badges = asRecord(comps.badges);
+    const all = badges.all;
     const byVariant = asRecord(badges.byVariant);
     const variants = Object.entries(byVariant).map(([name, v]) => ({
       name,
       count: Array.isArray(v) ? v.length : 0,
     }));
-    return { total: all, variants };
+    return { total: Array.isArray(all) ? all.length : 0, variants };
   }, [raw]);
 
   const hasComponents =
-    linkVariants.length > 0 || buttonVariants.length > 0 || inputGroups.length > 0 || badgeInfo.total > 0 ||
+    linkVariants.length > 0 ||
+    buttonVariants.length > 0 ||
+    inputGroups.length > 0 ||
+    badgeInfo.total > 0 ||
     badgeInfo.variants.some((v) => v.count > 0);
 
-  const wcagPairs: { fg: string; bg: string; ratio?: string; pass?: string; count?: string }[] = useMemo(() => {
+  const wcagPairs: {
+    fg: string;
+    bg: string;
+    ratio?: string;
+    pass?: string;
+    count?: string;
+  }[] = useMemo(() => {
     const wcag = activeSheet?.wcag;
-    const arr = Array.isArray(wcag) ? wcag : Array.isArray((wcag as any)?.pairs) ? (wcag as any).pairs : [];
-    return arr.slice(0, 20).map((p: any) => {
-      if (typeof p === "string") return { fg: p, bg: "—" };
+    const pairsRaw =
+      Array.isArray(wcag) && wcag.length > 0
+        ? wcag
+        : asRecord(wcag).pairs;
+    const arr = Array.isArray(pairsRaw) ? pairsRaw : [];
+    return (arr as unknown[]).slice(0, 20).map((p: unknown) => {
+      if (typeof p === "string") return { fg: p, bg: "-" };
       const r = asRecord(p);
-      // dembrandt emits lowercase aa/passAA plus ratio/count/fontSize
       const passRaw = r.passAA ?? r.pass ?? r.aa ?? r.AA;
       return {
-        fg: String(r.fg ?? r.foreground ?? r.text ?? "—"),
-        bg: String(r.bg ?? r.background ?? "—"),
+        fg: str(r.fg ?? r.foreground ?? r.text),
+        bg: str(r.bg ?? r.background),
         ratio: r.ratio != null ? String(r.ratio) : undefined,
         pass: passRaw != null ? String(passRaw) : undefined,
         count: r.count != null ? String(r.count) : undefined,
@@ -386,435 +599,734 @@ export default function AppearancePage() {
   const dtcgText = stringifyForCopy(activeSheet?.dtcg);
   const designMdText = stringifyForCopy(activeSheet?.designMd);
 
+  const extractedTheme = useMemo(
+    () =>
+      mapBrandToWidgetTheme(latest?.brand?.tokens, latest?.brand?.logoUrl),
+    [latest]
+  );
+
+  const showEmpty = !activeSheet && !latest?.brand;
+
   return (
     <StudioShell crumbs={[{ label: "Experience" }, { label: "Appearance" }]}>
-      <div className="w-full max-w-5xl mx-auto p-4 sm:p-6 space-y-6">
-        <div>
-          <h1 className="text-lg sm:text-xl font-bold text-zinc-100">Appearance</h1>
-          <p className="text-xs text-zinc-400 mt-1 font-mono">
-            {companyName ? (
-              <>
-                Stylesheet tokens for <span className="text-zinc-200">{companyName}</span>
-                <span className="text-zinc-600"> ({companyId})</span>
-              </>
-            ) : (
-              "Extracted stylesheet tokens, Tailwind theme and WCAG pairs per company."
-            )}
-          </p>
+      <div className="min-w-0">
+        {/* PageHeader */}
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-[30px] leading-9 tracking-tight font-semibold">
+              Appearance
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1 max-w-[65ch]">
+              Extracted stylesheet tokens for the selected assistant. Colors,
+              type, shape, and component variants in one inspector.
+            </p>
+          </div>
+          {selectedCompany && activeSheet && (
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge status={activeSheet.status} />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void fetchLatest(selectedCompany.id)}
+                disabled={loading}
+              >
+                <ArrowCounterClockwise
+                  className="size-3.5"
+                  aria-hidden="true"
+                />
+                Refresh
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => void handleRetry()}
+                disabled={retrying}
+              >
+                {retrying ? (
+                  <CircleNotch
+                    className="size-3.5 animate-spin"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <ArrowCounterClockwise
+                    className="size-3.5"
+                    aria-hidden="true"
+                  />
+                )}
+                {retrying ? "Queueing" : "Retry extraction"}
+              </Button>
+            </div>
+          )}
         </div>
 
-        {!companyId ? (
-          <div className="p-6 rounded-xl border border-zinc-800 bg-zinc-900/40 text-center space-y-2">
-            <div className="text-sm font-semibold text-zinc-200">No company selected</div>
-            <p className="text-xs text-zinc-500 font-mono">
-              Pick a company in the sidebar or open{" "}
-              <span className="text-zinc-300">/experience/appearance?company=&lt;id&gt;</span>.
-            </p>
-          </div>
-        ) : loading ? (
-          <div className="p-6 rounded-xl border border-zinc-800 bg-zinc-900/40 text-center text-xs text-zinc-500 font-mono animate-pulse">
-            Loading appearance…
-          </div>
-        ) : loadError ? (
-          <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10 text-xs text-red-300 font-mono">
-            {loadError}
-            <button
-              type="button"
-              onClick={() => fetchLatest(companyId)}
-              className="ml-3 underline hover:text-red-200"
-            >
-              Retry
-            </button>
-          </div>
-        ) : !activeSheet && !latest?.brand ? (
-          <div className="p-6 rounded-xl border border-zinc-800 bg-zinc-900/40 text-center space-y-3">
-            <div className="text-sm font-semibold text-zinc-200">No stylesheet yet</div>
-            <p className="text-xs text-zinc-500 font-mono">
-              Run an ingestion for this company, then extract its appearance.
-            </p>
-            <button
-              type="button"
-              onClick={handleRetry}
-              disabled={retrying}
-              className="px-3 py-1.5 rounded-md border border-fuchsia-500/30 bg-fuchsia-500/10 hover:bg-fuchsia-500/20 text-fuchsia-200 text-xs font-mono transition-colors disabled:opacity-50"
-            >
-              {retrying ? "Queueing…" : "Extract appearance"}
-            </button>
-            {retryMsg && <div className="text-[11px] font-mono text-zinc-400">{retryMsg}</div>}
-          </div>
+        {!selectedCompany ? (
+          <Empty className="mt-6">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Buildings aria-hidden="true" />
+              </EmptyMedia>
+              <EmptyTitle>No company selected</EmptyTitle>
+              <EmptyDescription>
+                Pick a company to inspect its extracted appearance.
+              </EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
+              <Button onClick={() => router.push("/knowledge/ingest")}>
+                Index a company
+                <ArrowRight className="size-4" data-icon="inline-end" />
+              </Button>
+            </EmptyContent>
+          </Empty>
         ) : (
-          <>
-            {/* Status banner */}
-            <div className={`p-3.5 rounded-xl border text-xs font-mono flex flex-wrap items-center justify-between gap-3 ${statusClasses(statusKind)}`}>
-              <div className="flex items-center gap-2">
-                <span className="font-semibold">{statusLabel(statusKind, activeSheet?.status)}</span>
-                {activeSheet?.id && <span className="opacity-70">· {activeSheet.id.slice(0, 8)}</span>}
-                {activeSheet?.error && statusKind === "failed" && (
-                  <span className="opacity-90">· {activeSheet.error}</span>
-                )}
+          <div className="mt-6 min-w-0 space-y-4">
+            {loadError && (
+              <div
+                role="alert"
+                className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-[13px]"
+              >
+                <p className="font-medium">Could not load appearance</p>
+                <p className="mt-1 text-muted-foreground">{loadError}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 h-7 text-xs"
+                  onClick={() => void fetchLatest(selectedCompany.id)}
+                >
+                  Retry
+                </Button>
               </div>
-              <div className="flex items-center gap-2">
-                {retryMsg && <span className="opacity-80">{retryMsg}</span>}
-                {(statusKind === "failed" || statusKind === "ready" || statusKind === "queued") && (
-                  <button
-                    type="button"
-                    onClick={handleRetry}
+            )}
+
+            {loading ? (
+              <Card className="min-w-0">
+                <CardContent className="space-y-2 pt-5">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Skeleton key={i} className="h-24 w-full rounded-lg" />
+                  ))}
+                </CardContent>
+              </Card>
+            ) : showEmpty ? (
+              <Empty>
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <Buildings aria-hidden="true" />
+                  </EmptyMedia>
+                  <EmptyTitle>No stylesheet yet</EmptyTitle>
+                  <EmptyDescription>
+                    Run an ingestion for this company, then extract its
+                    appearance.
+                  </EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent>
+                  <Button
+                    onClick={() => void handleRetry()}
                     disabled={retrying}
-                    className="px-2.5 py-1 rounded-md border border-current hover:bg-white/10 transition-colors disabled:opacity-50"
                   >
-                    {retrying ? "Queueing…" : "Retry extraction"}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* History selector */}
-            {history.length > 0 && (
-              <div className="flex items-center gap-2 text-xs font-mono text-zinc-400">
-                <label htmlFor="appearance-history">Version:</label>
-                <select
-                  id="appearance-history"
-                  value={selectedSheetId ?? activeSheet?.id ?? ""}
-                  onChange={(e) => setSelectedSheetId(e.target.value || null)}
-                  className="h-8 px-2 rounded-md border border-zinc-800 bg-zinc-900 text-zinc-200 text-xs font-mono"
-                >
-                  {latest?.stylesheet && (
-                    <option value={latest.stylesheet.id}>
-                      latest · {latest.stylesheet.status} · {formatSheetDate(latest.stylesheet.createdAt)}
-                    </option>
-                  )}
-                  {history.map((h) => (
-                    <option key={h.id} value={h.id}>
-                      {h.id.slice(0, 8)} · {h.status} · {formatSheetDate(h.createdAt)}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => companyId && fetchLatest(companyId)}
-                  className="underline hover:text-zinc-200"
-                >
-                  Refresh
-                </button>
-              </div>
-            )}
-
-            {latest?.brand?.logoUrl && (
-              <div className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/40 flex items-center gap-3">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={latest.brand.logoUrl} alt="Brand logo" className="h-10 w-auto rounded" />
-                <span className="text-[11px] font-mono text-zinc-500 break-all">{latest.brand.logoUrl}</span>
-              </div>
-            )}
-
-            {/* Colors */}
-            <section className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/40 space-y-3">
-              <h2 className="text-xs font-semibold text-zinc-200 uppercase tracking-wider font-mono">Colors</h2>
-              {swatches.length === 0 ? (
-                <p className="text-xs text-zinc-500 font-mono">No color tokens extracted yet.</p>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {swatches.map((s) => (
-                    <div key={`${s.key}-${s.value}`} className="flex items-center gap-2 p-2 rounded-lg border border-zinc-800/80 bg-zinc-950/60">
-                      <span
-                        className="size-6 rounded-md border border-zinc-700 shrink-0"
-                        style={{ backgroundColor: s.value }}
-                        title={`${s.key}: ${s.value}`}
+                    {retrying ? (
+                      <CircleNotch
+                        className="size-4 animate-spin"
+                        aria-hidden="true"
                       />
-                      <div className="min-w-0">
-                        <div className="text-[11px] font-medium text-zinc-200 truncate">{s.key}</div>
-                        <div className="text-[10px] font-mono text-zinc-500">{s.value}</div>
+                    ) : null}
+                    {retrying ? "Queueing" : "Extract appearance"}
+                  </Button>
+                </EmptyContent>
+              </Empty>
+            ) : (
+              <>
+                <p className="text-[13px] text-muted-foreground">
+                  {statusLabel(statusKind, activeSheet?.status)} - cut{" "}
+                  {timeAgo(activeSheet?.createdAt)}
+                  {history.length > 0 &&
+                    ` - ${history.length} earlier ${history.length === 1 ? "version" : "versions"}`}
+                </p>
+
+                {/* History selector */}
+                {history.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                    <label
+                      htmlFor="appearance-history"
+                      className="text-muted-foreground"
+                    >
+                      Version
+                    </label>
+                    <select
+                      id="appearance-history"
+                      value={selectedSheetId ?? activeSheet?.id ?? ""}
+                      onChange={(e) =>
+                        setSelectedSheetId(e.target.value || null)
+                      }
+                      className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+                    >
+                      {latest?.stylesheet && (
+                        <option value={latest.stylesheet.id}>
+                          Latest - {latest.stylesheet.status} -{" "}
+                          {timeAgo(latest.stylesheet.createdAt)}
+                        </option>
+                      )}
+                      {history.map((h) => (
+                        <option key={h.id} value={h.id}>
+                          {h.status} - {timeAgo(h.createdAt)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="grid min-w-0 items-start gap-4 lg:grid-cols-12">
+                  <div className="min-w-0 space-y-4 lg:col-span-7">
+                {/* Brand mark */}
+                {(latest?.brand?.logoUrl || activeSheet?.screenshotUrl) && (
+                  <Card className="min-w-0">
+                    <CardContent className="flex flex-wrap items-center gap-4 pt-5">
+                      {latest?.brand?.logoUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={latest.brand.logoUrl}
+                          alt="Brand logo"
+                          className="h-10 w-auto rounded border border-border bg-background"
+                        />
+                      )}
+                      {activeSheet?.screenshotUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={activeSheet.screenshotUrl}
+                          alt="Source site screenshot"
+                          className="max-h-24 w-auto rounded-lg border border-border"
+                        />
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Colors */}
+                <Card className="min-w-0">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-[15px] font-semibold">
+                      Colors ({swatches.length})
+                    </CardTitle>
+                    <CardDescription className="text-[13px]">
+                      Extracted palette. Select a swatch to copy its hex.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    {swatches.length === 0 ? (
+                      <p className="text-[13px] text-muted-foreground">
+                        No color tokens extracted yet.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        {swatches.map((s) => (
+                          <button
+                            key={`${s.key}-${s.value}`}
+                            type="button"
+                            title={`${s.key}: ${s.value} (select to copy)`}
+                            onClick={() =>
+                              void copyToClipboard(s.value, {
+                                successTitle: `${s.value} copied to clipboard`,
+                                successDescription: s.key,
+                              })
+                            }
+                            className="flex min-w-0 items-center gap-2 rounded-lg border border-border p-2 text-left hover:bg-muted/40"
+                          >
+                            <span
+                              aria-hidden="true"
+                              className="size-6 shrink-0 rounded-md border border-border"
+                              style={{ backgroundColor: s.value }}
+                            />
+                            <span className="min-w-0">
+                              <span className="block truncate text-[12px] font-medium">
+                                {s.key}
+                              </span>
+                              <span className="block font-mono text-[11px] text-muted-foreground">
+                                {s.value}
+                              </span>
+                            </span>
+                          </button>
+                        ))}
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
+                    )}
+                  </CardContent>
+                </Card>
 
-            {/* Typography */}
-            <section className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/40 space-y-3">
-              <h2 className="text-xs font-semibold text-zinc-200 uppercase tracking-wider font-mono">Typography</h2>
-              {typographyRows.length === 0 ? (
-                <p className="text-xs text-zinc-500 font-mono">No typography tokens extracted yet.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs font-mono">
-                    <thead>
-                      <tr className="text-left text-zinc-500 border-b border-zinc-800">
-                        <th className="py-1.5 pr-3 font-medium">Context</th>
-                        <th className="py-1.5 pr-3 font-medium">Family</th>
-                        <th className="py-1.5 pr-3 font-medium">Size</th>
-                        <th className="py-1.5 pr-3 font-medium">Weight</th>
-                        <th className="py-1.5 font-medium">Uses</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-900">
-                      {typographyRows.map((r, i) => (
-                        <tr key={`${r.label}-${i}`} className="text-zinc-300">
-                          <td className="py-1.5 pr-3 text-zinc-400">{r.label}</td>
-                          <td className="py-1.5 pr-3">{r.family}</td>
-                          <td className="py-1.5 pr-3">{r.size}</td>
-                          <td className="py-1.5 pr-3">{r.weight}</td>
-                          <td className="py-1.5 text-zinc-500">{r.uses ?? "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
+                {/* Typography */}
+                <Card className="min-w-0">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-[15px] font-semibold">
+                      Typography ({typographyRows.length})
+                    </CardTitle>
+                    <CardDescription className="text-[13px]">
+                      Detected type styles with usage counts.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    {typographyRows.length === 0 ? (
+                      <p className="text-[13px] text-muted-foreground">
+                        No typography tokens extracted yet.
+                      </p>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="hover:bg-transparent">
+                            <TableHead className="h-8 text-xs">
+                              Context
+                            </TableHead>
+                            <TableHead className="h-8 text-xs">
+                              Family
+                            </TableHead>
+                            <TableHead className="h-8 text-xs">
+                              Size
+                            </TableHead>
+                            <TableHead className="h-8 text-xs">
+                              Weight
+                            </TableHead>
+                            <TableHead className="h-8 text-right text-xs">
+                              Uses
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {typographyRows.map((r, i) => (
+                            <TableRow key={`${r.label}-${i}`}>
+                              <TableCell className="py-2 text-[13px] text-muted-foreground">
+                                {r.label}
+                              </TableCell>
+                              <TableCell className="py-2 text-[13px]">
+                                {r.family}
+                              </TableCell>
+                              <TableCell className="py-2 font-mono text-xs text-muted-foreground">
+                                {r.size}
+                              </TableCell>
+                              <TableCell className="py-2 font-mono text-xs text-muted-foreground">
+                                {r.weight}
+                              </TableCell>
+                              <TableCell className="py-2 text-right font-sans text-[13px] tabular-nums text-muted-foreground">
+                                {r.uses ?? "-"}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </CardContent>
+                </Card>
 
-            {/* Shape & Elevation */}
-            <section className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/40 space-y-3 text-xs font-mono">
-              <h2 className="text-xs font-semibold text-zinc-200 uppercase tracking-wider">Shape &amp; Elevation</h2>
-                {typeof tokens.radius === "string" && (
-                  <div className="text-zinc-400">
-                    mapped radius: <span className="text-zinc-200">{tokens.radius}</span>
-                  </div>
-                )}
-                {radiusRows.length > 0 && (
-                  <div>
-                    <div className="text-[11px] text-zinc-500 mb-1">border radius</div>
-                    <div className="space-y-1 max-h-40 overflow-auto">
-                      {radiusRows.map((r) => (
-                        <div key={r.value} className="flex items-center gap-2 text-zinc-400">
-                          <span
-                            className="inline-block size-4 shrink-0 border border-zinc-600 bg-zinc-800"
-                            style={{ borderRadius: r.value }}
-                          />
-                          <span className="text-zinc-200">{r.value}</span>
-                          <span className="text-zinc-600">×{r.count}</span>
-                          <span className="truncate text-zinc-500">{r.elements}</span>
-                          {r.confidence && <span className="ml-auto text-zinc-600">{r.confidence}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {shadowRows.length > 0 && (
-                  <div>
-                    <div className="text-[11px] text-zinc-500 mb-1">shadows</div>
-                    <div className="space-y-1.5 max-h-40 overflow-auto">
-                      {shadowRows.map((s, i) => (
-                        <div key={i} className="flex items-center gap-2 text-zinc-400">
-                          <span
-                            className="inline-block size-4 shrink-0 rounded-sm bg-zinc-200"
-                            style={{ boxShadow: s.shadow }}
-                          />
-                          <span className="truncate text-zinc-300">{s.shadow}</span>
-                          {s.count > 0 && <span className="ml-auto shrink-0 text-zinc-600">×{s.count}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {(spacingInfo.rows.length > 0 || spacingInfo.scaleType !== "—") && (
-                  <div>
-                    <div className="text-[11px] text-zinc-500 mb-1">
-                      spacing <span className="text-zinc-400">({spacingInfo.scaleType} grid)</span>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5 max-h-32 overflow-auto">
-                      {spacingInfo.rows.map((s) => (
-                        <span
-                          key={s.px}
-                          title={`${s.px} (${s.rem}) used ${s.count}×`}
-                          className="px-1.5 py-0.5 rounded border border-zinc-800 bg-zinc-950 text-zinc-300"
-                        >
-                          {s.px} <span className="text-zinc-600">×{s.count}</span>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {radiusRows.length === 0 && shadowRows.length === 0 && spacingInfo.rows.length === 0 && (
-                  <p className="text-zinc-500">No shape tokens extracted yet.</p>
-                )}
-            </section>
-
-            {/* Components — full width with inner grid so long values wrap instead of truncating */}
-            <section className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/40 space-y-3 text-xs font-mono">
-              <h2 className="text-xs font-semibold text-zinc-200 uppercase tracking-wider">Components</h2>
-              {!hasComponents && <p className="text-zinc-500">No component variants detected.</p>}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-3 min-w-0">
-                {linkVariants.length > 0 && (
-                  <div>
-                    <div className="text-[11px] text-zinc-500 mb-1">links ({linkVariants.length})</div>
-                    <div className="space-y-1 max-h-48 overflow-auto">
-                      {linkVariants.map((l, i) => (
-                        <div key={`link-${i}`} className="flex items-start gap-2 text-zinc-400">
-                          <span
-                            className="inline-block size-3.5 shrink-0 mt-0.5 rounded-sm border border-zinc-700"
-                            style={{ backgroundColor: l.color !== "—" ? l.color : undefined }}
-                          />
-                          <span className="break-all text-zinc-300">
-                            {l.color} <span className="text-zinc-600">→ hover {l.hover} · w{l.weight} · {l.decoration}</span>
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <div>
-                  <div className="text-[11px] text-zinc-500 mb-1">
-                    buttons ({buttonVariants.length}){buttonVariants.length === 0 && " — none detected"}
-                  </div>
-                  {buttonVariants.length > 0 && (
-                    <div className="flex flex-wrap gap-2 max-h-48 overflow-auto">
-                      {buttonVariants.map((b, i) => (
-                        <span
-                          key={`btn-${i}`}
-                          title={`${b.label} · ${b.background} · radius ${b.radius}`}
-                          className="px-3 py-1.5 text-[11px] font-medium"
-                          style={{
-                            backgroundColor: b.background,
-                            color: b.color,
-                            borderRadius: b.radius !== "—" ? b.radius : undefined,
-                            border: b.border !== "—" ? b.border : undefined,
-                          }}
-                        >
-                          {b.label}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                </div>
-                <div className="space-y-3 min-w-0">
-                {inputGroups.length > 0 && (
-                  <div>
-                    <div className="text-[11px] text-zinc-500 mb-1">inputs</div>
-                    <div className="space-y-2 max-h-48 overflow-auto">
-                      {inputGroups.map((g) => (
-                        <div key={`input-${g.type}`}>
-                          <div className="text-zinc-500">{g.type}</div>
-                          {g.rows.map((r, i) => (
-                            <div key={`input-${g.type}-${i}`} className="break-all text-zinc-400">
-                              border <span className="text-zinc-200">{r.border}</span>
-                              <span className="text-zinc-600"> · radius {r.radius} · pad {r.padding} · focus {r.focus}</span>
+                {/* Shape */}
+                <Card className="min-w-0">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-[15px] font-semibold">
+                      Shape and elevation
+                    </CardTitle>
+                    <CardDescription className="text-[13px]">
+                      Corner radius, shadows, and spacing scale.
+                      {typeof tokens.radius === "string" &&
+                        ` Mapped radius ${tokens.radius}.`}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4 pt-0 text-[13px]">
+                    {radiusRows.length > 0 && (
+                      <div className="min-w-0">
+                        <p className="mb-1 text-xs text-muted-foreground">
+                          Border radius
+                        </p>
+                        <div className="space-y-1">
+                          {radiusRows.map((r) => (
+                            <div
+                              key={r.value}
+                              className="flex min-w-0 items-center gap-2"
+                            >
+                              <span
+                                aria-hidden="true"
+                                className="inline-block size-4 shrink-0 border border-border bg-muted"
+                                style={{ borderRadius: r.value }}
+                              />
+                              <span className="font-mono text-xs">
+                                {r.value}
+                              </span>
+                              <span className="font-sans tabular-nums text-muted-foreground">
+                                x{r.count}
+                              </span>
+                              <span className="truncate text-muted-foreground">
+                                {r.elements}
+                              </span>
                             </div>
                           ))}
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {(badgeInfo.total > 0 || badgeInfo.variants.some((v) => v.count > 0)) && (
-                  <div>
-                    <div className="text-[11px] text-zinc-500 mb-1">badges ({badgeInfo.total})</div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {badgeInfo.variants
-                        .filter((v) => v.count > 0)
-                        .map((v) => (
-                          <span key={`badge-${v.name}`} className="px-1.5 py-0.5 rounded border border-zinc-800 bg-zinc-950 text-zinc-300">
-                            {v.name} <span className="text-zinc-600">×{v.count}</span>
-                          </span>
-                        ))}
-                    </div>
-                  </div>
-                )}
-                </div>
-              </div>
-            </section>
-
-            {/* Tailwind / DTCG */}
-            <section className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/40 space-y-3">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xs font-semibold text-zinc-200 uppercase tracking-wider font-mono">Theme exports</h2>
-                <div className="flex items-center gap-2">
-                  <CopyButton label="Copy Tailwind" value={tailwindText} />
-                  <CopyButton label="Copy DTCG" value={dtcgText} />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                <div>
-                  <div className="text-[11px] font-mono text-zinc-500 mb-1">tailwind</div>
-                  <pre className="p-3 rounded-lg border border-zinc-800 bg-zinc-950 text-[11px] font-mono text-zinc-300 max-h-64 overflow-auto whitespace-pre-wrap break-all">
-                    {tailwindText || "—"}
-                  </pre>
-                </div>
-                <div>
-                  <div className="text-[11px] font-mono text-zinc-500 mb-1">DTCG</div>
-                  <pre className="p-3 rounded-lg border border-zinc-800 bg-zinc-950 text-[11px] font-mono text-zinc-300 max-h-64 overflow-auto whitespace-pre-wrap break-all">
-                    {dtcgText || "—"}
-                  </pre>
-                </div>
-              </div>
-              {designMdText && (
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="text-[11px] font-mono text-zinc-500">DESIGN.md</div>
-                    <CopyButton label="Copy DESIGN.md" value={designMdText} />
-                  </div>
-                  <pre className="p-3 rounded-lg border border-zinc-800 bg-zinc-950 text-[11px] font-mono text-zinc-300 max-h-64 overflow-auto whitespace-pre-wrap break-all">
-                    {designMdText}
-                  </pre>
-                </div>
-              )}
-            </section>
-
-            {/* WCAG */}
-            {wcagPairs.length > 0 && (
-              <section className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/40 space-y-3">
-                <h2 className="text-xs font-semibold text-zinc-200 uppercase tracking-wider font-mono">WCAG pairs</h2>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs font-mono">
-                    <thead>
-                      <tr className="text-left text-zinc-500 border-b border-zinc-800">
-                        <th className="py-1.5 pr-3 font-medium">Preview</th>
-                        <th className="py-1.5 pr-3 font-medium">FG</th>
-                        <th className="py-1.5 pr-3 font-medium">BG</th>
-                        <th className="py-1.5 pr-3 font-medium">Ratio</th>
-                        <th className="py-1.5 pr-3 font-medium">Pass</th>
-                        <th className="py-1.5 font-medium">Uses</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-900">
-                      {wcagPairs.map((p, i) => (
-                        <tr key={i} className="text-zinc-300">
-                          <td className="py-1.5 pr-3">
-                            <span
-                              className="inline-block px-2 py-0.5 rounded border border-zinc-700 text-[10px]"
-                              style={{ color: p.fg !== "—" ? p.fg : undefined, backgroundColor: p.bg !== "—" ? p.bg : undefined }}
+                      </div>
+                    )}
+                    {shadowRows.length > 0 && (
+                      <div className="min-w-0">
+                        <p className="mb-1 text-xs text-muted-foreground">
+                          Shadows
+                        </p>
+                        <div className="space-y-1.5">
+                          {shadowRows.map((s, i) => (
+                            <div
+                              key={i}
+                              className="flex min-w-0 items-center gap-2"
                             >
-                              Aa
-                            </span>
-                          </td>
-                          <td className="py-1.5 pr-3">{p.fg}</td>
-                          <td className="py-1.5 pr-3">{p.bg}</td>
-                          <td className="py-1.5 pr-3">{p.ratio ?? "—"}</td>
-                          <td className="py-1.5 pr-3">
-                            {p.pass == null ? (
-                              "—"
-                            ) : (
                               <span
-                                className={
-                                  p.pass === "true"
-                                    ? "text-emerald-400"
-                                    : "text-red-400"
-                                }
-                              >
-                                {p.pass === "true" ? "PASS" : "FAIL"}
+                                aria-hidden="true"
+                                className="inline-block size-4 shrink-0 rounded-sm bg-muted"
+                                style={{ boxShadow: s.shadow }}
+                              />
+                              <span className="truncate font-mono text-xs text-muted-foreground">
+                                {s.shadow}
                               </span>
-                            )}
-                          </td>
-                          <td className="py-1.5 text-zinc-500">{p.count ?? "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            )}
+                              {s.count > 0 && (
+                                <span className="ml-auto shrink-0 font-sans tabular-nums text-muted-foreground">
+                                  x{s.count}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {(spacingInfo.rows.length > 0 ||
+                      spacingInfo.scaleType !== "-") && (
+                      <div className="min-w-0">
+                        <p className="mb-1 text-xs text-muted-foreground">
+                          Spacing
+                          <span className="font-sans tabular-nums">
+                            {" "}
+                            ({spacingInfo.scaleType} grid)
+                          </span>
+                        </p>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                          {spacingInfo.rows.map((s) => (
+                            <span
+                              key={s.px}
+                              title={`${s.px} (${s.rem}) used ${s.count}x`}
+                              className="inline-flex items-center gap-1.5"
+                            >
+                              <Badge
+                                variant="secondary"
+                                className="rounded-md font-mono text-[11px] font-normal tabular-nums"
+                              >
+                                {s.px}
+                              </Badge>
+                              <span className="font-sans text-[11px] tabular-nums text-muted-foreground">
+                                x{s.count}
+                              </span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {radiusRows.length === 0 &&
+                      shadowRows.length === 0 &&
+                      spacingInfo.rows.length === 0 && (
+                        <p className="text-muted-foreground">
+                          No shape tokens extracted yet.
+                        </p>
+                      )}
+                  </CardContent>
+                </Card>
 
-            {activeSheet?.screenshotUrl && (
-              <section className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/40 space-y-2">
-                <h2 className="text-xs font-semibold text-zinc-200 uppercase tracking-wider font-mono">Screenshot</h2>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={activeSheet.screenshotUrl} alt="Stylesheet screenshot" className="rounded-lg border border-zinc-800 max-h-96 w-auto" />
-              </section>
+                {/* Components */}
+                <Card className="min-w-0">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-[15px] font-semibold">
+                      Components
+                    </CardTitle>
+                    <CardDescription className="text-[13px]">
+                      Link, button, input, and badge variants found on the
+                      source site.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4 pt-0 text-[13px]">
+                    {!hasComponents && (
+                      <p className="text-muted-foreground">
+                        No component variants detected.
+                      </p>
+                    )}
+                    {linkVariants.length > 0 && (
+                          <div className="min-w-0">
+                            <p className="mb-1 text-xs text-muted-foreground">
+                              Links ({linkVariants.length})
+                            </p>
+                            <div className="space-y-1">
+                              {linkVariants.map((l, i) => (
+                                <div
+                                  key={`link-${i}`}
+                                  title={`${l.color} - hover ${l.hover} - w${l.weight} - ${l.decoration}`}
+                                  className="flex min-w-0 items-center gap-2"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    className="inline-block size-3.5 shrink-0 rounded-sm border border-border"
+                                    style={{
+                                      backgroundColor:
+                                        l.color !== "-"
+                                          ? l.color
+                                          : undefined,
+                                    }}
+                                  />
+                                  <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                                    {l.color}{" "}
+                                    <span className="text-muted-foreground">
+                                      hover {l.hover} - w{l.weight} -{" "}
+                                      {l.decoration}
+                                    </span>
+                                  </span>
+                                </div>
+                              ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="mb-1 text-xs text-muted-foreground">
+                        Buttons ({buttonVariants.length})
+                            {buttonVariants.length === 0 &&
+                              " - none detected"}
+                          </p>
+                          {buttonVariants.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {buttonVariants.map((b, i) => (
+                                <span
+                                  key={`btn-${i}`}
+                                  title={`${b.label} - ${b.background} - radius ${b.radius}`}
+                                  className="px-3 py-1.5 text-[12px] font-medium"
+                                  style={{
+                                    backgroundColor: b.background,
+                                    color: b.color,
+                                    borderRadius:
+                                      b.radius !== "-"
+                                        ? b.radius
+                                        : undefined,
+                                    border:
+                                      b.border !== "-" ? b.border : undefined,
+                                  }}
+                                >
+                                  {b.label}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                    {(inputGroups.length > 0 ||
+                      badgeInfo.total > 0 ||
+                      badgeInfo.variants.some((v) => v.count > 0)) && (
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div className="min-w-0 space-y-3">
+                          {inputGroups.length > 0 && (
+                          <div className="min-w-0">
+                            <p className="mb-1 text-xs text-muted-foreground">
+                              Inputs
+                            </p>
+                            <div className="space-y-2">
+                              {inputGroups.map((g) => (
+                                <div
+                                  key={`input-${g.type}`}
+                                  className="min-w-0"
+                                >
+                                  <p className="text-muted-foreground">
+                                    {g.type}
+                                  </p>
+                                  {g.rows.map((r, i) => (
+                                    <p
+                                      key={`input-${g.type}-${i}`}
+                                      title={`border ${r.border} - radius ${r.radius} - pad ${r.padding} - focus ${r.focus}`}
+                                      className="truncate font-mono text-xs text-muted-foreground"
+                                    >
+                                      border{" "}
+                                      <span className="text-foreground">
+                                        {r.border}
+                                      </span>{" "}
+                                      - radius {r.radius} - pad {r.padding} -
+                                      focus {r.focus}
+                                    </p>
+                                  ))}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          )}
+                        </div>
+                        <div className="min-w-0 space-y-3">
+                          {(badgeInfo.total > 0 ||
+                            badgeInfo.variants.some((v) => v.count > 0)) && (
+                            <div className="min-w-0">
+                            <p className="mb-1 text-xs text-muted-foreground">
+                              Badges ({badgeInfo.total})
+                            </p>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                              {badgeInfo.variants
+                                .filter((v) => v.count > 0)
+                                .map((v) => (
+                                  <span
+                                    key={`badge-${v.name}`}
+                                    className="inline-flex items-center gap-1.5"
+                                  >
+                                    <Badge
+                                      variant="secondary"
+                                      className="rounded-md font-mono text-[11px] font-normal tabular-nums"
+                                    >
+                                      {v.name}
+                                    </Badge>
+                                    <span className="font-sans text-[11px] tabular-nums text-muted-foreground">
+                                      x{v.count}
+                                    </span>
+                                  </span>
+                                ))}
+                            </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Theme exports */}
+                <Card className="min-w-0">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-[15px] font-semibold">
+                      Theme exports
+                    </CardTitle>
+                    <CardDescription className="text-[13px]">
+                      Reference output. Collapsed by default because it runs
+                      long.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3 pt-0">
+                    <ExportBlock
+                      title="Tailwind"
+                      text={tailwindText}
+                      copyLabel="Copy Tailwind"
+                    />
+                    <ExportBlock
+                      title="DTCG"
+                      text={dtcgText}
+                      copyLabel="Copy DTCG"
+                    />
+                    {designMdText && (
+                      <ExportBlock
+                        title="DESIGN.md"
+                        text={designMdText}
+                        copyLabel="Copy DESIGN.md"
+                      />
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* WCAG */}
+                {wcagPairs.length > 0 && (
+                  <Card className="min-w-0">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-[15px] font-semibold">
+                        WCAG pairs ({wcagPairs.length})
+                      </CardTitle>
+                      <CardDescription className="text-[13px]">
+                        Foreground and background pairs with contrast ratios.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="pt-0">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="hover:bg-transparent">
+                            <TableHead className="h-8 text-xs">
+                              Preview
+                            </TableHead>
+                            <TableHead className="h-8 text-xs">FG</TableHead>
+                            <TableHead className="h-8 text-xs">BG</TableHead>
+                            <TableHead className="h-8 text-xs">
+                              Ratio
+                            </TableHead>
+                            <TableHead className="h-8 text-xs">
+                              Pass
+                            </TableHead>
+                            <TableHead className="h-8 text-right text-xs">
+                              Uses
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {wcagPairs.map((p, i) => (
+                            <TableRow key={i}>
+                              <TableCell className="py-2">
+                                <span
+                                  className="inline-block rounded border border-border px-2 py-0.5 text-[11px]"
+                                  style={{
+                                    color:
+                                      p.fg !== "-" ? p.fg : undefined,
+                                    backgroundColor:
+                                      p.bg !== "-" ? p.bg : undefined,
+                                  }}
+                                >
+                                  Aa
+                                </span>
+                              </TableCell>
+                              <TableCell className="py-2 font-mono text-xs">
+                                {p.fg}
+                              </TableCell>
+                              <TableCell className="py-2 font-mono text-xs">
+                                {p.bg}
+                              </TableCell>
+                              <TableCell className="py-2 font-sans text-[13px] tabular-nums text-muted-foreground">
+                                {p.ratio ?? "-"}
+                              </TableCell>
+                              <TableCell className="py-2">
+                                {p.pass == null ? (
+                                  <span className="text-[13px] text-muted-foreground">
+                                    -
+                                  </span>
+                                ) : p.pass === "true" ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="rounded-full border-emerald-500/30 bg-emerald-500/10 font-normal text-emerald-700 dark:text-emerald-300"
+                                  >
+                                    PASS
+                                  </Badge>
+                                ) : (
+                                  <Badge
+                                    variant="outline"
+                                    className="rounded-full border-destructive/40 bg-destructive/10 font-normal text-destructive"
+                                  >
+                                    FAIL
+                                  </Badge>
+                                )}
+                              </TableCell>
+                              <TableCell className="py-2 text-right font-sans text-[13px] tabular-nums text-muted-foreground">
+                                {p.count ?? "-"}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                )}
+                  </div>
+                  <div className="min-w-0 space-y-4 lg:col-span-5 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)] lg:self-start lg:overflow-y-auto">
+                      {/* Widget preview */}
+                      <Card className="min-w-0">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-[15px] font-semibold">
+                            Widget preview
+                          </CardTitle>
+                          <CardDescription className="text-[13px]">
+                            First draft from extracted tokens. Sample thread,
+                            nothing sends.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="pt-0">
+                          <WidgetPreview
+                            theme={extractedTheme}
+                            displayName={
+                              selectedCompany.name || "Assistant"
+                            }
+                            domain={
+                              selectedCompany.domain || "Company assistant"
+                            }
+                          />
+                        </CardContent>
+                      </Card>
+                  </div>
+                </div>
+              </>
             )}
-          </>
+          </div>
         )}
       </div>
     </StudioShell>

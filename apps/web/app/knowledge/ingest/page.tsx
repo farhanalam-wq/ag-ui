@@ -2,32 +2,14 @@
 
 import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import {
-  SidebarProvider,
-  SidebarInset,
-  SidebarTrigger,
-} from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
-import {
-  Breadcrumb,
-  BreadcrumbList,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbSeparator,
-  BreadcrumbPage,
-} from "@/components/ui/breadcrumb";
-import { AppSidebar } from "@/components/sidebar/app-sidebar";
+import { StudioShell } from "@/components/studio-shell";
 import { IngestionStudio } from "@/components/ingestion/ingestion-studio";
 import { apiClient } from "@/lib/api-client";
 import type { CompanyItem } from "@/components/sidebar/company-switcher";
-import { ModeToggle } from "@/components/mode-toggle";
-import { ArrowLeft, ChatCircleText } from "@phosphor-icons/react";
-import { useCompanyStore, useSelectedCompany } from "@/stores/use-company-store";
+import { useCompanyStore } from "@/stores/use-company-store";
 
 export default function IngestRoutePage() {
   const router = useRouter();
-  const companies = useCompanyStore((s) => s.companies);
-  const selectedCompany = useSelectedCompany();
 
   useEffect(() => {
     if (useCompanyStore.getState().companies.length > 0) return;
@@ -76,71 +58,11 @@ export default function IngestRoutePage() {
   };
 
   return (
-    <SidebarProvider defaultOpen={true}>
-      <div className="flex min-h-screen w-full bg-background text-foreground transition-colors duration-200">
-        {selectedCompany && (
-          <AppSidebar
-            companies={companies}
-            selectedCompany={selectedCompany}
-            onSelectCompany={(comp) => {
-              useCompanyStore.getState().select(comp.id);
-              router.push("/playground");
-            }}
-            onOpenAddCompany={() => {}}
-          />
-        )}
-
-        <SidebarInset className="flex flex-col bg-background min-h-screen transition-colors duration-200">
-          <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between border-b border-zinc-900/80 bg-zinc-950/80 px-4 backdrop-blur-md">
-            <div className="flex items-center gap-2">
-              <SidebarTrigger className="-ml-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900" />
-              <Separator orientation="vertical" className="mr-2 h-4 bg-zinc-800" />
-              <Breadcrumb>
-                <BreadcrumbList className="text-xs">
-                  <BreadcrumbItem>
-                    <BreadcrumbLink
-                      href="/playground"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        router.push("/playground");
-                      }}
-                      className="text-zinc-400 hover:text-zinc-200 transition-colors flex items-center gap-1.5"
-                    >
-                      <ArrowLeft className="size-3" />
-                      <span>Chat</span>
-                    </BreadcrumbLink>
-                  </BreadcrumbItem>
-                  <BreadcrumbSeparator className="text-zinc-600" />
-                  <BreadcrumbItem>
-                    <BreadcrumbPage className="text-zinc-200 font-mono">
-                      Ingestion Studio & Knowledge Crawler
-                    </BreadcrumbPage>
-                  </BreadcrumbItem>
-                </BreadcrumbList>
-              </Breadcrumb>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => router.push("/playground")}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono rounded-lg border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800 text-zinc-300 hover:text-white transition-colors"
-              >
-                <ChatCircleText className="size-3.5" />
-                <span>Return to Chat</span>
-              </button>
-              <ModeToggle />
-            </div>
-          </header>
-
-          <main className="flex-1 overflow-y-auto p-4 sm:p-6">
-            <IngestionStudio
-              onCompanyIndexed={handleCompanyIndexed}
-              onCancel={handleCancel}
-            />
-          </main>
-        </SidebarInset>
-      </div>
-    </SidebarProvider>
+    <StudioShell crumbs={[{ label: "Knowledge" }, { label: "Ingest" }]}>
+      <IngestionStudio
+        onCompanyIndexed={handleCompanyIndexed}
+        onCancel={handleCancel}
+      />
+    </StudioShell>
   );
 }

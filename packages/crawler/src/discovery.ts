@@ -14,7 +14,65 @@ const PRIORITY_KEYWORDS = [
   "case-stud",
   "company",
   "contact",
+  "shop",
+  "menu",
+  "book",
+  "order",
+  "service",
+  "blog",
+  "changelog",
+  "news",
+  "post",
 ];
+
+/**
+ * Structural signals that feed priority scoring. Everything here is
+ * language-agnostic except the small keyword bonus below.
+ */
+export interface PrioritySignals {
+  /** 0 for the site root, +1 per path level. */
+  depth?: number;
+  /** Where the URL was found. Owner-curated sources outrank crawled ones. */
+  source?: "llms.txt" | "sitemap" | "homepage" | "root";
+  /** How many discovery passes surfaced this URL (repeat sightings). */
+  sightings?: number;
+  /** Sitemap <priority> hint, 0..1, when the sitemap provides one. */
+  sitemapPriority?: number;
+}
+
+/**
+ * Scores a URL so ranking survives any language or vertical: structure first
+ * (root, depth, owner curation, sitemap hints, repeat sightings), keywords as
+ * a flat bonus. Deterministic; higher means crawl earlier.
+ */
+export function calculatePriority(urlStr: string, signals?: PrioritySignals): number {
+  let score = 10;
+  const depth = signals?.depth ?? 1;
+  const source = signals?.source;
+
+  if (source === "root") score += 30;
+  else if (source === "llms.txt") score += 20;
+
+  score += Math.max(0, 12 - depth * 4);
+
+  if (signals?.sitemapPriority !== undefined) {
+    const clamped = Math.min(1, Math.max(0, signals.sitemapPriority));
+    score += Math.round(clamped * 15);
+  }
+
+  if (signals?.sightings !== undefined && signals.sightings > 1) {
+    score += Math.min(20, 2 * (signals.sightings - 1));
+  }
+
+  const lower = urlStr.toLowerCase();
+  for (const keyword of PRIORITY_KEYWORDS) {
+    if (lower.includes(keyword)) {
+      score += 25;
+      break;
+    }
+  }
+  return score;
+}
 
 export interface DiscoveredUrl {
   url: string;
@@ -71,19 +129,6 @@ export function normalizeUrl(rawUrl: string, baseUrl: URL): string | null {
   } catch {
     return null;
   }
-}
-
-/**
- * Assigns an ingestion priority score to a URL based on route keywords.
- */
-export function calculatePriority(urlStr: string): number {
-  const lower = urlStr.toLowerCase();
-  for (let i = 0; i < PRIORITY_KEYWORDS.length; i++) {
-    if (lower.includes(PRIORITY_KEYWORDS[i])) {
-      return 100 - i; // Higher score for earlier keywords
-    }
-  }
-  return 10; // Default priority
 }
 
 /**
@@ -219,6 +264,24 @@ function extractLocs(xml: string): string[] {
   return out;
 }
 
+function extractSitemapEntries(xml: string): { url: string; priority?: number }[] {
+  const out: { url: string; priority?: number }[] = [];
+  const blocks = xml.match(/<url>([\s\S]*?)<\/url>/gi) ?? [];
+  if (blocks.length === 0) {
+    // Non-standard file (bare loc list, index): no per-URL priority available.
+    for (const loc of extractLocs(xml)) out.push({ url: loc });
+    return out;
+  }
+  for (const block of blocks) {
+    const loc = /<loc>(https?:\/\/[^<]+)<\/loc>/i.exec(block)?.[1]?.trim();
+    if (!loc) continue;
+    const pr = /<priority>(0(?:\.\d+)?|1(?:\.0+)?)<\/priority>/i.exec(block)?.[1];
+    out.push({ url: loc, priority: pr !== undefined ? parseFloat(pr) : undefined });
+    if (out.length >= 20000) break;
+  }
+  return out;
+}
+
 async function fetchDiscoveryText(url: string, timeoutMs: number): Promise<{ text: string; status: number }> {
   try {
     await validateSafeUrl(url);
@@ -257,14 +320,38 @@ export async function discoverPages(
   const domain = baseUrl.hostname.replace(/^www\./, "");
 
   const seen = new Map<string, DiscoveredPage>();
-  const add = (url: string | null, source: DiscoveredPage["source"], depth: number) => {
+  // Repeat sightings across passes (sitemap + nav, llms.txt + sitemap) and
+  // sitemap <priority> hints. Resolved into scores in a post-pass below.
+  const sightings = new Map<string, number>();
+  const sitemapHints = new Map<string, number>();
+  const pathDepth = (u: string): number => {
+    try {
+      return new URL(u).pathname.split("/").filter(Boolean).length;
+    } catch {
+      return 1;
+    }
+  };
+  const scoreSignals = (url: string, source: DiscoveredPage["source"], depth: number): PrioritySignals => ({
+    source,
+    depth: depth === 0 ? 0 : Math.max(1, pathDepth(url)),
+    sightings: sightings.get(url) ?? 1,
+    sitemapPriority: sitemapHints.get(url),
+  });
+  const add = (
+    url: string | null,
+    source: DiscoveredPage["source"],
+    depth: number,
+    sitemapPriority?: number
+  ) => {
     if (!url) return;
     if (ASSET_EXT.test(url)) return;
+    sightings.set(url, (sightings.get(url) ?? 0) + 1);
+    if (sitemapPriority !== undefined) sitemapHints.set(url, sitemapPriority);
     if (seen.has(url)) return;
     seen.set(url, {
       url,
       category: inferCategory(url, "") as DiscoveredPage["category"],
-      priority: calculatePriority(url),
+      priority: calculatePriority(url, scoreSignals(url, source, depth)),
       source,
       depth,
     });
@@ -305,19 +392,19 @@ export async function discoverPages(
       const { text, status } = await fetchDiscoveryText(sm, 8000);
       if (status < 200 || status >= 300 || !text.includes("<loc>")) continue;
       if (isSitemapIndex(text) && followed.length + sitemapQueue.length < sitemapCap + 5) {
-        for (const loc of extractLocs(text).slice(0, 50)) {
-          const n = normalizeUrl(loc, baseUrl);
+        for (const entry of extractSitemapEntries(text).slice(0, 50)) {
+          const n = normalizeUrl(entry.url, baseUrl);
           if (n && /\.xml(\?|#|$)/i.test(n) && !followed.includes(n) && !sitemapQueue.includes(n)) {
             sitemapQueue.push(n);
           } else if (n) {
-            add(n, "sitemap", 1);
+            add(n, "sitemap", 1, entry.priority);
             if (--pageBudget <= 0) break;
           }
         }
       } else {
-        for (const loc of extractLocs(text)) {
+        for (const entry of extractSitemapEntries(text)) {
           if (pageBudget <= 0) break;
-          add(normalizeUrl(loc, baseUrl), "sitemap", 1);
+          add(normalizeUrl(entry.url, baseUrl), "sitemap", 1, entry.priority);
           pageBudget--;
         }
       }
@@ -335,6 +422,11 @@ export async function discoverPages(
     }
   } catch {
     // Non-blocking homepage fetch
+  }
+
+  // Post-pass: fold final repeat-sighting counts and sitemap hints into scores.
+  for (const page of seen.values()) {
+    page.priority = calculatePriority(page.url, scoreSignals(page.url, page.source, page.depth));
   }
 
   const pages = [...seen.values()].sort((a, b) => b.priority - a.priority);

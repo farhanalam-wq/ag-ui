@@ -6,13 +6,27 @@ import {
   CheckSquare,
   Square,
   ArrowSquareOut,
-  Tag,
-  Clock,
-  Sparkle,
-  Sliders,
-  CheckCircle,
+  CircleNotch,
 } from "@phosphor-icons/react";
-import type { DiscoveredPageItem, DiscoveryResponse } from "@/lib/api-client";
+import type { DiscoveryResponse } from "@/lib/api-client";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 interface DiscoveryTableProps {
   discovery: DiscoveryResponse;
@@ -25,15 +39,6 @@ interface DiscoveryTableProps {
   onStartIngest: () => void;
   isStarting?: boolean;
 }
-
-const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  pricing: { bg: "bg-emerald-500/10", text: "text-emerald-400", border: "border-emerald-500/20" },
-  product: { bg: "bg-indigo-500/10", text: "text-indigo-400", border: "border-indigo-500/20" },
-  docs: { bg: "bg-amber-500/10", text: "text-amber-400", border: "border-amber-500/20" },
-  blog: { bg: "bg-purple-500/10", text: "text-purple-400", border: "border-purple-500/20" },
-  about: { bg: "bg-cyan-500/10", text: "text-cyan-400", border: "border-cyan-500/20" },
-  general: { bg: "bg-zinc-500/10", text: "text-zinc-400", border: "border-zinc-500/20" },
-};
 
 export function DiscoveryTable({
   discovery,
@@ -55,7 +60,7 @@ export function DiscoveryTable({
   // Categories list with counts
   const categoriesWithCounts = useMemo(() => {
     const list: { key: string; label: string; count: number }[] = [
-      { key: "all", label: "All Pages", count: pages.length },
+      { key: "all", label: "All pages", count: pages.length },
     ];
     if (info?.byCategory) {
       for (const [cat, count] of Object.entries(info.byCategory)) {
@@ -88,272 +93,320 @@ export function DiscoveryTable({
   const estTimeSec = (estWaves * 1.5).toFixed(1);
 
   return (
-    <div className="w-full space-y-4">
-      {/* Top Telemetry Banner */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-xl border border-zinc-800/80 bg-zinc-900/40 backdrop-blur-sm">
-        <div>
-          <div className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Discovered</div>
-          <div className="text-xl font-bold text-zinc-100 mt-0.5">
-            {pages.length.toLocaleString()}{" "}
-            <span className="text-xs font-normal text-zinc-400">URLs</span>
+    <div className="w-full min-w-0 space-y-4">
+      {/* Telemetry strip */}
+      <Card>
+        <CardContent className="pt-5">
+          <div className="grid grid-cols-2 gap-y-4 md:grid-cols-4 md:divide-x md:divide-border">
+            <div className="min-w-0 pr-4">
+              <p className="text-[13px] text-muted-foreground">Discovered</p>
+              <p className="mt-1 font-sans text-xl font-semibold tabular-nums tracking-tight">
+                {pages.length.toLocaleString()}{" "}
+                <span className="text-sm font-normal text-muted-foreground">
+                  URLs
+                </span>
+              </p>
+            </div>
+            <div className="min-w-0 pr-4 md:px-5">
+              <p className="text-[13px] text-muted-foreground">
+                Discovery time
+              </p>
+              <p className="mt-1 font-sans text-xl font-semibold tabular-nums tracking-tight">
+                {(info.durationMs / 1000).toFixed(2)}s
+              </p>
+            </div>
+            <div className="min-w-0 pr-4 md:px-5">
+              <p className="text-[13px] text-muted-foreground">Sources</p>
+              <p className="mt-1 font-sans text-xl font-semibold tabular-nums tracking-tight">
+                {info.sitemapsFollowed?.length || (info.robotsSitemaps ? 1 : 0)}{" "}
+                <span className="text-sm font-normal text-muted-foreground">
+                  sitemaps
+                </span>
+              </p>
+            </div>
+            <div className="min-w-0 md:pl-5">
+              <p className="text-[13px] text-muted-foreground">
+                Selected to crawl
+              </p>
+              <p className="mt-1 font-sans text-xl font-semibold tabular-nums tracking-tight">
+                {selectedUrls.size}{" "}
+                <span className="text-sm font-normal text-muted-foreground">
+                  pages · ~{estTimeSec}s
+                </span>
+              </p>
+            </div>
           </div>
-        </div>
-        <div>
-          <div className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Discovery Time</div>
-          <div className="text-xl font-bold text-emerald-400 mt-0.5">
-            {(info.durationMs / 1000).toFixed(2)}s
-          </div>
-        </div>
-        <div>
-          <div className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Sitemaps Probed</div>
-          <div className="text-xl font-bold text-zinc-100 mt-0.5">
-            {info.sitemapsFollowed?.length || (info.robotsSitemaps ? 1 : 0)}{" "}
-            <span className="text-xs font-normal text-zinc-400">sources</span>
-          </div>
-        </div>
-        <div>
-          <div className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Selected to Crawl</div>
-          <div className="text-xl font-bold text-brand-primary mt-0.5">
-            {selectedUrls.size}{" "}
-            <span className="text-xs font-normal text-zinc-400">pages (~{estTimeSec}s)</span>
-          </div>
-        </div>
-      </div>
+          <p className="mt-4 border-t pt-3 text-[13px] text-muted-foreground">
+            Ranked by importance. Thin and duplicate pages are pruned
+            automatically during the crawl.
+          </p>
+        </CardContent>
+      </Card>
 
-      {/* Category Filter Tabs */}
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-zinc-800 pb-2.5">
+      {/* Category filter pills */}
+      <div className="flex flex-wrap items-center gap-1.5">
         {categoriesWithCounts.map((c) => (
-          <button
+          <Button
             key={c.key}
             type="button"
+            variant={activeCategory === c.key ? "secondary" : "ghost"}
+            size="sm"
+            className="h-7 px-2.5 text-xs"
             onClick={() => setActiveCategory(c.key)}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-              activeCategory === c.key
-                ? "bg-zinc-800 text-white shadow-sm border border-zinc-700 font-semibold"
-                : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60"
-            }`}
           >
-            <span>{c.label}</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-                activeCategory === c.key
-                  ? "bg-zinc-700 text-zinc-200"
-                  : "bg-zinc-900 text-zinc-500 border border-zinc-800"
-              }`}
+            {c.label}
+            <Badge
+              variant="outline"
+              className="ml-1 rounded-full px-1.5 font-mono text-[10px] font-normal"
             >
               {c.count}
-            </span>
-          </button>
+            </Badge>
+          </Button>
         ))}
       </div>
 
-      {/* Controls & Range Selector Toolbar */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 p-3 rounded-lg border border-zinc-800/80 bg-zinc-950/60">
-        {/* Left: Quick Select Presets */}
-        <div className="flex flex-wrap items-center gap-1.5 text-xs">
-          <span className="text-zinc-500 font-medium mr-1 text-[11px] uppercase tracking-wider">
-            Quick:
-          </span>
-          <button
-            type="button"
-            onClick={onSelectAll}
-            className="px-2.5 py-1 rounded-md border border-zinc-800 bg-zinc-900/70 hover:bg-zinc-800 text-zinc-300 transition-colors"
-          >
-            All ({pages.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => onSelectTopN(10)}
-            className="px-2.5 py-1 rounded-md border border-zinc-800 bg-zinc-900/70 hover:bg-zinc-800 text-zinc-300 transition-colors"
-          >
-            Top 10
-          </button>
-          <button
-            type="button"
-            onClick={() => onSelectTopN(20)}
-            className="px-2.5 py-1 rounded-md border border-zinc-800 bg-zinc-900/70 hover:bg-zinc-800 text-zinc-300 transition-colors"
-          >
-            Top 20
-          </button>
-          <button
-            type="button"
-            onClick={() => onSelectTopN(50)}
-            className="px-2.5 py-1 rounded-md border border-zinc-800 bg-zinc-900/70 hover:bg-zinc-800 text-zinc-300 transition-colors"
-          >
-            Top 50
-          </button>
-          <button
-            type="button"
-            onClick={onSelectNone}
-            className="px-2.5 py-1 rounded-md border border-zinc-800/60 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/40 transition-colors"
-          >
-            Clear
-          </button>
-        </div>
-
-        {/* Right: Custom Range Input & Search */}
-        <div className="flex flex-wrap items-center gap-2">
-          <form onSubmit={handleRangeSubmit} className="flex items-center gap-1.5">
-            <input
-              type="text"
-              value={rangeInput}
-              onChange={(e) => setRangeInput(e.target.value)}
-              placeholder="e.g. 1-20, 35"
-              className="h-8 w-28 sm:w-32 px-2.5 rounded-md border border-zinc-800 bg-zinc-900 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-brand-primary"
-              title="Enter index ranges: all | N | 1-20,35,40-50"
-            />
-            <button
-              type="submit"
-              className="h-8 px-2.5 rounded-md border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-xs text-zinc-300 transition-colors"
-            >
-              Apply
-            </button>
-          </form>
-
-          <div className="relative">
-            <MagnifyingGlass className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search URLs..."
-              className="h-8 pl-8 pr-3 rounded-md border border-zinc-800 bg-zinc-900 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-brand-primary w-36 sm:w-44"
-            />
+      {/* Selection toolbar */}
+      <Card>
+        <CardContent className="flex flex-col gap-3 pt-5 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-xs text-muted-foreground">Quick select</p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={onSelectAll}
+              >
+                All ({pages.length})
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => onSelectTopN(10)}
+              >
+                Top 10
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => onSelectTopN(20)}
+              >
+                Top 20
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => onSelectTopN(50)}
+              >
+                Top 50
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs text-muted-foreground"
+                onClick={onSelectNone}
+              >
+                Clear
+              </Button>
+            </div>
           </div>
-        </div>
-      </div>
+          <div className="flex flex-wrap items-end gap-2">
+            <form onSubmit={handleRangeSubmit}>
+              <label
+                htmlFor="discovery-range"
+                className="text-xs text-muted-foreground"
+              >
+                Pick by rank, like 1 to 20 plus 35
+              </label>
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <Input
+                  id="discovery-range"
+                  type="text"
+                  value={rangeInput}
+                  onChange={(e) => setRangeInput(e.target.value)}
+                  placeholder="1-20, 35"
+                  className="h-8 w-32 font-mono text-xs"
+                />
+                <Button
+                  type="submit"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                >
+                  Apply
+                </Button>
+              </div>
+            </form>
+            <div>
+              <label
+                htmlFor="discovery-search"
+                className="text-xs text-muted-foreground"
+              >
+                Search
+              </label>
+              <div className="relative mt-1.5">
+                <MagnifyingGlass className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="discovery-search"
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Filter URLs"
+                  className="h-8 w-40 pl-8 text-xs sm:w-48"
+                />
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
-      {/* Discovered URLs Table */}
-      <div className="rounded-xl border border-zinc-800 overflow-hidden bg-zinc-950/40">
-        <div className="max-h-[380px] overflow-y-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="sticky top-0 z-10 bg-zinc-900/90 backdrop-blur-md border-b border-zinc-800 text-[11px] font-mono text-zinc-400 uppercase tracking-wider">
-              <tr>
-                <th className="py-2.5 px-3 w-10 text-center">
+      {/* Discovered URLs ledger */}
+      <Card className="min-w-0">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-[15px] font-semibold">
+            Discovered pages ({filteredPages.length})
+          </CardTitle>
+          <CardDescription className="text-[13px]">
+            Uncheck thin or off-topic pages so answers stay sharp.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="h-8 w-10 text-center">
                   <button
                     type="button"
                     onClick={() => {
                       if (selectedUrls.size === pages.length) onSelectNone();
                       else onSelectAll();
                     }}
-                    className="text-zinc-400 hover:text-white"
+                    className="text-muted-foreground hover:text-foreground"
+                    aria-label="Toggle all pages"
                   >
                     {selectedUrls.size === pages.length ? (
-                      <CheckSquare className="size-4 text-brand-primary" />
+                      <CheckSquare className="size-4 text-primary" />
                     ) : (
                       <Square className="size-4" />
                     )}
                   </button>
-                </th>
-                <th className="py-2.5 px-2 w-12 text-center">#</th>
-                <th className="py-2.5 px-3 w-20">Priority</th>
-                <th className="py-2.5 px-3 w-24">Category</th>
-                <th className="py-2.5 px-3 w-24">Source</th>
-                <th className="py-2.5 px-3">Target URL</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-900 font-mono text-[11px]">
-              {filteredPages.map((p, idx) => {
+                </TableHead>
+                <TableHead className="h-8 w-12 text-center text-xs">
+                  Rank
+                </TableHead>
+                <TableHead className="h-8 w-20 text-xs">Priority</TableHead>
+                <TableHead className="h-8 w-28 text-xs">Category</TableHead>
+                <TableHead className="h-8 text-xs">Target URL</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredPages.map((p) => {
                 const isSelected = selectedUrls.has(p.url);
-                const originalIndex = pages.findIndex((orig) => orig.url === p.url) + 1;
-                const catColor = CATEGORY_COLORS[p.category] || CATEGORY_COLORS.general;
-
+                const originalIndex =
+                  pages.findIndex((orig) => orig.url === p.url) + 1;
                 return (
-                  <tr
+                  <TableRow
                     key={p.url}
+                    className="cursor-pointer"
                     onClick={() => onToggleUrl(p.url)}
-                    className={`cursor-pointer transition-colors ${
-                      isSelected
-                        ? "bg-brand-primary/5 hover:bg-brand-primary/10"
-                        : "hover:bg-zinc-900/50"
-                    }`}
                   >
-                    <td className="py-2 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                    <TableCell
+                      className="py-2 text-center"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <button
                         type="button"
                         onClick={() => onToggleUrl(p.url)}
-                        className="text-zinc-400 hover:text-white"
+                        className="text-muted-foreground hover:text-foreground"
+                        aria-label={`Toggle ${p.url}`}
                       >
                         {isSelected ? (
-                          <CheckSquare className="size-4 text-brand-primary" />
+                          <CheckSquare className="size-4 text-primary" />
                         ) : (
-                          <Square className="size-4 text-zinc-600" />
+                          <Square className="size-4" />
                         )}
                       </button>
-                    </td>
-                    <td className="py-2 px-2 text-center text-zinc-500">{originalIndex}</td>
-                    <td className="py-2 px-3">
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono bg-zinc-900 border border-zinc-800 text-zinc-400">
+                    </TableCell>
+                    <TableCell className="py-2 text-center font-sans text-xs tabular-nums text-muted-foreground">
+                      {originalIndex}
+                    </TableCell>
+                    <TableCell className="py-2">
+                      <Badge
+                        variant="outline"
+                        className="rounded font-mono text-[10px] font-normal"
+                      >
                         {p.priority}
-                      </span>
-                    </td>
-                    <td className="py-2 px-3">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border ${catColor.bg} ${catColor.text} ${catColor.border}`}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="py-2">
+                      <Badge
+                        variant="secondary"
+                        className="rounded-full text-[11px] font-normal"
                       >
                         {p.category}
-                      </span>
-                    </td>
-                    <td className="py-2 px-3 text-zinc-400">
-                      <span className="text-[10px] text-zinc-500 font-mono">{p.source}</span>
-                    </td>
-                    <td className="py-2 px-3 text-zinc-300 truncate max-w-md">
-                      <div className="flex items-center gap-1.5">
-                        <span className="truncate">{p.url}</span>
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="max-w-0 py-2">
+                      <span className="flex min-w-0 items-center gap-1.5 font-mono text-[11px]">
+                        <span className="block truncate" title={p.url}>
+                          {p.url}
+                        </span>
                         <a
                           href={p.url}
                           target="_blank"
                           rel="noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          className="text-zinc-600 hover:text-zinc-300 shrink-0"
+                          className="shrink-0 text-muted-foreground hover:text-foreground"
                           title="Open URL in new tab"
                         >
                           <ArrowSquareOut className="size-3" />
                         </a>
-                      </div>
-                    </td>
-                  </tr>
+                      </span>
+                    </TableCell>
+                  </TableRow>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
-      {/* Crawl Forecast & Start Ingestion Footer Action */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 rounded-xl border border-zinc-800 bg-zinc-900/60">
-        <div className="text-xs text-zinc-400 space-y-0.5">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-zinc-200">
+      {/* Footer bar */}
+      <Card>
+        <CardContent className="flex flex-col gap-3 pt-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-[13px] text-muted-foreground">
+            <span className="font-sans font-semibold tabular-nums text-foreground">
               {selectedUrls.size} of {pages.length} pages selected
-            </span>
-            <span className="text-zinc-600">•</span>
-            <span>~{estWaves} concurrent waves (fetch: 25, parse: 5, embed: 3)</span>
+            </span>{" "}
+            · about {estWaves} crawl {estWaves === 1 ? "wave" : "waves"}
           </div>
-          <div className="text-[11px] text-zinc-500">
-            Deduplication, SHA-256 content hashing, and Qdrant 1536-dim vector embeddings will run in-process.
-          </div>
-        </div>
-
-        <button
-          type="button"
-          disabled={selectedUrls.size === 0 || isStarting}
-          onClick={onStartIngest}
-          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-xs font-semibold bg-brand-primary hover:opacity-90 disabled:opacity-50 text-white shadow-lg shadow-brand-primary/20 transition-all shrink-0 cursor-pointer"
-        >
-          {isStarting ? (
-            <>
-              <div className="size-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-              <span>Initializing Pipeline...</span>
-            </>
-          ) : (
-            <>
-              <Sparkle className="size-3.5" />
-              <span>Start Pipeline Ingestion ({selectedUrls.size})</span>
-            </>
-          )}
-        </button>
-      </div>
+          <Button
+            type="button"
+            disabled={selectedUrls.size === 0 || isStarting}
+            onClick={onStartIngest}
+          >
+            {isStarting ? (
+              <>
+                <CircleNotch
+                  className="size-4 animate-spin"
+                  aria-hidden="true"
+                />
+                Starting pipeline
+              </>
+            ) : (
+              <>Start ingestion ({selectedUrls.size})</>
+            )}
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }

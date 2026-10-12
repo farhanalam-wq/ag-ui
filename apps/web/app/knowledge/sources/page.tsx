@@ -14,19 +14,73 @@ import {
   FileHtml,
   FileCode,
   FileText,
-  Eye,
   Trash,
-  X,
   CheckCircle,
   XCircle,
   CircleNotch,
   Buildings,
   ArrowRight,
+  MagnifyingGlass,
 } from "@phosphor-icons/react";
 import { StudioShell } from "@/components/studio-shell";
 import { UploadPanel } from "@/components/knowledge/upload-panel";
 import { apiClient, type SourceDocument, type EnrichmentBatch, type CompanySummary } from "@/lib/api-client";
 import { useCompanyStore, useSelectedCompany } from "@/stores/use-company-store";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 
 function kindIcon(filename: string, sourceKind: string) {
   if (sourceKind === "crawl") return Globe;
@@ -63,36 +117,42 @@ function kindLabel(doc: SourceDocument): string {
   return ext.replace("://", "").slice(0, 5);
 }
 
-function statusPill(status: string) {
-  const base =
-    "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono border";
-  switch (status) {
-    case "READY":
-      return (
-        <span className={`${base} border-emerald-200 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-300`}>
-          <CheckCircle className="size-3" /> READY
-        </span>
-      );
-    case "FAILED":
-      return (
-        <span className={`${base} border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400`}>
-          <XCircle className="size-3" /> FAILED
-        </span>
-      );
-    case "PROCESSING":
-      return (
-        <span className={`${base} border-amber-200 dark:border-amber-900/50 text-amber-700 dark:text-amber-300`}>
-          <CircleNotch className="size-3 animate-spin" /> PROCESSING
-        </span>
-      );
-    default:
-      return (
-        <span className={`${base} border-zinc-200 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400`}>
-          {status}
-        </span>
-      );
-  }
+function StatusBadge({ status }: { status: string }) {
+  if (status === "READY")
+    return (
+      <Badge
+        variant="outline"
+        className="rounded-full border-emerald-500/30 bg-emerald-500/10 font-normal text-emerald-700 dark:text-emerald-300"
+      >
+        <CheckCircle className="mr-1 size-3" aria-hidden="true" />
+        Ready
+      </Badge>
+    );
+  if (status === "FAILED")
+    return (
+      <Badge
+        variant="outline"
+        className="rounded-full border-destructive/40 bg-destructive/10 font-normal text-destructive"
+      >
+        <XCircle className="mr-1 size-3" aria-hidden="true" />
+        Failed
+      </Badge>
+    );
+  if (status === "PROCESSING")
+    return (
+      <Badge variant="outline" className="rounded-full font-normal">
+        <CircleNotch className="mr-1 size-3 animate-spin" aria-hidden="true" />
+        Processing
+      </Badge>
+    );
+  return (
+    <Badge variant="outline" className="rounded-full font-normal">
+      {status}
+    </Badge>
+  );
 }
+
+type KindFilter = "all" | "crawl" | "file";
 
 export default function SourcesPage() {
   const router = useRouter();
@@ -104,8 +164,12 @@ export default function SourcesPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<SourceDocument | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<SourceDocument | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const refresh = useCallback(async () => {
     if (!selectedCompany) return;
@@ -146,204 +210,529 @@ export default function SourcesPage() {
     [batches]
   );
 
-  const crawled = useMemo(() => docs.filter((d) => d.sourceKind === "crawl"), [docs]);
-  const uploaded = useMemo(() => docs.filter((d) => d.sourceKind !== "crawl"), [docs]);
+  const crawledCount = useMemo(
+    () => docs.filter((d) => d.sourceKind === "crawl").length,
+    [docs]
+  );
+  const uploadedCount = useMemo(
+    () => docs.filter((d) => d.sourceKind !== "crawl").length,
+    [docs]
+  );
+  const chunkCount = detail?.chunkCount ?? summary?.chunkCount ?? 0;
+  const factCount = detail?.factCount ?? summary?.factCount ?? 0;
   const batchById = useMemo(() => new Map(batches.map((b) => [b.id, b])), [batches]);
 
-  const handleDelete = useCallback(
-    async (docId: string) => {
-      if (!selectedCompany) return;
-      if (confirmDelete !== docId) {
-        setConfirmDelete(docId);
-        return;
-      }
-      setConfirmDelete(null);
-      setDeleting(true);
-      try {
-        await apiClient.uploads.deleteDocuments(selectedCompany.id, [docId]);
-        await refresh();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Delete failed");
-      } finally {
-        setDeleting(false);
-      }
-    },
-    [confirmDelete, selectedCompany, refresh]
-  );
+  const filteredDocs = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return docs.filter((d) => {
+      if (kindFilter === "crawl" && d.sourceKind === "upload") return false;
+      if (kindFilter === "file" && d.sourceKind === "crawl") return false;
+      if (!q) return true;
+      return (
+        d.title.toLowerCase().includes(q) ||
+        d.url.toLowerCase().includes(q) ||
+        (d.originName || "").toLowerCase().includes(q)
+      );
+    });
+  }, [docs, kindFilter, searchQuery]);
 
-  const docRow = (doc: SourceDocument) => {
-    const Icon = kindIcon(doc.originName || doc.url, doc.sourceKind);
-    const batch = doc.batchId ? batchById.get(doc.batchId) : undefined;
-    return (
-      <div
-        key={doc.id}
-        className="flex items-center gap-3 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/60"
-      >
-        <div className="flex items-center justify-center size-8 rounded-lg bg-zinc-200 dark:bg-zinc-800 shrink-0">
-          <Icon className="size-4 text-zinc-500 dark:text-zinc-400" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-medium text-zinc-800 dark:text-zinc-200 truncate">
-              {doc.title}
-            </span>
-            <span className="px-1.5 py-px rounded text-[10px] font-mono border border-zinc-200 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400">
-              {kindLabel(doc)}
-            </span>
-            {batch && (
-              <span className="px-1.5 py-px rounded text-[10px] font-mono border border-zinc-200 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400">
-                v{majorVersion}.{batch.minor}
-              </span>
-            )}
-          </div>
-          <p className="text-[11px] font-mono text-zinc-500 dark:text-zinc-500 truncate mt-0.5">
-            {doc.sourceKind === "crawl" ? doc.url : doc.originName} · {doc.wordCount} words
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setPreview(doc)}
-          title="Preview"
-          className="p-1.5 rounded text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors shrink-0"
-        >
-          <Eye className="size-4" />
-        </button>
-        <button
-          type="button"
-          disabled={deleting}
-          onClick={() => void handleDelete(doc.id)}
-          title={confirmDelete === doc.id ? "Click again to confirm delete" : "Delete (tombstoned, restorable)"}
-          className={`p-1.5 rounded transition-colors shrink-0 disabled:opacity-50 ${
-            confirmDelete === doc.id
-              ? "text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-950/50"
-              : "text-zinc-500 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-zinc-200 dark:hover:bg-zinc-800"
-          }`}
-        >
-          <Trash className="size-4" />
-        </button>
-      </div>
-    );
-  };
+  useEffect(() => {
+    setPage(1);
+  }, [docs, kindFilter, searchQuery, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredDocs.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pagedDocs = useMemo(
+    () => filteredDocs.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [filteredDocs, safePage, pageSize]
+  );
+  const rangeStart =
+    filteredDocs.length === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const rangeEnd = Math.min(safePage * pageSize, filteredDocs.length);
+
+  const pageItems = useMemo<(number | "gap")[]>(() => {
+    if (totalPages <= 7)
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    const keep = new Set([1, 2, safePage - 1, safePage, safePage + 1, totalPages - 1, totalPages]);
+    const items: (number | "gap")[] = [];
+    for (let n = 1; n <= totalPages; n++) {
+      if (!keep.has(n)) {
+        if (items[items.length - 1] !== "gap") items.push("gap");
+        continue;
+      }
+      items.push(n);
+    }
+    return items;
+  }, [totalPages, safePage]);
+
+  const handleDelete = useCallback(async () => {
+    if (!selectedCompany || !deleteTarget) return;
+    setDeleting(true);
+    try {
+      await apiClient.uploads.deleteDocuments(selectedCompany.id, [
+        deleteTarget.id,
+      ]);
+      toast.success("Source deleted", {
+        description: `${deleteTarget.title} was removed from the library.`,
+      });
+      setDeleteTarget(null);
+      setPreview((p) => (p?.id === deleteTarget.id ? null : p));
+      await refresh();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Delete failed";
+      setError(message);
+      toast.error("Delete failed", { description: message });
+    } finally {
+      setDeleting(false);
+    }
+  }, [deleteTarget, selectedCompany, refresh]);
 
   return (
     <StudioShell crumbs={[{ label: "Knowledge" }, { label: "Sources" }]}>
-      <div className="flex-1 p-4 sm:p-6 space-y-5 max-w-4xl w-full mx-auto">
-        <div className="flex items-center gap-2.5">
-          <div className="flex items-center justify-center size-9 rounded-xl border border-sidebar-border bg-sidebar-accent shrink-0">
-            <Database className="size-4 text-muted-foreground" />
-          </div>
+      <div className="min-w-0">
+        {/* PageHeader */}
+        <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-base font-bold tracking-tight">Sources</h1>
-            <p className="text-xs text-muted-foreground">
-              {selectedCompany
-                ? `Everything ${selectedCompany.name} knows — crawled pages plus your uploads.`
-                : "Pick a company to inspect its knowledge sources."}
+            <h1 className="text-[30px] leading-9 tracking-tight font-semibold">
+              Sources
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1 max-w-[65ch]">
+              Everything the selected assistant knows. Crawled pages plus
+              your uploads.
             </p>
           </div>
+          {selectedCompany && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="rounded-full font-normal">
+                <span
+                  className={`mr-1.5 size-1.5 rounded-full ${
+                    snapshotReady ? "bg-emerald-500" : "bg-amber-500"
+                  }`}
+                />
+                {snapshotReady ? "All OK" : "Indexing"}
+              </Badge>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push("/knowledge/ingest")}
+              >
+                Ingest more
+              </Button>
+            </div>
+          )}
         </div>
 
         {!selectedCompany ? (
-          <div className="flex flex-col items-center gap-3 py-16 text-center">
-            <Buildings className="size-8 text-zinc-400" />
-            <p className="text-sm text-zinc-500">No company selected yet.</p>
-            <button
-              type="button"
-              onClick={() => router.push("/knowledge/ingest")}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-zinc-100 hover:bg-white dark:bg-zinc-100 dark:hover:bg-white text-zinc-950 text-sm font-medium transition-colors"
-            >
-              Index a company <ArrowRight className="size-4" />
-            </button>
-          </div>
+          <Empty className="mt-6">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Buildings aria-hidden="true" />
+              </EmptyMedia>
+              <EmptyTitle>No company selected</EmptyTitle>
+              <EmptyDescription>
+                Pick a company to inspect its knowledge sources.
+              </EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
+              <Button onClick={() => router.push("/knowledge/ingest")}>
+                Index a company
+                <ArrowRight className="size-4" data-icon="inline-end" />
+              </Button>
+            </EmptyContent>
+          </Empty>
         ) : (
-          <>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-              {[
-                { label: "Version", value: maxMinor > 0 ? `v${majorVersion}.${maxMinor}` : `v${majorVersion}` },
-                { label: "Documents", value: String(docs.length) },
-                { label: "Uploads", value: String(uploaded.length) },
-                { label: "Chunks", value: String(detail?.chunkCount ?? summary?.chunkCount ?? 0) },
-                { label: "Facts", value: String(detail?.factCount ?? summary?.factCount ?? 0) },
-              ].map((stat) => (
-                <div
-                  key={stat.label}
-                  className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/40"
-                >
-                  <p className="text-lg font-bold font-mono text-zinc-900 dark:text-zinc-100">{stat.value}</p>
-                  <p className="text-[11px] font-mono uppercase tracking-wider text-zinc-500">{stat.label}</p>
+          <div className="mt-6 min-w-0 space-y-4">
+            {/* Snapshot strip */}
+            <p className="text-[13px] text-muted-foreground">
+              Snapshot v{majorVersion}
+              {maxMinor > 0 ? `.${maxMinor}` : ""} ·{" "}
+              {snapshotReady ? "ready" : "indexing"} · {docs.length}{" "}
+              documents
+            </p>
+
+            {/* Quota strip */}
+            <Card>
+              <CardContent className="pt-5">
+                <div className="grid grid-cols-2 gap-y-4 md:grid-cols-4 md:divide-x md:divide-border">
+                  <div className="min-w-0 pr-4">
+                    <p className="text-[13px] text-muted-foreground">
+                      Documents
+                    </p>
+                    <p className="mt-1 font-sans text-xl font-semibold tabular-nums tracking-tight">
+                      {docs.length.toLocaleString()}{" "}
+                      <span className="text-sm font-normal text-muted-foreground">
+                        / {uploadedCount} uploads
+                      </span>
+                    </p>
+                  </div>
+                  <div className="min-w-0 pr-4 md:px-5">
+                    <p className="text-[13px] text-muted-foreground">Chunks</p>
+                    <p className="mt-1 font-sans text-xl font-semibold tabular-nums tracking-tight">
+                      {chunkCount.toLocaleString()}{" "}
+                      <span className="text-sm font-normal text-muted-foreground">
+                        /{" "}
+                        {docs.length > 0
+                          ? Math.round(chunkCount / docs.length)
+                          : 0}{" "}
+                        per doc
+                      </span>
+                    </p>
+                  </div>
+                  <div className="min-w-0 pr-4 md:px-5">
+                    <p className="text-[13px] text-muted-foreground">Facts</p>
+                    <p className="mt-1 font-sans text-xl font-semibold tabular-nums tracking-tight">
+                      {factCount.toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="min-w-0 md:pl-5">
+                    <p className="text-[13px] text-muted-foreground">Version</p>
+                    <p className="mt-1 font-sans text-xl font-semibold tabular-nums tracking-tight">
+                      v{majorVersion}
+                      {maxMinor > 0 ? `.${maxMinor}` : ""}
+                    </p>
+                  </div>
                 </div>
-              ))}
-            </div>
+              </CardContent>
+            </Card>
 
             {error && (
-              <div className="flex items-start gap-2 p-3 rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/30 text-xs text-red-700 dark:text-red-300">
-                <XCircle className="size-4 shrink-0 mt-0.5" />
-                <span>{error}</span>
+              <div
+                role="alert"
+                className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-[13px]"
+              >
+                <p className="font-medium">Could not load sources</p>
+                <p className="mt-1 text-muted-foreground">{error}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 h-7 text-xs"
+                  onClick={() => void refresh()}
+                >
+                  Retry
+                </Button>
               </div>
             )}
 
             {loading ? (
-              <div className="flex items-center gap-2 py-10 justify-center text-sm text-zinc-500">
-                <CircleNotch className="size-4 animate-spin" /> Loading sources…
-              </div>
+              <Card className="min-w-0">
+                <CardContent className="space-y-2 pt-5">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full rounded-lg" />
+                  ))}
+                </CardContent>
+              </Card>
             ) : (
               <>
-                <section className="space-y-2.5">
-                  <h2 className="text-xs font-mono uppercase tracking-wider text-zinc-500">
-                    Website · {crawled.length}
-                  </h2>
-                  {crawled.length === 0 ? (
-                    <p className="text-xs text-zinc-500 py-2">No crawled pages yet.</p>
-                  ) : (
-                    crawled.map(docRow)
-                  )}
-                </section>
+                {/* Ledger */}
+                <Card className="min-w-0">
+                  <CardHeader className="pb-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <CardTitle className="text-[15px] font-semibold">
+                        Library ({filteredDocs.length})
+                      </CardTitle>
+                      <div className="flex items-center gap-1.5">
+                        {(
+                          [
+                            { key: "all", label: "All" },
+                            { key: "crawl", label: "Pages" },
+                            { key: "file", label: "Files" },
+                          ] as const
+                        ).map((f) => (
+                          <Button
+                            key={f.key}
+                            type="button"
+                            variant={
+                              kindFilter === f.key ? "secondary" : "ghost"
+                            }
+                            size="sm"
+                            className="h-7 px-2.5 text-xs"
+                            onClick={() => setKindFilter(f.key)}
+                          >
+                            {f.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="relative mt-3">
+                      <MagnifyingGlass className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        type="search"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search titles and URLs"
+                        aria-label="Search sources"
+                        className="h-8 pl-8 text-[13px]"
+                      />
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    {filteredDocs.length === 0 ? (
+                      <Empty>
+                        <EmptyHeader>
+                          <EmptyTitle>
+                            {docs.length === 0
+                              ? "Library is empty"
+                              : "No matches"}
+                          </EmptyTitle>
+                          <EmptyDescription>
+                            {docs.length === 0
+                              ? "Ingest a site or upload files below to add the first source."
+                              : "No sources match this search. Clear it or switch the filter."}
+                          </EmptyDescription>
+                        </EmptyHeader>
+                        {docs.length > 0 && (
+                          <EmptyContent>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSearchQuery("");
+                                setKindFilter("all");
+                              }}
+                            >
+                              Clear search and filters
+                            </Button>
+                          </EmptyContent>
+                        )}
+                      </Empty>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="hover:bg-transparent">
+                            <TableHead className="h-8 min-w-[280px] text-xs">
+                              Source
+                            </TableHead>
+                            <TableHead className="h-8 w-[90px] text-xs">
+                              Type
+                            </TableHead>
+                            <TableHead className="h-8 w-[90px] text-xs">
+                              Version
+                            </TableHead>
+                            <TableHead className="h-8 w-[90px] text-right text-xs">
+                              Words
+                            </TableHead>
+                            <TableHead className="h-8 w-[88px] text-right text-xs">
+                              Actions
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {pagedDocs.map((doc) => {
+                            const Icon = kindIcon(
+                              doc.originName || doc.url,
+                              doc.sourceKind
+                            );
+                            const batch = doc.batchId
+                              ? batchById.get(doc.batchId)
+                              : undefined;
+                            return (
+                              <TableRow
+                                key={doc.id}
+                                className="group cursor-pointer"
+                                onClick={() => setPreview(doc)}
+                              >
+                                <TableCell className="max-w-0 py-2.5">
+                                  <span className="flex min-w-0 items-center gap-2.5">
+                                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                                      <Icon
+                                        className="size-3.5"
+                                        aria-hidden="true"
+                                      />
+                                    </span>
+                                    <span className="min-w-0">
+                                      <span
+                                        className="block truncate text-[13px] font-medium"
+                                        title={doc.title}
+                                      >
+                                        {doc.title}
+                                      </span>
+                                      <span
+                                        className="block truncate font-mono text-[11px] text-muted-foreground"
+                                        title={
+                                          doc.sourceKind === "crawl"
+                                            ? doc.url
+                                            : (doc.originName ?? doc.url)
+                                        }
+                                      >
+                                        {doc.sourceKind === "crawl"
+                                          ? doc.url
+                                          : (doc.originName ?? doc.url)}
+                                      </span>
+                                    </span>
+                                  </span>
+                                </TableCell>
+                                <TableCell className="py-2.5">
+                                  <Badge
+                                    variant="secondary"
+                                    className="rounded-full text-[11px] font-normal"
+                                  >
+                                    {kindLabel(doc)}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="py-2.5 font-mono text-xs text-muted-foreground">
+                                  {batch ? (
+                                    <span title={`Batch ${batch.id}`}>
+                                      v{majorVersion}.{batch.minor}
+                                    </span>
+                                  ) : (
+                                    <span aria-label="No version">–</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="py-2.5 text-right font-sans text-[13px] tabular-nums">
+                                  {doc.wordCount.toLocaleString()}
+                                </TableCell>
+                                <TableCell className="py-2.5 text-right">
+                                  <span className="inline-flex items-center opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="size-7 hover:text-destructive"
+                                      title="Delete"
+                                      aria-label={`Delete ${doc.title}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setDeleteTarget(doc);
+                                      }}
+                                    >
+                                      <Trash
+                                        className="size-3.5"
+                                        aria-hidden="true"
+                                      />
+                                    </Button>
+                                  </span>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    )}
+                    {filteredDocs.length > 0 && (
+                      <div className="flex flex-wrap items-center justify-between gap-3 pt-3">
+                        <p className="font-sans text-xs tabular-nums text-muted-foreground">
+                          Showing {rangeStart} to {rangeEnd} of{" "}
+                          {filteredDocs.length.toLocaleString()}
+                        </p>
+                        <div className="flex items-center gap-1">
+                          {[10, 25, 50, 100].map((n) => (
+                            <Button
+                              key={n}
+                              type="button"
+                              variant={pageSize === n ? "secondary" : "ghost"}
+                              size="sm"
+                              className="h-7 px-2 text-xs tabular-nums"
+                              onClick={() => setPageSize(n)}
+                            >
+                              {n}
+                            </Button>
+                          ))}
+                        </div>
+                        {totalPages > 1 && (
+                          <Pagination className="mx-0 w-auto">
+                            <PaginationContent>
+                              <PaginationItem>
+                                <PaginationPrevious
+                                  href="#"
+                                  aria-disabled={safePage === 1}
+                                  className={
+                                    safePage === 1
+                                      ? "pointer-events-none opacity-50"
+                                      : undefined
+                                  }
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    setPage((p) => Math.max(1, p - 1));
+                                  }}
+                                />
+                              </PaginationItem>
+                              {pageItems.map((item, i) => (
+                                <PaginationItem key={`${item}-${i}`}>
+                                  {item === "gap" ? (
+                                    <PaginationEllipsis />
+                                  ) : (
+                                    <PaginationLink
+                                      href="#"
+                                      isActive={item === safePage}
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        setPage(item);
+                                      }}
+                                    >
+                                      {item}
+                                    </PaginationLink>
+                                  )}
+                                </PaginationItem>
+                              ))}
+                              <PaginationItem>
+                                <PaginationNext
+                                  href="#"
+                                  aria-disabled={safePage === totalPages}
+                                  className={
+                                    safePage === totalPages
+                                      ? "pointer-events-none opacity-50"
+                                      : undefined
+                                  }
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    setPage((p) =>
+                                      Math.min(totalPages, p + 1)
+                                    );
+                                  }}
+                                />
+                              </PaginationItem>
+                            </PaginationContent>
+                          </Pagination>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
 
-                <section className="space-y-2.5">
-                  <h2 className="text-xs font-mono uppercase tracking-wider text-zinc-500">
-                    Uploads · {uploaded.length}
-                  </h2>
-                  {uploaded.length === 0 ? (
-                    <p className="text-xs text-zinc-500 py-2">
-                      Nothing uploaded yet — enrich below to add your first files.
-                    </p>
-                  ) : (
-                    uploaded.map(docRow)
-                  )}
-                </section>
-
+                {/* Batches, compact */}
                 {batches.length > 0 && (
-                  <section className="space-y-2.5">
-                    <h2 className="text-xs font-mono uppercase tracking-wider text-zinc-500">
-                      Batches · {batches.length}
-                    </h2>
-                    {batches.map((b) => (
-                      <div
-                        key={b.id}
-                        className="p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/60 space-y-1.5"
-                      >
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs font-mono font-medium text-zinc-800 dark:text-zinc-200">
+                  <Card className="min-w-0">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-[15px] font-semibold">
+                        Upload batches ({batches.length})
+                      </CardTitle>
+                      <CardDescription className="text-[13px]">
+                        Each confirmed upload lands as a minor version.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-1 pt-0">
+                      {batches.map((b) => (
+                        <div
+                          key={b.id}
+                          className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 text-[13px] hover:bg-muted/40"
+                        >
+                          <span className="font-mono text-xs">
                             v{majorVersion}.{b.minor}
                           </span>
-                          {statusPill(b.status)}
-                          <span className="text-[11px] font-mono text-zinc-500">
+                          <StatusBadge status={b.status} />
+                          <span className="font-sans tabular-nums text-muted-foreground">
                             {b.fileCount} files · {b.docs} docs
                             {b.failed > 0 && ` · ${b.failed} failed`}
                           </span>
+                          {b.summary?.added &&
+                            b.summary.added.length > 0 && (
+                              <span
+                                className="block w-full truncate font-mono text-[11px] text-muted-foreground"
+                                title={b.summary.added.join(", ")}
+                              >
+                                + {b.summary.added.join(", ")}
+                              </span>
+                            )}
+                          {b.status === "FAILED" && (
+                            <span className="text-xs text-destructive">
+                              {(b.errorSample as { message?: string } | null)
+                                ?.message || "Processing failed"}
+                            </span>
+                          )}
                         </div>
-                        {b.summary?.added && b.summary.added.length > 0 && (
-                          <p className="text-[11px] font-mono text-zinc-500 truncate">
-                            + {b.summary.added.join(", ")}
-                          </p>
-                        )}
-                        {b.status === "FAILED" && (
-                          <p className="text-xs text-red-500 dark:text-red-400">
-                            {(b.errorSample as { message?: string } | null)?.message || "Processing failed"}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </section>
+                      ))}
+                    </CardContent>
+                  </Card>
                 )}
 
                 <UploadPanel
@@ -354,43 +743,161 @@ export default function SourcesPage() {
                 />
               </>
             )}
-          </>
+          </div>
         )}
       </div>
 
-      {preview && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
-          onClick={() => setPreview(null)}
+      <Sheet
+        open={preview !== null}
+        onOpenChange={(open) => {
+          if (!open) setPreview(null);
+        }}
+      >
+        <SheetContent
+          className="flex w-full flex-col sm:max-w-[480px]"
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            document.getElementById("source-preview-title")?.focus();
+          }}
         >
-          <div
-            className="w-full max-w-lg rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-5 space-y-3"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
-                  {preview.title}
-                </h3>
-                <p className="text-[11px] font-mono text-zinc-500 mt-0.5">
-                  {kindLabel(preview)} · {preview.wordCount} words ·{" "}
-                  {preview.sourceKind === "crawl" ? preview.url : preview.originName}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPreview(null)}
-                className="p-1.5 rounded text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 shrink-0"
+          <SheetHeader>
+            <div className="flex items-center gap-2">
+              {preview && (
+                <Badge
+                  variant="secondary"
+                  className="shrink-0 rounded-full text-[11px] font-normal"
+                >
+                  {kindLabel(preview)}
+                </Badge>
+              )}
+              <SheetTitle
+                id="source-preview-title"
+                tabIndex={-1}
+                className="min-w-0 flex-1 truncate text-left outline-none"
               >
-                <X className="size-4" />
-              </button>
+                {preview?.title}
+              </SheetTitle>
             </div>
-            <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap max-h-80 overflow-y-auto">
-              {preview.preview}
-            </p>
-          </div>
-        </div>
-      )}
+            {preview && (
+              <SheetDescription className="break-all text-left font-mono text-[11px]">
+                {preview.sourceKind === "crawl"
+                  ? preview.url
+                  : (preview.originName ?? preview.url)}
+              </SheetDescription>
+            )}
+          </SheetHeader>
+          {preview && (
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-y py-3 text-[13px]">
+              <div className="min-w-0">
+                <dt className="text-xs text-muted-foreground">Category</dt>
+                <dd className="truncate font-medium capitalize">
+                  {preview.category || "general"}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-xs text-muted-foreground">Version</dt>
+                <dd className="font-mono text-xs">
+                  {preview.batchId && batchById.get(preview.batchId) ? (
+                    <span>
+                      v{majorVersion}.
+                      {batchById.get(preview.batchId)!.minor}
+                    </span>
+                  ) : (
+                    <span aria-label="No version">–</span>
+                  )}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-xs text-muted-foreground">Words</dt>
+                <dd className="font-sans tabular-nums">
+                  {preview.wordCount.toLocaleString()}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-xs text-muted-foreground">Characters</dt>
+                <dd className="font-sans tabular-nums">
+                  {preview.contentLength.toLocaleString()}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-xs text-muted-foreground">Added</dt>
+                <dd className="font-sans tabular-nums">
+                  {new Date(preview.createdAt).toLocaleDateString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-xs text-muted-foreground">Kind</dt>
+                <dd className="font-medium capitalize">
+                  {preview.sourceKind}
+                </dd>
+              </div>
+            </dl>
+          )}
+          <p className="min-h-0 flex-1 overflow-y-auto text-[13px] leading-relaxed whitespace-pre-wrap">
+            {preview?.preview}
+          </p>
+          <SheetFooter className="gap-2 sm:justify-end">
+            {preview?.sourceKind === "crawl" && (
+              <Button variant="outline" size="sm" asChild>
+                <a
+                  href={preview.url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open original
+                </a>
+              </Button>
+            )}
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                if (preview) setDeleteTarget(preview);
+              }}
+            >
+              Delete source
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {deleteTarget?.title}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              One document leaves the answers immediately. Restorable from
+              Snapshots with a rollback.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>
+              Keep it
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => {
+                e.preventDefault();
+                void handleDelete();
+              }}
+            >
+              {deleting ? "Deleting" : "Delete source"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </StudioShell>
   );
 }
