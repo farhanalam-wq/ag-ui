@@ -76,6 +76,12 @@ export function StudioShell({
       )}
 
       <SidebarInset className="min-w-0 flex-1 overflow-x-clip bg-background transition-colors duration-200">
+        <a
+          href="#studio-main"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground"
+        >
+          Skip to content
+        </a>
         <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur-md">
           <div className="flex min-w-0 items-center gap-2">
             <SidebarTrigger className="-ml-1" />
@@ -115,7 +121,11 @@ export function StudioShell({
         </header>
 
         <div className="flex min-w-0 flex-1 flex-col overflow-x-clip">
-          <div className="mx-auto w-full min-w-0 max-w-[1400px] px-4 py-6 md:px-6">
+          <div
+            id="studio-main"
+            tabIndex={-1}
+            className="mx-auto w-full min-w-0 max-w-[1400px] px-4 py-6 outline-none md:px-6"
+          >
             {children}
           </div>
         </div>

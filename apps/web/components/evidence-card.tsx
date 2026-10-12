@@ -51,7 +51,7 @@ export function EvidenceCard({ item, index, selected, onSelect }: EvidenceCardPr
     >
       <div className="mb-2 flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="flex size-5 shrink-0 items-center justify-center rounded bg-muted font-mono text-[10px] font-semibold tabular-nums text-muted-foreground">
+          <span className="flex size-5 shrink-0 items-center justify-center rounded bg-muted text-[10px] font-semibold tabular-nums text-muted-foreground">
             {index + 1}
           </span>
           {onSelect ? (
@@ -69,7 +69,7 @@ export function EvidenceCard({ item, index, selected, onSelect }: EvidenceCardPr
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
-          <Badge variant="secondary" className="gap-1 font-mono text-[10px] tabular-nums">
+          <Badge variant="secondary" className="gap-1 text-[10px] tabular-nums">
             <ShieldCheck className="size-3" />
             {matchPercent}% match
           </Badge>
@@ -80,6 +80,7 @@ export function EvidenceCard({ item, index, selected, onSelect }: EvidenceCardPr
             onClick={handleCopy}
             aria-label="Copy snippet"
             title="Copy snippet"
+            className="relative before:absolute before:-inset-2 before:content-['']"
           >
             {copied ? <Check className="text-emerald-500" /> : <Copy />}
           </Button>

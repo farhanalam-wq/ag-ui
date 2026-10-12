@@ -115,7 +115,7 @@ export function PromptInput({
       <form
         onSubmit={handleFormSubmit}
         className={cn(
-          "group relative flex w-full flex-col overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800/90 bg-white/95 dark:bg-zinc-950/90 p-3.5 text-zinc-900 dark:text-zinc-100 shadow-2xl backdrop-blur-xl transition-all duration-200 focus-within:border-zinc-400 dark:focus-within:border-zinc-600/90 focus-within:ring-2 focus-within:ring-zinc-300/60 dark:focus-within:ring-zinc-800/60",
+          "group relative flex w-full flex-col overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800/90 bg-white/95 dark:bg-zinc-950/90 p-3.5 text-zinc-900 dark:text-zinc-100 shadow-2xl backdrop-blur-xl transition-[border-color,box-shadow] duration-200 focus-within:border-zinc-400 dark:focus-within:border-zinc-600/90 focus-within:ring-2 focus-within:ring-zinc-300/60 dark:focus-within:ring-zinc-800/60",
           className
         )}
         {...props}
@@ -316,7 +316,7 @@ export function PromptInputSubmit({
       disabled={isDisabled}
       aria-label="Submit prompt"
       className={cn(
-        "inline-flex h-8 w-8 items-center justify-center rounded-xl bg-zinc-900 dark:bg-zinc-100 text-zinc-100 dark:text-zinc-950 transition-all hover:bg-zinc-800 dark:hover:bg-white active:scale-95 disabled:pointer-events-none disabled:opacity-30",
+        "inline-flex h-8 w-8 items-center justify-center rounded-xl bg-zinc-900 dark:bg-zinc-100 text-zinc-100 dark:text-zinc-950 transition-[background-color,transform] hover:bg-zinc-800 dark:hover:bg-white active:scale-95 disabled:pointer-events-none disabled:opacity-30 relative before:absolute before:-inset-2 before:content-['']",
         className
       )}
       {...props}

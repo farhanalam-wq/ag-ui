@@ -84,7 +84,10 @@ export const ConversationScrollButton = ({
   return (
     !isAtBottom && (
       <Button
-        className={cn("absolute bottom-4 left-[50%] translate-x-[-50%] rounded-full", className)}
+        className={cn(
+          "absolute bottom-4 left-[50%] translate-x-[-50%] rounded-full before:absolute before:-inset-1 before:content-['']",
+          className
+        )}
         onClick={handleScrollToBottom}
         size="icon"
         aria-label="Scroll to latest"

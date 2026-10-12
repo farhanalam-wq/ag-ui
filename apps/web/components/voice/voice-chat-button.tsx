@@ -33,10 +33,10 @@ export function VoiceChatButton({
       aria-label={active ? "End voice call" : "Start voice call"}
       title={title ?? (active ? "End voice call" : "Start voice call")}
       className={cn(
-        "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border transition-all active:scale-95 disabled:pointer-events-none disabled:opacity-30",
+        "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border transition-[background-color,border-color,color,transform] active:scale-95 disabled:pointer-events-none disabled:opacity-30 relative before:absolute before:-inset-2 before:content-['']",
         active
-          ? "border-red-500/50 bg-red-500/15 text-red-400 hover:bg-red-500/25"
-          : "border-zinc-200 dark:border-zinc-800/80 bg-zinc-100 dark:bg-zinc-900/60 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-700 hover:text-zinc-900 dark:hover:text-zinc-200",
+          ? "border-primary/50 bg-primary/10 text-primary hover:bg-primary/20"
+          : "border-border bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground",
         className
       )}
     >
@@ -89,8 +89,12 @@ export function VoiceAmplitudeBars({ className }: { className?: string }) {
       })}
       <style>{`
         .voice-bar-idle {
-          animation: voice-bar-pulse 1.1s ease-in-out infinite;
           opacity: 0.7;
+        }
+        @media (prefers-reduced-motion: no-preference) {
+          .voice-bar-idle {
+            animation: voice-bar-pulse 1.1s ease-in-out infinite;
+          }
         }
         @keyframes voice-bar-pulse {
           0%,
@@ -114,7 +118,7 @@ export function VoiceErrorChip({ className }: { className?: string }) {
     <span
       role="alert"
       className={cn(
-        "max-w-full truncate text-[11px] font-mono text-red-400",
+        "max-w-full truncate text-[11px] font-medium text-destructive",
         className
       )}
     >

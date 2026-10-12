@@ -141,7 +141,7 @@ export default function PlaygroundPage() {
                 onClick={() => openDrawerWithEvidence()}
               >
                 <SidebarIcon data-icon="inline-start" />
-                <span>Sources ({activeEvidence.length})</span>
+                <span className="tabular-nums">Sources ({activeEvidence.length})</span>
               </Button>
             )}
           </div>
