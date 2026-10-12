@@ -8,11 +8,17 @@ import {
   MessageActions,
   MessageAction,
 } from "@/components/ai-elements/message";
+import {
+  ChainOfThought,
+  ChainOfThoughtContent,
+  ChainOfThoughtHeader,
+  ChainOfThoughtStep,
+} from "@/components/ai-elements/chain-of-thought";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
-  CircleNotch,
   MagnifyingGlass,
+  Sparkle,
   Copy,
   Check,
   Stack,
@@ -150,21 +156,31 @@ export function ChatMessageItem({
 
         {/* Message Container */}
         <MessageContent className="min-w-0 flex-1">
-          {/* Status Stage Indicator Banner */}
+          {/* Reasoning stages (transient — unmounts when done) */}
           {(isRetrieving || (isSynthesizing && !message.content)) && (
-            <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
-              {isRetrieving ? (
-                <>
-                  <MagnifyingGlass className="size-3.5 animate-spin" />
-                  <span>{message.stageMessage || "Searching knowledge base…"}</span>
-                </>
-              ) : (
-                <>
-                  <CircleNotch className="size-3.5 animate-spin" />
-                  <span>{message.stageMessage || "Synthesizing answer…"}</span>
-                </>
-              )}
-            </div>
+            <ChainOfThought defaultOpen>
+              <ChainOfThoughtHeader>
+                {isRetrieving ? "Searching snapshot…" : "Composing answer…"}
+              </ChainOfThoughtHeader>
+              <ChainOfThoughtContent>
+                <ChainOfThoughtStep
+                  icon={MagnifyingGlass}
+                  label={
+                    isRetrieving
+                      ? message.stageMessage || "Searching snapshot…"
+                      : "Searched snapshot"
+                  }
+                  status={isRetrieving ? "active" : "complete"}
+                />
+                {!isRetrieving && (
+                  <ChainOfThoughtStep
+                    icon={Sparkle}
+                    label={message.stageMessage || "Composing grounded answer…"}
+                    status="active"
+                  />
+                )}
+              </ChainOfThoughtContent>
+            </ChainOfThought>
           )}
 
           {/* Error Banner */}
