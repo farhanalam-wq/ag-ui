@@ -240,7 +240,7 @@ export default function PlaygroundPage() {
 
           {/* When Active: message list (page scrolls) */}
           {isConversationActive && (
-            <div className="flex w-full flex-col gap-6 py-2">
+            <div className="flex w-full flex-col gap-6 pb-44 pt-2">
               {messages.map((msg) => (
                 <ChatMessageItem
                   key={msg.id}
