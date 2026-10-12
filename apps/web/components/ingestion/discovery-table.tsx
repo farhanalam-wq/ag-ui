@@ -27,6 +27,23 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface DiscoveryTableProps {
   discovery: DiscoveryResponse;
@@ -38,6 +55,25 @@ interface DiscoveryTableProps {
   onApplyRange: (rangeStr: string) => void;
   onStartIngest: () => void;
   isStarting?: boolean;
+}
+
+/** Compact 1-based window: 1 … c-1 c c+1 … T (all pages when ≤7). */
+function pageWindow(current: number, total: number): (number | "…")[] {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  const keep = new Set(
+    [1, 2, current - 1, current, current + 1, total - 1, total].filter(
+      (n) => n >= 1 && n <= total
+    )
+  );
+  const sorted = [...keep].sort((a, b) => a - b);
+  const out: (number | "…")[] = [];
+  sorted.forEach((n, i) => {
+    out.push(n);
+    if (i < sorted.length - 1 && sorted[i + 1] - sorted[i] > 1) out.push("…");
+  });
+  return out;
 }
 
 export function DiscoveryTable({
@@ -54,6 +90,8 @@ export function DiscoveryTable({
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [rangeInput, setRangeInput] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   const { pages, info } = discovery;
 
@@ -81,6 +119,29 @@ export function DiscoveryTable({
       return matchCat && matchSearch;
     });
   }, [pages, activeCategory, searchQuery]);
+
+  // Rank lookup in O(1): original position survives filtering and paging.
+  const rankByUrl = useMemo(() => {
+    const map = new Map<string, number>();
+    pages.forEach((p, i) => {
+      if (!map.has(p.url)) map.set(p.url, i + 1);
+    });
+    return map;
+  }, [pages]);
+
+  // Page resets whenever the result set changes shape.
+  React.useEffect(() => {
+    setPage(1);
+  }, [activeCategory, searchQuery, pages, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredPages.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const paginated = filteredPages.slice(
+    (safePage - 1) * pageSize,
+    safePage * pageSize
+  );
+  const rangeStart = filteredPages.length === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const rangeEnd = Math.min(safePage * pageSize, filteredPages.length);
 
   const handleRangeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -279,10 +340,11 @@ export function DiscoveryTable({
           </CardDescription>
         </CardHeader>
         <CardContent className="pt-0">
+          <div className="max-h-[60vh] overflow-auto rounded-md border border-border">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="h-8 w-10 text-center">
+                <TableHead className="sticky top-0 z-10 h-8 w-10 bg-card text-center shadow-[0_1px_0_var(--border)]">
                   <button
                     type="button"
                     onClick={() => {
@@ -299,25 +361,41 @@ export function DiscoveryTable({
                     )}
                   </button>
                 </TableHead>
-                <TableHead className="h-8 w-12 text-center text-xs">
+                <TableHead className="sticky top-0 z-10 h-8 w-12 bg-card text-center text-xs shadow-[0_1px_0_var(--border)]">
                   Rank
                 </TableHead>
-                <TableHead className="h-8 w-20 text-xs">Priority</TableHead>
-                <TableHead className="h-8 w-28 text-xs">Category</TableHead>
-                <TableHead className="h-8 text-xs">Target URL</TableHead>
+                <TableHead className="sticky top-0 z-10 h-8 w-20 bg-card text-xs shadow-[0_1px_0_var(--border)]">Priority</TableHead>
+                <TableHead className="sticky top-0 z-10 h-8 w-28 bg-card text-xs shadow-[0_1px_0_var(--border)]">Category</TableHead>
+                <TableHead className="sticky top-0 z-10 h-8 bg-card text-xs shadow-[0_1px_0_var(--border)]">Target URL</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredPages.map((p) => {
-                const isSelected = selectedUrls.has(p.url);
-                const originalIndex =
-                  pages.findIndex((orig) => orig.url === p.url) + 1;
-                return (
-                  <TableRow
-                    key={p.url}
-                    className="cursor-pointer"
-                    onClick={() => onToggleUrl(p.url)}
-                  >
+              {paginated.length === 0 ? (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={5} className="py-10 text-center">
+                    <p className="text-sm font-medium">No pages match</p>
+                    <p className="mt-1 text-[13px] text-muted-foreground">
+                      Clear the search or pick another category.
+                    </p>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginated.map((p) => {
+                  const isSelected = selectedUrls.has(p.url);
+                  const originalIndex = rankByUrl.get(p.url) ?? 0;
+                  return (
+                    <TableRow
+                      key={p.url}
+                      tabIndex={0}
+                      className="cursor-pointer focus-visible:bg-accent focus-visible:outline-none"
+                      onClick={() => onToggleUrl(p.url)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onToggleUrl(p.url);
+                        }
+                      }}
+                    >
                     <TableCell
                       className="py-2 text-center"
                       onClick={(e) => e.stopPropagation()}
@@ -372,10 +450,98 @@ export function DiscoveryTable({
                       </span>
                     </TableCell>
                   </TableRow>
-                );
-              })}
+                  );
+                })
+              )}
             </TableBody>
           </Table>
+          </div>
+
+          {/* Pagination bar */}
+          {filteredPages.length > 0 && (
+            <div className="flex flex-col gap-3 border-t border-border pt-4 lg:flex-row lg:items-center lg:justify-between">
+              <p className="text-xs tabular-nums text-muted-foreground">
+                Showing {rangeStart}–{rangeEnd} of {filteredPages.length}
+              </p>
+              <Pagination className="mx-0 w-auto">
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setPage((v) => Math.max(1, v - 1));
+                      }}
+                      aria-disabled={safePage === 1}
+                      className={
+                        safePage === 1
+                          ? "pointer-events-none opacity-50"
+                          : undefined
+                      }
+                    />
+                  </PaginationItem>
+                  {pageWindow(safePage, totalPages).map((n, i) =>
+                    n === "…" ? (
+                      <PaginationItem key={`gap-${i}`}>
+                        <PaginationEllipsis />
+                      </PaginationItem>
+                    ) : (
+                      <PaginationItem key={n}>
+                        <PaginationLink
+                          isActive={n === safePage}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setPage(n);
+                          }}
+                        >
+                          {n}
+                        </PaginationLink>
+                      </PaginationItem>
+                    )
+                  )}
+                  <PaginationItem>
+                    <PaginationNext
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setPage((v) => Math.min(totalPages, v + 1));
+                      }}
+                      aria-disabled={safePage === totalPages}
+                      className={
+                        safePage === totalPages
+                          ? "pointer-events-none opacity-50"
+                          : undefined
+                      }
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+              <div className="flex items-center gap-2">
+                <label
+                  htmlFor="discovery-page-size"
+                  className="text-xs text-muted-foreground"
+                >
+                  Rows
+                </label>
+                <Select
+                  value={String(pageSize)}
+                  onValueChange={(v) => setPageSize(Number(v))}
+                >
+                  <SelectTrigger
+                    id="discovery-page-size"
+                    className="h-8 w-20 text-xs"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="25">25</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
