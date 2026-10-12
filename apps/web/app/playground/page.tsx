@@ -24,6 +24,11 @@ import {
   ArrowCounterClockwise,
   Sidebar as SidebarIcon,
 } from "@phosphor-icons/react";
+import {
+  Conversation,
+  ConversationContent,
+  ConversationScrollButton,
+} from "@/components/ai-elements/conversation";
 import { useCompanyChat } from "@/hooks/use-company-chat";
 import { ChatMessageItem } from "@/components/chat-message";
 // Evidence drawer only renders when opened: load on demand. Same props once loaded.
@@ -100,6 +105,8 @@ export default function PlaygroundPage() {
       crumbs={[{ label: "Playground" }]}
       onSelectCompany={handleSelectCompany}
     >
+      {/* Fixed-height Lab column: header + scroll region + dock (no page scroll) */}
+      <div className="flex h-[calc(100dvh-6.5rem)] min-h-[480px] flex-col gap-4">
       {/* PageHeader: title + sub left, controls right */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
@@ -168,10 +175,10 @@ export default function PlaygroundPage() {
           </div>
         </div>
       ) : (
-        <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-between gap-0 p-4 sm:p-6">
+        <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col gap-4">
           {/* When Empty: Hero & Suggested Inquiries */}
           {!isConversationActive && (
-            <div className="my-8 flex w-full flex-1 flex-col items-center justify-center gap-6">
+            <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-6 overflow-y-auto py-4">
               <div className="mx-auto flex max-w-2xl flex-col items-center gap-3 text-center">
                 <Badge variant="outline" className="gap-2 font-medium text-muted-foreground">
                   <Stack className="size-3.5" />
@@ -251,19 +258,22 @@ export default function PlaygroundPage() {
             </div>
           )}
 
-          {/* When Active: Conversation Messages Stream */}
+          {/* When Active: Conversation Messages Stream (scroll owned by Conversation) */}
           {isConversationActive && (
-            <div className="my-4 flex w-full flex-1 flex-col gap-6 pb-8">
-              {messages.map((msg) => (
-                <ChatMessageItem
-                  key={msg.id}
-                  message={msg}
-                  companyName={selectedCompany.name}
-                  brandColor={selectedCompany.brandColor}
-                  onOpenEvidence={openDrawerWithEvidence}
-                />
-              ))}
-            </div>
+            <Conversation className="min-h-0 w-full flex-1">
+              <ConversationContent className="gap-6 p-0">
+                {messages.map((msg) => (
+                  <ChatMessageItem
+                    key={msg.id}
+                    message={msg}
+                    companyName={selectedCompany.name}
+                    brandColor={selectedCompany.brandColor}
+                    onOpenEvidence={openDrawerWithEvidence}
+                  />
+                ))}
+              </ConversationContent>
+              <ConversationScrollButton />
+            </Conversation>
           )}
 
           {/* Bottom Docked PromptInput + Voice Call */}
@@ -279,7 +289,7 @@ export default function PlaygroundPage() {
             }}
           >
             {() => (
-            <div className="sticky bottom-4 z-20 w-full pt-2">
+            <div className="w-full">
             <PromptInput
               value={query}
               onValueChange={setQuery}
@@ -314,6 +324,7 @@ export default function PlaygroundPage() {
                     Return to send
                   </span>
                   <PromptInputSubmit
+                    className="bg-primary text-primary-foreground hover:bg-primary/90"
                     aria-label="Submit prompt"
                   />
                 </div>
@@ -324,6 +335,7 @@ export default function PlaygroundPage() {
           </VoiceSession>
         </div>
       )}
+      </div>
 
       {/* Collapsible Evidence Drawer */}
       <EvidenceDrawer
