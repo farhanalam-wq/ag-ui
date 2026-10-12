@@ -232,6 +232,14 @@ export function useCompanyChat() {
   }, []);
 
   /**
+   * Select without opening: drives the inline inspector (desktop).
+   * The drawer/sheet is opened separately via openDrawerWithEvidence.
+   */
+  const selectEvidence = useCallback((evidenceItem?: EvidenceItem | null) => {
+    setSelectedEvidence(evidenceItem ?? null);
+  }, []);
+
+  /**
    * Append finalized voice-call utterances as plain text messages (v1).
    * Local-only: no network, no SSE, no evidence, no persistence —
    * voice answers never carry citations they were not grounded with.
@@ -271,6 +279,7 @@ export function useCompanyChat() {
     isDrawerOpen,
     selectedEvidence,
     openDrawerWithEvidence,
+    selectEvidence,
     closeDrawer,
   };
 }

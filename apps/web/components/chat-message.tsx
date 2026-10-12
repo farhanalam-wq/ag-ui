@@ -34,7 +34,10 @@ interface ChatMessageProps {
   companyName: string;
   brandColor?: string;
   compact?: boolean;
-  onOpenEvidence: (item?: EvidenceItem) => void;
+  /** Select a citation inline (drives the inspector). Never opens the drawer. */
+  onSelectEvidence: (item?: EvidenceItem) => void;
+  /** Open the evidence drawer/sheet (mobile reading surface). */
+  onInspectEvidence: () => void;
 }
 
 function extractTextWithoutOpenUI(content: string): string {
@@ -105,7 +108,8 @@ export function ChatMessageItem({
   companyName,
   brandColor = "#3b82f6",
   compact = false,
-  onOpenEvidence,
+  onSelectEvidence,
+  onInspectEvidence,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
@@ -223,18 +227,18 @@ export function ChatMessageItem({
                   <button
                     key={ev.id || idx}
                     type="button"
-                    onClick={() => onOpenEvidence(ev)}
-                    className="inline-flex items-center gap-1 rounded border border-border bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                    onClick={() => onSelectEvidence(ev)}
+                    className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                   >
-                    <span>[{idx + 1}]</span>
+                    <span className="tabular-nums">[{idx + 1}]</span>
                     <span className="max-w-[120px] truncate">{ev.title || "Doc"}</span>
                   </button>
                 ))}
                 {message.evidence.length > 4 && (
                   <button
                     type="button"
-                    onClick={() => onOpenEvidence()}
-                    className="ml-1 font-mono text-[11px] text-muted-foreground underline hover:text-foreground"
+                    onClick={onInspectEvidence}
+                    className="ml-1 text-[11px] text-muted-foreground underline hover:text-foreground"
                   >
                     +{message.evidence.length - 4} more
                   </button>
@@ -246,7 +250,7 @@ export function ChatMessageItem({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={() => onOpenEvidence()}
+                  onClick={onInspectEvidence}
                   className="gap-1 text-xs text-muted-foreground"
                 >
                   <Eye data-icon="inline-start" />

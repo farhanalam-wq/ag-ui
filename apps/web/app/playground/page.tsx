@@ -31,6 +31,7 @@ import {
 } from "@/components/ai-elements/conversation";
 import { useCompanyChat } from "@/hooks/use-company-chat";
 import { ChatMessageItem } from "@/components/chat-message";
+import { EvidenceInspector } from "@/components/evidence-inspector";
 // Evidence drawer only renders when opened: load on demand. Same props once loaded.
 const EvidenceDrawer = dynamic(
   () =>
@@ -73,6 +74,7 @@ export default function PlaygroundPage() {
     isDrawerOpen,
     selectedEvidence,
     openDrawerWithEvidence,
+    selectEvidence,
     closeDrawer,
   } = useCompanyChat();
 
@@ -175,7 +177,8 @@ export default function PlaygroundPage() {
           </div>
         </div>
       ) : (
-        <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col gap-4">
+        <div className="flex min-h-0 w-full flex-1 gap-4">
+        <div className="mx-auto flex min-h-0 w-full max-w-4xl min-w-0 flex-1 flex-col gap-4">
           {/* When Empty: Hero & Suggested Inquiries */}
           {!isConversationActive && (
             <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-6 overflow-y-auto py-4">
@@ -268,7 +271,8 @@ export default function PlaygroundPage() {
                     message={msg}
                     companyName={selectedCompany.name}
                     brandColor={selectedCompany.brandColor}
-                    onOpenEvidence={openDrawerWithEvidence}
+                    onSelectEvidence={selectEvidence}
+                    onInspectEvidence={() => openDrawerWithEvidence()}
                   />
                 ))}
               </ConversationContent>
@@ -334,6 +338,17 @@ export default function PlaygroundPage() {
             )}
           </VoiceSession>
         </div>
+
+        {/* Desktop inspector (mobile uses the Sheet) */}
+        <aside className="hidden min-h-0 w-[380px] shrink-0 flex-col lg:flex" aria-label="Citation inspector">
+          <EvidenceInspector
+            evidence={activeEvidence}
+            selectedEvidence={selectedEvidence}
+            onSelect={selectEvidence}
+            isStreaming={isStreaming}
+          />
+        </aside>
+        </div>
       )}
       </div>
 
@@ -343,6 +358,7 @@ export default function PlaygroundPage() {
         onClose={closeDrawer}
         evidence={activeEvidence}
         selectedEvidence={selectedEvidence}
+        onSelect={selectEvidence}
       />
     </StudioShell>
   );
