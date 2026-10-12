@@ -19,7 +19,6 @@ import {
 import { AppSidebar } from "@/components/sidebar/app-sidebar";
 import type { CompanyItem } from "@/components/sidebar/company-switcher";
 import { ModeToggle } from "@/components/mode-toggle";
-import { apiClient } from "@/lib/api-client";
 import { useCompanyStore, useSelectedCompany } from "@/stores/use-company-store";
 
 export interface Crumb {
@@ -31,51 +30,29 @@ interface StudioShellProps {
   /** Breadcrumb trail rendered after the trigger, e.g. Knowledge / Sources. */
   crumbs: Crumb[];
   children: React.ReactNode;
+  /**
+   * Optional company-switch handler (e.g. Playground clears its chat thread
+   * on switch). Defaults to store `select()` only.
+   */
+  onSelectCompany?: (company: CompanyItem) => void;
 }
 
 /**
  * Shared shell for studio routes: company list from the shared Zustand store
  * and switcher-driven company switching. Keeps the stub pages ~10 lines each.
  */
-export function StudioShell({ crumbs, children }: StudioShellProps) {
+export function StudioShell({
+  crumbs,
+  children,
+  onSelectCompany,
+}: StudioShellProps) {
   const router = useRouter();
   const companies = useCompanyStore((s) => s.companies);
   const selectedCompany = useSelectedCompany();
 
   useEffect(() => {
-    if (useCompanyStore.getState().companies.length > 0) return;
-    async function loadCompanies() {
-      try {
-        const list = await apiClient.companies.list();
-        if (list.length > 0) {
-          const dynamicList: CompanyItem[] = list.map((c) => {
-            const brandColor = c.brand?.tokens?.colors?.primary || "#3b82f6";
-            const docCount = c.docCount ?? c.latestSnapshot?.pageCount ?? 0;
-            return {
-              id: c.id,
-              name: c.name,
-              domain: c.domain,
-              description: `Indexed knowledge base for ${c.name} (${c.domain}).`,
-              brandColor,
-              badge: `${docCount} Docs • Indexed`,
-              docCount,
-              chunkCount: c.chunkCount ?? 0,
-              factCount: c.factCount ?? 0,
-              status: c.status || c.latestSnapshot?.status || "READY",
-              suggestedQueries: [
-                `What are the core products and APIs provided by ${c.name}?`,
-                `What are the pricing tiers, limits, and plan options?`,
-                `Where are ${c.name} headquarters and contact options?`,
-              ],
-            };
-          });
-          useCompanyStore.getState().setCompanies(dynamicList);
-        }
-      } catch {
-        // Non-blocking: shell renders without a sidebar when list fails.
-      }
-    }
-    loadCompanies();
+    // Single shared loader (store dedupes concurrent callers).
+    useCompanyStore.getState().ensureCompanies();
   }, []);
 
   return (
@@ -88,13 +65,23 @@ export function StudioShell({ crumbs, children }: StudioShellProps) {
           companies={companies}
           selectedCompany={selectedCompany}
           onSelectCompany={(comp) => {
-            useCompanyStore.getState().select(comp.id);
+            if (onSelectCompany) {
+              onSelectCompany(comp);
+            } else {
+              useCompanyStore.getState().select(comp.id);
+            }
           }}
           onOpenAddCompany={() => router.push("/knowledge/ingest")}
         />
       )}
 
       <SidebarInset className="min-w-0 flex-1 overflow-x-clip bg-background transition-colors duration-200">
+        <a
+          href="#studio-main"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground"
+        >
+          Skip to content
+        </a>
         <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur-md">
           <div className="flex min-w-0 items-center gap-2">
             <SidebarTrigger className="-ml-1" />
@@ -134,7 +121,11 @@ export function StudioShell({ crumbs, children }: StudioShellProps) {
         </header>
 
         <div className="flex min-w-0 flex-1 flex-col overflow-x-clip">
-          <div className="mx-auto w-full min-w-0 max-w-[1400px] px-4 py-6 md:px-6">
+          <div
+            id="studio-main"
+            tabIndex={-1}
+            className="mx-auto w-full min-w-0 max-w-[1400px] px-4 py-6 outline-none md:px-6"
+          >
             {children}
           </div>
         </div>

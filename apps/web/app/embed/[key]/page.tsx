@@ -376,7 +376,7 @@ export default function EmbedChatPage() {
                 companyName={config?.name || displayName}
                 brandColor={brandColor}
                 compact
-                onOpenEvidence={handleOpenEvidence}
+                onInspectEvidence={handleOpenEvidence}
               />
             ))}
             <div ref={messagesEndRef} />

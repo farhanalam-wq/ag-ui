@@ -1,17 +1,29 @@
 "use client";
 
 import React, { useState } from "react";
-import ReactMarkdown from "react-markdown";
 import {
-  User,
-  CircleNotch,
+  Message,
+  MessageContent,
+  MessageResponse,
+  MessageAction,
+} from "@/components/ai-elements/message";
+import {
+  ChainOfThought,
+  ChainOfThoughtContent,
+  ChainOfThoughtHeader,
+  ChainOfThoughtStep,
+} from "@/components/ai-elements/chain-of-thought";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
   MagnifyingGlass,
+  Sparkle,
   Copy,
   Check,
   Stack,
   WarningCircle,
-  Eye,
 } from "@phosphor-icons/react";
+import { toast } from "sonner";
 import type { ChatMessage as ChatMessageType, EvidenceItem } from "@/hooks/use-company-chat";
 import { repairListBreaks } from "@/lib/markdown-format";
 
@@ -20,41 +32,101 @@ interface ChatMessageProps {
   companyName: string;
   brandColor?: string;
   compact?: boolean;
-  onOpenEvidence: (item?: EvidenceItem) => void;
+  /** Open the evidence sheet, preselecting the given citation. */
+  onInspectEvidence: (item?: EvidenceItem) => void;
 }
 
 function extractTextWithoutOpenUI(content: string): string {
   return content.replace(/```openui[\s\S]*?(?:```|$)/g, "").trim();
 }
 
+// Markdown element styling on semantic tokens (mono confined to code roles).
+const markdownComponents = {
+  h1: ({ children }: { children?: React.ReactNode }) => (
+    <h1 className="mt-4 mb-2 text-lg font-bold text-foreground">{children}</h1>
+  ),
+  h2: ({ children }: { children?: React.ReactNode }) => (
+    <h2 className="mt-3 mb-1.5 text-base font-semibold text-foreground">
+      {children}
+    </h2>
+  ),
+  h3: ({ children }: { children?: React.ReactNode }) => (
+    <h3 className="mt-2 mb-1 text-sm font-semibold text-foreground">{children}</h3>
+  ),
+  p: ({ children }: { children?: React.ReactNode }) => (
+    <p className="my-1.5 text-sm leading-relaxed text-muted-foreground">{children}</p>
+  ),
+  ul: ({ children }: { children?: React.ReactNode }) => (
+    <ul className="my-2 list-inside list-disc text-sm text-muted-foreground">
+      {children}
+    </ul>
+  ),
+  ol: ({ children }: { children?: React.ReactNode }) => (
+    <ol className="my-2 list-inside list-decimal text-sm text-muted-foreground">
+      {children}
+    </ol>
+  ),
+  li: ({ children }: { children?: React.ReactNode }) => (
+    <li className="text-muted-foreground [&>p]:m-0 [&>p]:inline">{children}</li>
+  ),
+  strong: ({ children }: { children?: React.ReactNode }) => (
+    <strong className="font-semibold text-foreground">{children}</strong>
+  ),
+  code: ({
+    children,
+    className,
+  }: {
+    children?: React.ReactNode;
+    className?: string;
+  }) => {
+    const match = /language-(\w+)/.exec(className || "");
+    const language = match ? match[1] : "";
+    // Suppress any legacy OpenUI code blocks (text-only mode)
+    if (language === "openui" || className === "openui") {
+      return null;
+    }
+
+    const isBlock = Boolean(className);
+    return isBlock ? (
+      <pre className="my-2 overflow-x-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs text-foreground">
+        <code>{children}</code>
+      </pre>
+    ) : (
+      <code className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
+        {children}
+      </code>
+    );
+  },
+};
+
 export function ChatMessageItem({
   message,
   companyName,
   brandColor = "#3b82f6",
   compact = false,
-  onOpenEvidence,
+  onInspectEvidence,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(message.content);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+    } catch {
+      // Clipboard unavailable — still confirm the intent.
+    }
     setCopied(true);
+    toast.success("Copied to clipboard");
     setTimeout(() => setCopied(false), 2000);
   };
 
   if (isUser) {
     return (
-      <div className="flex justify-end w-full">
-        <div className={`flex items-start gap-3 ${compact ? "max-w-full" : "max-w-2xl"}`}>
-          <div className="rounded-2xl rounded-tr-sm bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100 shadow-sm">
-            <p className="leading-relaxed whitespace-pre-wrap">{message.content}</p>
-          </div>
-          <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 shrink-0 mt-0.5">
-            <User className="w-4 h-4" />
-          </div>
-        </div>
-      </div>
+      <Message from="user" className={compact ? "max-w-full" : undefined}>
+        <MessageContent>
+          <p className="whitespace-pre-wrap">{message.content}</p>
+        </MessageContent>
+      </Message>
     );
   }
 
@@ -64,180 +136,106 @@ export function ChatMessageItem({
 
   const textContentWithoutOpenUI = repairListBreaks(extractTextWithoutOpenUI(message.content));
 
-  // Text-only mode
   return (
-    <div className="flex justify-start w-full">
-      <div className={`flex items-start gap-2.5 w-full ${compact ? "max-w-none" : "max-w-3xl"}`}>
+    <Message from="assistant" className={compact ? "max-w-full" : undefined}>
+      <div className="flex items-start gap-2.5">
         {/* Company Avatar */}
         <div
-          className={`flex items-center justify-center rounded-xl font-bold text-xs shrink-0 mt-1 shadow-inner border border-zinc-300 dark:border-zinc-700/60 transition-colors ${
-            compact ? "w-6 h-6 text-[10px]" : "w-8 h-8"
+          className={`flex shrink-0 items-center justify-center rounded-lg border border-border text-xs font-bold ${
+            compact ? "size-6 text-[10px]" : "size-8"
           }`}
           style={{
             backgroundColor: `${brandColor}20`,
             color: brandColor,
           }}
+          aria-hidden="true"
         >
           {companyName.slice(0, 2).toUpperCase()}
         </div>
 
         {/* Message Container */}
-        <div className="flex-1 min-w-0 space-y-3">
-          {/* Status Stage Indicator Banner */}
+        <MessageContent className="min-w-0 flex-1">
+          {/* Reasoning stages (transient — unmounts when done) */}
           {(isRetrieving || (isSynthesizing && !message.content)) && (
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-100/90 dark:bg-zinc-900/80 text-xs text-zinc-700 dark:text-zinc-300 animate-pulse">
-              {isRetrieving ? (
-                <>
-                  <MagnifyingGlass className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400 animate-spin" />
-                  <span>{message.stageMessage || "Searching pgvector knowledge base..."}</span>
-                </>
-              ) : (
-                <>
-                  <CircleNotch className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400 animate-spin" />
-                  <span>{message.stageMessage || "Synthesizing answer..."}</span>
-                </>
-              )}
-            </div>
+            <ChainOfThought defaultOpen>
+              <ChainOfThoughtHeader>
+                {isRetrieving ? "Searching snapshot…" : "Composing answer…"}
+              </ChainOfThoughtHeader>
+              <ChainOfThoughtContent>
+                <ChainOfThoughtStep
+                  icon={MagnifyingGlass}
+                  label={
+                    isRetrieving
+                      ? message.stageMessage || "Searching snapshot…"
+                      : "Searched snapshot"
+                  }
+                  status={isRetrieving ? "active" : "complete"}
+                />
+                {!isRetrieving && (
+                  <ChainOfThoughtStep
+                    icon={Sparkle}
+                    label={message.stageMessage || "Composing grounded answer…"}
+                    status="active"
+                  />
+                )}
+              </ChainOfThoughtContent>
+            </ChainOfThought>
           )}
 
           {/* Error Banner */}
           {isError && (
-            <div className="flex items-center gap-2 p-3 rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/30 text-xs text-red-700 dark:text-red-300">
-              <WarningCircle className="w-4 h-4 text-red-500 dark:text-red-400 shrink-0" />
-              <span>{message.stageMessage || "Failed to generate response."}</span>
-            </div>
+            <Alert variant="destructive">
+              <WarningCircle className="size-4" />
+              <AlertTitle>Response failed</AlertTitle>
+              <AlertDescription>
+                {message.stageMessage || "Failed to generate response."}
+              </AlertDescription>
+            </Alert>
           )}
 
           {/* Assistant Answer Body */}
           {message.content && (
-            <div
-              className={`rounded-2xl rounded-tl-sm border border-zinc-200 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/40 text-zinc-900 dark:text-zinc-100 shadow-xl backdrop-blur-sm space-y-3 ${
-                compact ? "p-3 text-[13px]" : "p-5"
-              }`}
-            >
-              <div className="prose dark:prose-invert prose-zinc max-w-none text-sm leading-relaxed space-y-2">
-                <ReactMarkdown
-                  components={{
-                    h1: ({ children }) => (
-                      <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mt-4 mb-2">{children}</h1>
-                    ),
-                    h2: ({ children }) => (
-                      <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100 mt-3 mb-1.5">
-                        {children}
-                      </h2>
-                    ),
-                    h3: ({ children }) => (
-                      <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mt-2 mb-1">{children}</h3>
-                    ),
-                    p: ({ children }) => (
-                      <p className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed my-1.5">{children}</p>
-                    ),
-                    ul: ({ children }) => (
-                      <ul className="list-disc list-inside space-y-1 my-2 text-zinc-700 dark:text-zinc-300 text-sm">
-                        {children}
-                      </ul>
-                    ),
-                    ol: ({ children }) => (
-                      <ol className="list-decimal list-inside space-y-1 my-2 text-zinc-700 dark:text-zinc-300 text-sm">
-                        {children}
-                      </ol>
-                    ),
-                    li: ({ children }) => (
-                      <li className="text-zinc-700 dark:text-zinc-300 [&>p]:inline [&>p]:m-0">
-                        {children}
-                      </li>
-                    ),
-                    strong: ({ children }) => (
-                      <strong className="font-semibold text-zinc-900 dark:text-zinc-100">{children}</strong>
-                    ),
-                    code: ({ children, className }) => {
-                      const match = /language-(\w+)/.exec(className || "");
-                      const language = match ? match[1] : "";
-                      // Suppress any legacy OpenUI code blocks (text-only mode)
-                      if (language === "openui" || className === "openui") {
-                        return null;
-                      }
+            <div className={compact ? "text-[13px]" : undefined}>
+              <MessageResponse
+                isAnimating={isSynthesizing}
+                components={markdownComponents}
+              >
+                {textContentWithoutOpenUI || message.content}
+              </MessageResponse>
 
-                      const isBlock = Boolean(className);
-                      return isBlock ? (
-                        <pre className="p-3 my-2 rounded-lg bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-xs font-mono text-zinc-800 dark:text-zinc-200 overflow-x-auto">
-                          <code>{children}</code>
-                        </pre>
-                      ) : (
-                        <code className="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 text-xs font-mono border border-zinc-200 dark:border-zinc-700/60">
-                          {children}
-                        </code>
-                      );
-                    },
-                  }}
-                >
-                  {textContentWithoutOpenUI || message.content}
-                </ReactMarkdown>
-
-                {/* Streaming blinking cursor */}
-                {isSynthesizing && (
-                  <span className="inline-block w-1.5 h-4 ml-0.5 bg-brand-primary animate-pulse align-middle" />
-                )}
-              </div>
-
-              {/* Citations Footer */}
-              {message.evidence && message.evidence.length > 0 && (
-                <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-800/60 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[11px] font-mono text-zinc-500 mr-1 flex items-center gap-1">
-                      <Stack className="w-3 h-3 text-zinc-400 dark:text-zinc-500" />
-                      Sources:
-                    </span>
-                    {message.evidence.slice(0, 4).map((ev, idx) => (
-                      <button
-                        key={ev.id || idx}
-                        type="button"
-                        onClick={() => onOpenEvidence(ev)}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900/60 hover:border-zinc-300 dark:hover:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 transition-colors"
-                      >
-                        <span>[{idx + 1}]</span>
-                        <span className="max-w-[120px] truncate">{ev.title || "Doc"}</span>
-                      </button>
-                    ))}
-                    {message.evidence.length > 4 && (
-                      <button
-                        type="button"
-                        onClick={() => onOpenEvidence()}
-                        className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 underline ml-1"
-                      >
-                        +{message.evidence.length - 4} more
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onOpenEvidence()}
-                      className="inline-flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors px-2 py-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>Inspect Evidence ({message.evidence.length})</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCopy}
-                      className="p-1.5 rounded text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                      title="Copy response"
-                    >
-                      {copied ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                  </div>
-                </div>
+              {/* Streaming cursor (static — no pulse loops) */}
+              {isSynthesizing && (
+                <span className="ml-0.5 inline-block h-4 w-1.5 bg-primary align-middle" />
               )}
             </div>
           )}
-        </div>
+
+          {/* Citations Footer */}
+          {message.evidence && message.evidence.length > 0 && (
+            <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onInspectEvidence(message.evidence?.[0])}
+                className="gap-1.5 text-xs text-muted-foreground"
+              >
+                <Stack data-icon="inline-start" />
+                <span className="tabular-nums">
+                  Sources ({message.evidence.length})
+                </span>
+              </Button>
+              <MessageAction
+                tooltip="Copy response"
+                label="Copy response"
+                onClick={handleCopy}
+              >
+                {copied ? <Check /> : <Copy />}
+              </MessageAction>
+            </div>
+          )}
+        </MessageContent>
       </div>
-    </div>
+    </Message>
   );
 }
