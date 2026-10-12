@@ -101,14 +101,14 @@ export default function PlaygroundPage() {
       onSelectCompany={handleSelectCompany}
     >
       {/* Fixed-height Lab column: header + scroll region + dock (no page scroll) */}
-      <div className="flex h-[calc(100dvh-6.5rem)] min-h-[480px] flex-col gap-4">
+      <div className="flex h-[calc(100dvh-6.5rem)] min-h-[480px] flex-col gap-3">
       {/* PageHeader: title + sub left, controls right */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[30px] font-semibold leading-9 tracking-tight">
+          <h1 className="text-xl font-semibold leading-7 tracking-tight">
             {selectedCompany ? `${selectedCompany.name} Playground` : "Playground"}
           </h1>
-          <p className="mt-1 max-w-[65ch] text-sm text-muted-foreground">
+          <p className="mt-0.5 max-w-[65ch] text-xs text-muted-foreground">
             Grounded answers from the live snapshot. Cite or inspect every claim.
           </p>
         </div>
