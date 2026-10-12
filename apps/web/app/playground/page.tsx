@@ -251,8 +251,8 @@ export default function PlaygroundPage() {
             >
               <PromptInputBody>
                 <PromptInputTextarea
-                  placeholder=""
-                  minHeight={52}
+                  placeholder={`Ask ${selectedCompany.name}…`}
+                  minHeight={36}
                 />
               </PromptInputBody>
 
