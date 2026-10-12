@@ -17,13 +17,12 @@ import {
   Stack,
   Sparkle,
   ArrowRight,
-  ShieldCheck,
-  MagnifyingGlass,
-  Lightning,
+  Database,
   CircleNotch,
   ArrowCounterClockwise,
   Sidebar as SidebarIcon,
 } from "@phosphor-icons/react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Conversation,
   ConversationContent,
@@ -32,6 +31,7 @@ import {
 import { useCompanyChat } from "@/hooks/use-company-chat";
 import { ChatMessageItem } from "@/components/chat-message";
 import { EvidenceInspector } from "@/components/evidence-inspector";
+import { PromptDebugger } from "@/components/prompt-debugger";
 // Evidence drawer only renders when opened: load on demand. Same props once loaded.
 const EvidenceDrawer = dynamic(
   () =>
@@ -179,10 +179,10 @@ export default function PlaygroundPage() {
       ) : (
         <div className="flex min-h-0 w-full flex-1 gap-4">
         <div className="mx-auto flex min-h-0 w-full max-w-4xl min-w-0 flex-1 flex-col gap-4">
-          {/* When Empty: Hero & Suggested Inquiries */}
+          {/* When Empty: title + suggestions (left-aligned Lab canvas) */}
           {!isConversationActive && (
-            <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-6 overflow-y-auto py-4">
-              <div className="mx-auto flex max-w-2xl flex-col items-center gap-3 text-center">
+            <div className="flex min-h-0 w-full flex-1 flex-col justify-center gap-6 overflow-y-auto py-4">
+              <div className="flex max-w-2xl flex-col items-start gap-3">
                 <Badge variant="outline" className="gap-2 font-medium text-muted-foreground">
                   <Stack className="size-3.5" />
                   <span>Hybrid Retrieval &bull; Fact Extraction &bull; Text Answers</span>
@@ -192,19 +192,27 @@ export default function PlaygroundPage() {
                   {selectedCompany.name} Intelligence
                 </h2>
 
-                <p className="mx-auto max-w-xl text-sm leading-relaxed text-muted-foreground">
+                <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
                   {selectedCompany.description}
                 </p>
+
+                <Alert className="max-w-2xl">
+                  <Database className="size-4" />
+                  <AlertDescription className="tabular-nums">
+                    Snapshot {selectedCompany.status} &bull; {selectedCompany.docCount} docs
+                    &bull; {selectedCompany.chunkCount} chunks &bull; {selectedCompany.factCount} facts
+                  </AlertDescription>
+                </Alert>
               </div>
 
-              {/* Suggested Query Chips */}
-              <div className="flex w-full max-w-2xl flex-col gap-2.5 pt-2">
+              {/* Suggested Inquiries */}
+              <div className="flex w-full max-w-2xl flex-col gap-2.5">
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Sparkle className="size-3.5" />
                   <span>Suggested Inquiries for {selectedCompany.name}:</span>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-col gap-2">
                   {selectedCompany.suggestedQueries.map((item, idx) => (
                     <Button
                       key={idx}
@@ -215,47 +223,12 @@ export default function PlaygroundPage() {
                         setQuery(item);
                         handleQuerySubmit(item);
                       }}
-                      className="h-auto justify-start whitespace-normal py-1.5 text-left text-xs font-normal"
+                      className="h-auto w-full justify-between whitespace-normal py-2 text-left text-xs font-normal"
                     >
                       <span>{item}</span>
                       <ArrowRight data-icon="inline-end" />
                     </Button>
                   ))}
-                </div>
-              </div>
-
-              {/* Architectural highlights */}
-              <div className="w-full max-w-2xl border-t border-border pt-6">
-                <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-3">
-                  <div className="flex flex-col gap-1 rounded-lg border border-border bg-card p-3">
-                    <div className="flex items-center gap-1.5 font-medium">
-                      <ShieldCheck className="size-4 text-emerald-500" />
-                      <span>SSRF Guarded</span>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      Private IPs, metadata endpoints & localhost fully restricted.
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col gap-1 rounded-lg border border-border bg-card p-3">
-                    <div className="flex items-center gap-1.5 font-medium">
-                      <MagnifyingGlass className="size-4 text-primary" />
-                      <span>Qdrant Vectors</span>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      1536-dim HNSW indexing with cached sub-10ms queries.
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col gap-1 rounded-lg border border-border bg-card p-3">
-                    <div className="flex items-center gap-1.5 font-medium">
-                      <Lightning className="size-4 text-amber-500" />
-                      <span>Grounded RAG</span>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      Deterministic fact extraction & verifiable cited source blocks.
-                    </p>
-                  </div>
                 </div>
               </div>
             </div>
@@ -293,7 +266,7 @@ export default function PlaygroundPage() {
             }}
           >
             {() => (
-            <div className="w-full">
+            <div className="flex w-full flex-col gap-1">
             <PromptInput
               value={query}
               onValueChange={setQuery}
@@ -334,6 +307,7 @@ export default function PlaygroundPage() {
                 </div>
               </PromptInputFooter>
             </PromptInput>
+            <PromptDebugger />
             </div>
             )}
           </VoiceSession>

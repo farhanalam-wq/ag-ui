@@ -25,6 +25,9 @@
     --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
     --dur-1: 130ms; --dur-2: 180ms; --dur-3: 240ms;
 
+    --font-sans: "Hanken Grotesk Variable", "Inter Tight", system-ui, sans-serif;
+    --font-code: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, monospace;
+
     --brand-primary: #2563eb;
     --brand-secondary: #3b82f6;
     --brand-radius: 0.5rem;
@@ -73,7 +76,7 @@
 body {
   color: hsl(var(--foreground));
   background: hsl(var(--background));
-  font-family: "Hanken Grotesk Variable", "Inter Tight", system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 
 /* Tabular numerals for UI figures (KPIs, counts, tables): font-sans + .tnum */

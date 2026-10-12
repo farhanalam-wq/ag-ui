@@ -11,8 +11,8 @@ const config: Config = {
   theme: {
   	extend: {
   		fontFamily: {
-  			sans: ['"Hanken Grotesk Variable"', '"Inter Tight"', 'system-ui', 'sans-serif'],
-  			mono: ['"JetBrains Mono Variable"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+  			sans: ['var(--font-sans)'],
+  			mono: ['var(--font-code)'],
   		},
   		colors: {
   			background: 'hsl(var(--background))',
