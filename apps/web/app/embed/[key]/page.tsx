@@ -1,6 +1,7 @@
 "use client";
 
 import React, { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import nextDynamic from "next/dynamic";
 import { useParams, useSearchParams } from "next/navigation";
 import {
   PromptInput,
@@ -23,7 +24,12 @@ import {
   widgetThemeVars,
   type WidgetTheme,
 } from "@ag-ui/shared/client";
-import { VoiceSession } from "@/components/voice/voice-session";
+// Heavy LiveKit session loads on demand (client-only) so the initial embed
+// chunk stays light — parity with the playground route. Same props/behavior.
+const VoiceSession = nextDynamic(
+  () => import("@/components/voice/voice-session").then((m) => m.VoiceSession),
+  { ssr: false }
+);
 import {
   VoiceAmplitudeBars,
   VoiceChatButton,
