@@ -126,7 +126,13 @@ export function EmbedSnippetStudio({ companyId, companyName, brandColor }: Embed
   const handleRotate = useCallback(async () => {
     rotateToastArmed.current = true;
     setRotateOpen(false);
-    await rotate();
+    const res = await rotate();
+    if (!res.ok) {
+      rotateToastArmed.current = false;
+      toast.error("Key rotation failed", {
+        description: res.message,
+      });
+    }
   }, [rotate]);
 
   useEffect(() => {
@@ -136,11 +142,6 @@ export function EmbedSnippetStudio({ companyId, companyName, brandColor }: Embed
       toast.success("Fresh key issued", {
         description: "Old embeds stop working immediately.",
         icon: <ArrowCounterClockwise className="size-4" aria-hidden="true" />,
-      });
-    } else if (phase.kind === "error") {
-      rotateToastArmed.current = false;
-      toast.error("Key rotation failed", {
-        description: phase.message,
       });
     }
   }, [phase]);

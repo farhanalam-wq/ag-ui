@@ -49,7 +49,13 @@ export function EmbedSnippet({ result }: EmbedSnippetProps) {
 
   const handleRotate = useCallback(async () => {
     rotateToastArmed.current = true;
-    await rotate();
+    const res = await rotate();
+    if (!res.ok) {
+      rotateToastArmed.current = false;
+      toast.error("Key rotation failed", {
+        description: res.message,
+      });
+    }
   }, [rotate]);
 
   useEffect(() => {
@@ -59,11 +65,6 @@ export function EmbedSnippet({ result }: EmbedSnippetProps) {
       toast.success("Fresh key issued", {
         description: "Old embeds stop working immediately.",
         icon: <ArrowCounterClockwise className="size-4" aria-hidden="true" />,
-      });
-    } else if (phase.kind === "error") {
-      rotateToastArmed.current = false;
-      toast.error("Key rotation failed", {
-        description: phase.message,
       });
     }
   }, [phase]);
