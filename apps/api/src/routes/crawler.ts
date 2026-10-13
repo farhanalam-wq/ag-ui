@@ -1,6 +1,12 @@
 import { Elysia, t } from "elysia";
 import { validateSafeUrl } from "@ag-ui/crawler";
 import { discoverPages } from "@ag-ui/crawler";
+import {
+  buildManualDiscovery,
+  fetchSitemapUrlWithRecursion,
+  parseSitemapBuffer,
+  type ManualDiscoveryInput,
+} from "@ag-ui/crawler";
 import { logger } from "@ag-ui/shared";
 import { db, brands, companies, companySnapshots, crawlJobs, eq, desc } from "@ag-ui/database";
 import { brandQueue } from "@ag-ui/queues";
@@ -114,6 +120,186 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
         summary: "Discover crawlable URLs",
         description:
           "Fast autonomous discovery probing robots.txt, recursive sitemaps, and llms.txt with category inference.",
+      },
+    }
+  )
+
+  // 1b. Manual sitemap + URL list discovery (Task 19): uploaded .xml/.xml.gz
+  // files, a pasted sitemap URL fetched server-side, and/or a pasted manual
+  // URL list. Returns the standard DiscoveryResponse so selection + ingest
+  // work unchanged. Read-only: no DB writes.
+  .post(
+    "/discover-sitemap",
+    async ({ body, set }) => {
+      const MAX_SITEMAP_FILES = 3;
+      const MAX_SITEMAP_FILE_BYTES = 5 * 1024 * 1024;
+
+      const rawFiles =
+        body.files === undefined ? [] : Array.isArray(body.files) ? body.files : [body.files];
+      const sitemapUrl = (body.sitemapUrl || "").trim();
+      const manualUrls = body.manualUrls || "";
+      const hasManualLines = manualUrls
+        .split(/\r?\n/)
+        .some((l) => l.trim().length > 0);
+
+      if (rawFiles.length === 0 && !sitemapUrl && !hasManualLines) {
+        set.status = 400;
+        return { error: "No input provided: upload a sitemap file, paste a sitemap URL, or list URLs" };
+      }
+      if (rawFiles.length > MAX_SITEMAP_FILES) {
+        set.status = 400;
+        return { error: `Upload between 1 and ${MAX_SITEMAP_FILES} sitemap files` };
+      }
+
+      let maxUrls = 2000;
+      if (body.maxSitemapUrls !== undefined) {
+        const parsed =
+          typeof body.maxSitemapUrls === "string"
+            ? parseInt(body.maxSitemapUrls, 10)
+            : body.maxSitemapUrls;
+        if (Number.isFinite(parsed)) {
+          maxUrls = Math.min(5000, Math.max(10, parsed));
+        }
+      }
+
+      const merged: ManualDiscoveryInput[] = [];
+      let firstError: string | null = null;
+
+      // (a) Uploaded files, in order.
+      for (const file of rawFiles) {
+        const name = file.name || "sitemap.xml";
+        const lower = name.toLowerCase();
+        if (!lower.endsWith(".xml") && !lower.endsWith(".xml.gz")) {
+          firstError ??= `File "${name}" rejected: only .xml or .xml.gz accepted`;
+          continue;
+        }
+        const buffer = Buffer.from(await file.arrayBuffer());
+        if (buffer.length === 0) {
+          firstError ??= `File "${name}" is empty`;
+          continue;
+        }
+        if (buffer.length > MAX_SITEMAP_FILE_BYTES) {
+          set.status = 400;
+          return { error: `File "${name}" exceeds the 5MB limit` };
+        }
+        try {
+          for (const e of parseSitemapBuffer(buffer, name)) {
+            merged.push({ url: e.url, priority: e.priority, source: "sitemap" });
+          }
+        } catch (err: any) {
+          firstError ??= err?.message || `File "${name}" could not be parsed`;
+        }
+      }
+
+      // (b) Pasted sitemap URL, fetched server-side (SSRF-checked like /discover).
+      if (sitemapUrl) {
+        let clean = sitemapUrl;
+        if (!clean.startsWith("http://") && !clean.startsWith("https://")) {
+          clean = `https://${clean}`;
+        }
+        let parsedUrl: URL;
+        try {
+          parsedUrl = new URL(clean);
+          if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+            set.status = 400;
+            return { error: "Sitemap URL must use http or https protocol" };
+          }
+        } catch {
+          set.status = 400;
+          return { error: "Invalid sitemap URL provided" };
+        }
+        try {
+          await validateSafeUrl(parsedUrl.toString());
+        } catch (err: any) {
+          set.status = 403;
+          return {
+            error: "SSRF validation failed: Target IP or domain is not permitted",
+            details: err.message,
+          };
+        }
+        try {
+          const fetched = await fetchSitemapUrlWithRecursion(parsedUrl.toString(), maxUrls);
+          for (const e of fetched) {
+            merged.push({ url: e.url, priority: e.priority, source: "sitemap" });
+          }
+        } catch (err: any) {
+          firstError ??= `Sitemap URL fetch failed: ${err.message}`;
+        }
+      }
+
+      // (c) Pasted manual URL list, one per line. Absolute http(s) lines are
+      // passed raw so buildManualDiscovery can count cross-host drops;
+      // garbage lines are skipped silently here.
+      const manualLines = manualUrls
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+      for (const line of manualLines) {
+        if (!/^https?:\/\//i.test(line)) continue;
+        try {
+          new URL(line);
+        } catch {
+          continue;
+        }
+        merged.push({ url: line, source: "manual" });
+      }
+
+      // Primary domain: first valid absolute URL in source order.
+      let primaryBase: URL | null = null;
+      for (const e of merged) {
+        try {
+          const u = new URL(e.url.trim());
+          if (u.protocol === "http:" || u.protocol === "https:") {
+            primaryBase = u;
+            break;
+          }
+        } catch {
+          continue;
+        }
+      }
+      if (!primaryBase) {
+        set.status = 400;
+        return { error: firstError || "No valid URLs found in the provided input" };
+      }
+
+      try {
+        const { pages, info, droppedCrossDomain } = await buildManualDiscovery(
+          merged,
+          primaryBase,
+          { maxUrls }
+        );
+        if (pages.length === 0) {
+          set.status = 400;
+          return { error: firstError || "No valid URLs found in the provided input" };
+        }
+        logger.info(
+          `[API:DISCOVERY:SITEMAP] Manual discovery for ${info.domain}: ${pages.length} urls, ${droppedCrossDomain} cross-domain dropped`
+        );
+        return {
+          success: true,
+          domain: info.domain,
+          origin: primaryBase.origin,
+          pages,
+          info,
+          droppedCrossDomain,
+        };
+      } catch (err: any) {
+        logger.error(`[API:DISCOVERY:SITEMAP] Manual discovery failed: ${err.message}`);
+        set.status = 500;
+        return { error: "Discovery failed", details: err.message };
+      }
+    },
+    {
+      body: t.Object({
+        files: t.Optional(t.Files()),
+        sitemapUrl: t.Optional(t.String()),
+        manualUrls: t.Optional(t.String()),
+        maxSitemapUrls: t.Optional(t.Union([t.String(), t.Number()])),
+      }),
+      detail: {
+        summary: "Discover URLs from sitemaps or manual list",
+        description:
+          "Accepts uploaded sitemap files, a pasted sitemap URL, and/or a manual URL list. Returns the standard DiscoveryResponse.",
       },
     }
   )
