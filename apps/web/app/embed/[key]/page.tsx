@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import nextDynamic from "next/dynamic";
 import { useParams, useSearchParams } from "next/navigation";
 import {
   PromptInput,
@@ -23,14 +24,21 @@ import {
   widgetThemeVars,
   type WidgetTheme,
 } from "@ag-ui/shared/client";
-import { VoiceSession } from "@/components/voice/voice-session";
+// Heavy LiveKit session loads on demand (client-only) so the initial embed
+// chunk stays light — parity with the playground route. Same props/behavior.
+const VoiceSession = nextDynamic(
+  () => import("@/components/voice/voice-session").then((m) => m.VoiceSession),
+  { ssr: false }
+);
 import {
   VoiceAmplitudeBars,
   VoiceChatButton,
   VoiceErrorChip,
 } from "@/components/voice/voice-chat-button";
 
-export const dynamic = "force-dynamic";
+// No `force-dynamic` — the indexing poll is client-side fetch and the
+// search-params subtree already sits behind Suspense, so the route prerenders
+// a static shell and hydrates per widget key.
 
 const CONFIG_POLL_MS = 5000;
 const CONFIG_POLL_MAX = 40;
@@ -44,6 +52,23 @@ function suggestedQueriesFor(name: string): string[] {
 }
 
 export default function EmbedChatPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex flex-col h-[100dvh] w-full items-center justify-center bg-background text-foreground antialiased">
+          <div className="flex items-center gap-2 text-xs text-zinc-500 font-mono animate-pulse">
+            <CircleNotch className="size-4 animate-spin" />
+            <span>Loading assistant…</span>
+          </div>
+        </div>
+      }
+    >
+      <EmbedChatPageInner />
+    </Suspense>
+  );
+}
+
+function EmbedChatPageInner() {
   const params = useParams();
   const searchParams = useSearchParams();
   const rawKey = params?.key;

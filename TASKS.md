@@ -5,7 +5,7 @@ Goal: CLI driven discover, select, concurrent crawl, parse, chunk, embed, and st
 Status Oct 2026: pipeline core extracted from `ingest-cli.ts` into canonical package
 `packages/ingest` (Phase 0); the CLI is a thin dotenv/args wrapper and the API imports
 the package — `ingest-cli.ts` is no longer the implementation, only an entry point.
-Tasks 1–15 verified complete (see per-task notes); #17 promoted to next build.
+Tasks 1–15 and #19 verified complete (see per-task notes); #17 promoted to next build.
 
 Impact tags: each task heading carries (Pipeline impact #N), ranking tasks by how much they upgrade the entire pipeline for good, #1 is the highest. Deferred and reference sections carry their own tags.
 
@@ -171,7 +171,7 @@ ranked excerpts with scores, `--json` pipes through `jq`.
 - Priority scheduling: `priority` integer, 0 normal, 1 demo or preview jump. The picker always takes the oldest live job with the highest priority first. Starvation guard: any P0 job waiting longer than 10 minutes is treated as P1 for ordering only (column value unchanged, ordering key computed at pick time). Cap P1 jobs at 1 concurrent pick so bulk backfills can never fully starve normal jobs.
 - Acceptance: two owners submitting simultaneously each hit their own live job cap independently; a P1 demo job submitted after a P0 bulk job is picked first; a third owner reading another owner's job id gets 403; the rate limiter rejects the 6th submit inside the hour with 429.
 
-## 19. Manual sitemap plus URL list input (P0) (Pipeline impact #16)
+## 19. ✅ Manual sitemap plus URL list input (P0) (Pipeline impact #16)
 
 - Files: `apps/api/src/routes/crawler.ts` (new `POST /api/crawler/discover-sitemap`), `packages/crawler/src/discovery.ts` (reuse sitemap parse helpers), `apps/web/components/ingestion/ingestion-studio.tsx` (source selector), `apps/web/lib/api-client.ts` (new client method).
 - Input sources, all optional and combinable in one request: (a) 1 to 3 uploaded `.xml` or `.xml.gz` files, 5MB max each, (b) one pasted sitemap URL fetched server side, (c) pasted manual URL list, one per line, for specific routes without a sitemap file.
@@ -180,6 +180,7 @@ ranked excerpts with scores, `--json` pipes through `jq`.
 - Response contract: return standard `DiscoveryResponse` with `source: "sitemap"` on parsed items and `source: "manual"` on pasted URLs, so `DiscoveryTable` selection plus `ingestStream` plus telemetry work unchanged. No changes to crawl, parse, chunk, embed, Qdrant, or brand extraction paths.
 - Frontend: source selector with three tabs (Website, Sitemap files, Specific routes) in the input card of `ingestion-studio.tsx`. Sitemap tab holds multi file dropzone plus sitemap URL input plus parsed count preview. Routes tab holds textarea with live valid count. All three converge to `setDiscoveryData` with default top 20 selection. Shared Advanced crawl settings. shadcn primitives plus semantic tokens only, Phosphor icons only.
 - Acceptance: upload of 2 sitemap files plus 5 manual URLs yields one deduped `DiscoveryResponse`, cross domain URLs are dropped with a visible count, index plus gzip fixtures parse, selection and ingest stream run unchanged to READY, and invalid files return 400 with a toast and no state change.
+- Merged Oct 2026 via PR #1 (`feat/discovery-sitemap-manual`): crawler helpers plus unit tests (15 green), `POST /api/crawler/discover-sitemap` (files plus sitemap URL plus manual list, SSRF-checked, uploaded index children expanded one level), studio source tabs, additive `DiscoveryResponse` fields (`droppedCrossDomain`, `info.truncated`) and `"manual"` source. Verified live: dedupe exact, cross-host counted, 400s on bad input, web build green. No crawl, parse, chunk, embed, Qdrant, or brand paths touched.
 
 ## 20. Web load time overhaul: Next 16.4 bump, drop @thesvg/icons, code-split heavy vendors (P0) (Web impact #1)
 
@@ -225,6 +226,15 @@ ranked excerpts with scores, `--json` pipes through `jq`.
   - `rm -rf apps/web/.next`; re-measure cold start + HMR vs pre-fix baseline (Phase 0); run `turbo run build lint`; confirm analyzer: zero `thesvg`, zero initial `shikijs_langs`, per-route JS down; smoke-test overview charts, playground stream, embed chat + voice mount on demand, GenUI cards with fallback icons.
 
 - Branch policy: all of 20a-20g happens on a separate feature branch cut from `main` (e.g. `perf/web-load-overhaul`), never directly on `main`. `main` stays deployable throughout. Merge into `main` only after 20g acceptance is green (build + lint + analyzer gates + smoke tests) via reviewed PR; delete the branch after merge.
+
+- Implementation plan — web load overhaul (`perf/web-load-overhaul`). Order is A → G, each independently verifiable; B/C may parallelize after A. Riskiest is A (major bump) — timebox it before touching components.
+  - Phase A — framework bump (Next 15.1.7 → 16.4, React → 19.3): bump `apps/web/package.json`, run the Next upgrade codemod, fix breaking usages (Suspense around `useSearchParams` in embed, route runtime exports). Acceptance: `bun install && turbo run build --filter=@ag-ui/web` green, GenUI renderer smoke-renders, no type errors. Do this first — everything else builds on the new compiler behavior.
+  - Phase B — drop the icon package: remove it from both `package.json` files, replace the static icon registry with an empty tombstone + null loader, short-circuit the resolver and `TechIcon` to the existing Phosphor category fallbacks, delete `app/api/icon/route.ts`. Acceptance: zero code references to the package, no icon chunks in the build output, all GenUI grids render with fallback icons and no broken images.
+  - Phase C — harden `next.config.mjs`: add `optimizePackageImports` for the icon barrel, recharts, streamdown, and sonner; strip non-error console in production; disable powered-by header and browser source maps. Keep `transpilePackages`. Acceptance: per-route first-load JS drops, analyzer shows split icon chunks.
+  - Phase D — split charts + markdown: extract home-page charts into a dynamically imported island with skeleton loading; lazy-load the markdown code/cjk plugins; drop unused markdown plugins from deps. Acceptance: no syntax-grammar chunks in initial home/playground load, home first-load under 400KB gz, charts pop in behind skeletons.
+  - Phase E — voice, fonts, icon duplication: dynamic-import voice on the embed route (matching playground), swap render-blocking font CSS for `next/font` with the same CSS vars, swap the three lucide icons in `select.tsx` for Phosphor equivalents and drop the dep, narrow the Tailwind content scan off the icon registry. Acceptance: embed chunk collapses, fonts non-blocking, single icon runtime.
+  - Phase F — rendering hygiene: remove `"use client"` from presentational routes only (keep it on home, playground, embed, knowledge), Suspense-wrap the embed search-params subtree, add root loading and error boundaries. Acceptance: static layout render, skeleton transitions, no deopt warnings in build output.
+  - Phase G — cleanup + verify: wipe `.next`, re-measure cold start vs now, full `turbo run build lint`, analyzer confirmation (zero icon-package, zero initial grammar chunks, per-route JS down), smoke-test charts, playground stream, embed chat + on-demand voice, GenUI cards. Merge to `main` via PR only after all gates pass, then delete the branch.
 
 ## Demo verification checklist (run in order) (P0) (Verification)
 

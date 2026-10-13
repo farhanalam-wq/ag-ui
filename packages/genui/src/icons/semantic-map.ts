@@ -1,7 +1,8 @@
 /**
  * Semantic mapping dictionary for Technology and Brand Icons.
  * Maps natural language terms, aliases, abbreviations, and common variants
- * to their canonical @thesvg/icons slug.
+ * to their canonical brand slug (used for display names and categories;
+ * brand SVGs themselves were removed, so all icons render fallbacks).
  */
 
 export interface SemanticIconEntry {
