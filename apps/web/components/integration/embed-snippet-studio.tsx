@@ -316,7 +316,7 @@ export function EmbedSnippetStudio({ companyId, companyName, brandColor }: Embed
             </Button>
             <Button size="sm" asChild style={{ backgroundColor: brandColor }}>
               <a
-                href={`${webOrigin}/playground`}
+                href={`${webOrigin}/playground?company=${encodeURIComponent(companyId)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-white hover:opacity-90"

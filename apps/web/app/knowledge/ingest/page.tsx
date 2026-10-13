@@ -16,9 +16,10 @@ export default function IngestRoutePage() {
   }, []);
 
   const handleCompanyIndexed = (company: CompanyItem) => {
-    // Store the newly indexed company and navigate to the playground.
+    // Store the newly indexed company and deep-link its playground so the
+    // switcher selects it without a refresh (param covers reloads/new tabs).
     useCompanyStore.getState().upsertAndSelect(company);
-    router.push("/playground");
+    router.push(`/playground?company=${encodeURIComponent(company.id)}`);
   };
 
   const handleCancel = () => {

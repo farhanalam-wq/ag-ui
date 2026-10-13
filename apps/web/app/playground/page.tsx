@@ -68,8 +68,30 @@ export default function PlaygroundPage() {
   } = useCompanyChat();
 
   // Companies resolve through the shared store loader (single fetch path).
+  // A `?company=<id>` deep link (e.g. from ingest) selects that company once
+  // the list is ready — read via window.location to avoid a Suspense boundary.
   useEffect(() => {
-    useCompanyStore.getState().ensureCompanies();
+    let cancelled = false;
+    void (async () => {
+      await useCompanyStore.getState().ensureCompanies();
+      if (cancelled || typeof window === "undefined") return;
+      const id = new URLSearchParams(window.location.search).get("company");
+      if (!id) return;
+      const state = useCompanyStore.getState();
+      if (
+        state.companies.some((c) => c.id === id) &&
+        state.selectedId !== id
+      ) {
+        discardVoiceRef.current = true;
+        state.select(id);
+        clearMessages();
+        setQuery("");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSelectCompany = (company: CompanyItem) => {

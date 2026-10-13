@@ -10,9 +10,9 @@ import {
   CircleNotch,
 } from "@phosphor-icons/react";
 import { EmbedSnippet } from "./embed-snippet";
+import type { CompanyItem } from "@/components/sidebar/company-switcher";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
+import { Badge } from "@/components/ui/badge";import {
   Card,
   CardContent,
   CardDescription,
@@ -82,6 +82,9 @@ interface PipelineTelemetryProps {
   error: string | null;
   onReset: () => void;
   appearanceActive?: boolean;
+  /** Store the result company and deep-link its playground. Falls back to a
+   * bare navigation when absent (kept for standalone/preview renders). */
+  onTestCompany?: (company: CompanyItem) => void;
 }
 
 const STAGES = [
@@ -92,6 +95,29 @@ const STAGES = [
   { key: "READY", label: "Ready" },
 ];
 
+/** Single pipeline-result → store mapping (mirrors the store's API mapping). */
+export function pipelineResultToCompany(result: PipelineResultData): CompanyItem {
+  const brandColor = result.brand?.tokens?.colors?.primary || "#3b82f6";
+  return {
+    id: result.companyId,
+    name: result.companyName,
+    domain: result.domain,
+    description: `Indexed knowledge base for ${result.companyName} (${result.domain}).`,
+    brandColor,
+    badge: `${result.insertedDocs} Docs • Indexed`,
+    docCount: result.insertedDocs,
+    chunkCount: result.chunkCount,
+    factCount: result.factCount,
+    status: "READY",
+    suggestedQueries: [
+      `What does ${result.companyName} offer?`,
+      `How much does it cost, and what are the options?`,
+      `Where are they located, and how do I contact them?`,
+      `What is new or noteworthy?`,
+    ],
+  };
+}
+
 export function PipelineTelemetry({
   phase,
   progress,
@@ -100,6 +126,7 @@ export function PipelineTelemetry({
   error,
   onReset,
   appearanceActive = false,
+  onTestCompany,
 }: PipelineTelemetryProps) {
   const router = useRouter();
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -323,7 +350,16 @@ export function PipelineTelemetry({
                   Get embed code
                 </Button>
                 <Button
-                  onClick={() => router.push("/playground")}
+                  onClick={() => {
+                    const company = pipelineResultToCompany(result);
+                    if (onTestCompany) {
+                      onTestCompany(company);
+                    } else {
+                      router.push(
+                        `/playground?company=${encodeURIComponent(company.id)}`
+                      );
+                    }
+                  }}
                 >
                   <ChatCircle className="size-4" aria-hidden="true" />
                   Test in Playground
