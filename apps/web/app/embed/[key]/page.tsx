@@ -36,7 +36,7 @@ import {
   VoiceErrorChip,
 } from "@/components/voice/voice-chat-button";
 
-// Phase F: no `force-dynamic` — the indexing poll is client-side fetch and the
+// No `force-dynamic` — the indexing poll is client-side fetch and the
 // search-params subtree already sits behind Suspense, so the route prerenders
 // a static shell and hydrates per widget key.
 

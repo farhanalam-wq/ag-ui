@@ -4,7 +4,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "sonner";
 import "./globals.css";
 
-// Phase E: self-hosted variable fonts via next/font (latin subset,
+// Self-hosted variable fonts via next/font (latin subset,
 // display=swap). Same --font-sans / --font-code vars feed globals.css and
 // the Tailwind fontFamily map; no render-blocking fontsource CSS.
 const fontSans = Hanken_Grotesk({

@@ -1,6 +1,6 @@
 "use client";
 
-// Phase D: recharts island. Dynamically imported with `ssr: false` from the
+// Recharts island. Dynamically imported with `ssr: false` from the
 // home page so the recharts bundle never joins the initial load — charts pop
 // in behind a skeleton instead of blocking paint.
 import {

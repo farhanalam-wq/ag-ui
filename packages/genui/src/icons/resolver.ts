@@ -103,7 +103,7 @@ function inferCategory(query: string): string {
 
 /**
  * Resolves a natural language or technical query into a display name, category,
- * and deterministic Phosphor fallback. Phase B: brand-SVG resolution was removed
+ * and deterministic Phosphor fallback. Brand-SVG resolution was removed
  * with the icon package; the semantic map preserves names/categories, and every
  * path ends at `getCategoryFallback` so icons never suspend on network.
  */

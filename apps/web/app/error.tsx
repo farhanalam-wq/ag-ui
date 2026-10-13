@@ -3,7 +3,7 @@
 import { WarningCircle } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 
-// Phase F: route-level error boundary. Client directive is required here.
+// Route-level error boundary. Client directive is required here.
 export default function Error({
   error,
   reset,

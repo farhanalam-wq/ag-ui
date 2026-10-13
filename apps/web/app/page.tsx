@@ -87,7 +87,7 @@ function fmtDelta(delta: string) {
   return delta.replace("WoW", "vs prior 7d");
 }
 
-// Phase D: recharts ships in these islands only — never in the initial load.
+// Recharts ships in these islands only — never in the initial load.
 const MonitoringTrendChart = dynamic(
   () => import("./overview-charts").then((m) => m.MonitoringTrendChart),
   {

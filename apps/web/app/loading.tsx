@@ -1,6 +1,6 @@
 import { Skeleton } from "@/components/ui/skeleton";
 
-// Phase F: instant skeleton shell for route transitions. Never blank.
+// Instant skeleton shell for route transitions. Never blank.
 export default function Loading() {
   return (
     <div className="mx-auto w-full max-w-6xl space-y-4 p-4 sm:p-6">

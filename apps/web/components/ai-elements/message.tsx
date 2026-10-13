@@ -323,7 +323,7 @@ export const MessageBranchPage = ({
 
 export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
-// Phase D: the code/cjk plugins (Shiki grammars, the multi-MB chunk) load on
+// The code/cjk plugins (Shiki grammars, the multi-MB chunk) load on
 // demand so they never join the initial playground/embed chunk. Messages render
 // immediately unhighlighted; highlighting attaches when the chunk arrives.
 // Code highlighting only — math/mermaid stay out until an answer needs them.

@@ -21,7 +21,7 @@ export function TechIcon({
 }: TechIconProps) {
   const resolved: ResolvedIcon = React.useMemo(() => resolveIcon(name), [name]);
 
-  // Phase B: no background loading — brand SVGs were removed, so every icon
+  // No background loading — brand SVGs were removed, so every icon
   // renders its Phosphor fallback synchronously (never suspends on network).
   const rawSvg = resolved.svg || null;
 

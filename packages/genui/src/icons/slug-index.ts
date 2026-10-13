@@ -32,7 +32,7 @@ const COMMON_ALIASES: Record<string, string> = {
 };
 
 /**
- * Inert since Phase B (nothing imports slug matching anymore). Kept for
+ * Inert (nothing imports slug matching anymore). Kept for
  * reference; finds the exact official brand slug for a query.
  */
 export function findBestSlugMatch(query: string): string | null {

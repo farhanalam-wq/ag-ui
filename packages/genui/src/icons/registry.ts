@@ -10,7 +10,7 @@ import {
   PlugsConnected,
 } from "@phosphor-icons/react";
 
-// Phase B: brand SVG package removed. CORE_ICONS is an empty tombstone so all
+// Brand SVG package removed. CORE_ICONS is an empty tombstone so all
 // consumers resolve via Phosphor category fallbacks (see getCategoryFallback).
 
 export interface TheSvgIconModule {
@@ -26,7 +26,7 @@ export interface TheSvgIconModule {
 }
 
 /**
- * Empty tombstone (Phase B): brand SVGs were removed with the icon package.
+ * Empty tombstone: brand SVGs were removed with the icon package.
  * All resolution falls through to Phosphor category fallbacks.
  */
 export const CORE_ICONS: Record<string, TheSvgIconModule> = {};
