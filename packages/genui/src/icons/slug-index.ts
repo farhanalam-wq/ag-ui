@@ -32,7 +32,8 @@ const COMMON_ALIASES: Record<string, string> = {
 };
 
 /**
- * Finds the exact official @thesvg/icons slug for any query, casing, punctuation, or alias.
+ * Inert since Phase B (nothing imports slug matching anymore). Kept for
+ * reference; finds the exact official brand slug for a query.
  */
 export function findBestSlugMatch(query: string): string | null {
   if (!query) return null;

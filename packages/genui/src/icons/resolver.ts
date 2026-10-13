@@ -1,7 +1,6 @@
 import type { ComponentType } from "react";
 import { SEMANTIC_ICON_MAP, type SemanticIconEntry } from "./semantic-map";
-import { CORE_ICONS, getCategoryFallback, type TheSvgIconModule } from "./registry";
-import { findBestSlugMatch, SLUG_SET } from "./slug-index";
+import { getCategoryFallback } from "./registry";
 
 export interface ResolvedIcon {
   query: string;
@@ -103,8 +102,10 @@ function inferCategory(query: string): string {
 }
 
 /**
- * Resolves a natural language or technical query into a local SVG icon or deterministic fallback.
- * Checks the semantic map first, then the comprehensive 7,412 @thesvg/icons registry.
+ * Resolves a natural language or technical query into a display name, category,
+ * and deterministic Phosphor fallback. Phase B: brand-SVG resolution was removed
+ * with the icon package; the semantic map preserves names/categories, and every
+ * path ends at `getCategoryFallback` so icons never suspend on network.
  */
 export function resolveIcon(input: string): ResolvedIcon {
   if (!input || typeof input !== "string") {
@@ -130,56 +131,17 @@ export function resolveIcon(input: string): ResolvedIcon {
     entry = SEMANTIC_ICON_MAP[normalized];
   }
 
-  // 3. Check WHOLE query against comprehensive 7,412 slug index (exact, kebab, or normalized)
-  let matchedSlug = entry?.slug || findBestSlugMatch(rawLower) || findBestSlugMatch(normalizeIconQuery(rawLower));
-
-  // 4. Token-based fallback ONLY if the whole query did not match
-  if (!matchedSlug && !entry) {
-    const tokens = rawLower.split(/[\s\-_/.]+/).filter(Boolean);
-    for (const token of tokens) {
-      if (SEMANTIC_ICON_MAP[token]) {
-        entry = SEMANTIC_ICON_MAP[token];
-        matchedSlug = entry.slug;
-        break;
-      }
-      const candidate = findBestSlugMatch(token);
-      if (candidate) {
-        matchedSlug = candidate;
-        break;
-      }
-    }
-  }
-
-  // Instant synchronous hit in CORE_ICONS
-  if (matchedSlug && CORE_ICONS[matchedSlug]) {
-    const iconModule = CORE_ICONS[matchedSlug];
+  // 3. Semantic-map hit: keep its display name/category, render the fallback.
+  // (No slug-registry lookup: brand SVGs were removed, so every known tech
+  // renders its category fallback with full name context preserved.)
+  if (entry) {
     return {
       query: raw,
-      slug: iconModule.slug,
-      displayName: entry?.displayName || iconModule.title || raw,
-      category: entry?.category || "general",
-      hex: iconModule.hex ? `#${iconModule.hex}` : undefined,
-      svg: iconModule.svg,
-      variants: iconModule.variants,
-      isFallback: false,
-      FallbackComponent: getCategoryFallback(entry?.category || "general"),
-    };
-  }
-
-  // Known verified slug in full 7,412 registry (can be loaded asynchronously by TechIcon)
-  if (matchedSlug && SLUG_SET.has(matchedSlug)) {
-    const prettyName = matchedSlug
-      .split(/[\s_-]+/)
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(" ");
-
-    return {
-      query: raw,
-      slug: matchedSlug,
-      displayName: entry?.displayName || prettyName,
-      category: entry?.category || inferCategory(raw),
-      isFallback: false,
-      FallbackComponent: getCategoryFallback(entry?.category || inferCategory(raw)),
+      slug: entry.slug,
+      displayName: entry.displayName,
+      category: entry.category || inferCategory(raw),
+      isFallback: true,
+      FallbackComponent: getCategoryFallback(entry.category || inferCategory(raw)),
     };
   }
 
