@@ -33,7 +33,7 @@ export interface DiscoveredPageItem {
   url: string;
   category: "pricing" | "product" | "docs" | "blog" | "general" | "about";
   priority: number;
-  source: "llms.txt" | "sitemap" | "homepage" | "root";
+  source: "llms.txt" | "sitemap" | "homepage" | "root" | "manual";
   depth: number;
 }
 
@@ -42,6 +42,8 @@ export interface DiscoveryResponse {
   domain: string;
   origin: string;
   pages: DiscoveredPageItem[];
+  /** Cross-host URLs dropped by manual/sitemap discovery (Task 19). */
+  droppedCrossDomain?: number;
   info: {
     domain: string;
     totalUrls: number;
@@ -52,6 +54,8 @@ export interface DiscoveryResponse {
     sitemapsFollowed: string[];
     byCategory: Record<string, number>;
     bySource: Record<string, number>;
+    /** True when the page list was truncated to maxSitemapUrls. */
+    truncated?: boolean;
   };
 }
 
@@ -888,6 +892,18 @@ class ApiClient {
       return res.json();
     },
 
+    discoverSitemap: async (form: FormData): Promise<DiscoveryResponse> => {
+      const res = await fetch(`${this.baseUrl}/api/crawler/discover-sitemap`, {
+        method: "POST",
+        body: form,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(err.error || err.details || `Discovery failed: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+
     getJobStatus: async (
       jobId: string
     ): Promise<{
@@ -948,7 +964,6 @@ class ApiClient {
       }
       return res.json();
     },
-
     ingestStream: async (
       payload: {
         url: string;
