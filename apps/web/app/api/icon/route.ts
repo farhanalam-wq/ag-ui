@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 
+// Phase A: pin nodejs runtime (route uses fs to serve thesvg dist files).
+// Phase B deletes this route along with the @thesvg/icons dependency.
+export const runtime = "nodejs";
+
 let cachedDistDir: string | null = null;
 
 function getDistDir(): string | null {
