@@ -9,6 +9,10 @@ import {
   WarningCircle,
   Database,
   CircleNotch,
+  Globe,
+  FileArrowUp,
+  ListPlus,
+  X,
 } from "@phosphor-icons/react";
 import {
   apiClient,
@@ -25,6 +29,7 @@ import type { CompanyItem } from "../sidebar/company-switcher";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Card,
   CardContent,
@@ -52,6 +57,12 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
 
   // Input & Discovery state
   const [targetUrl, setTargetUrl] = useState("");
+  const [sourceTab, setSourceTab] = useState<"website" | "sitemap" | "routes">(
+    "website"
+  );
+  const [sitemapFiles, setSitemapFiles] = useState<File[]>([]);
+  const [sitemapUrl, setSitemapUrl] = useState("");
+  const [manualRoutes, setManualRoutes] = useState("");
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   const [discoveryData, setDiscoveryData] = useState<DiscoveryResponse | null>(null);
@@ -124,6 +135,74 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
       setIsDiscovering(false);
     }
   };
+
+  // 1b. Run sitemap/manual discovery (Task 19)
+  const handleDiscoverSitemap = async () => {
+    if (isDiscovering) return;
+
+    const form = new FormData();
+    if (sourceTab === "sitemap") {
+      for (const f of sitemapFiles.slice(0, 3)) form.append("files", f);
+      if (sitemapUrl.trim()) form.set("sitemapUrl", sitemapUrl.trim());
+      if (sitemapFiles.length === 0 && !sitemapUrl.trim()) return;
+    } else {
+      if (!manualRoutes.trim()) return;
+      form.set("manualUrls", manualRoutes);
+    }
+
+    setIsDiscovering(true);
+    setDiscoveryError(null);
+
+    try {
+      const resp = await apiClient.crawler.discoverSitemap(form);
+      setTargetUrl(resp.origin);
+      setDiscoveryData(resp);
+
+      // Default selection: Top 20 pages
+      const defaultSelected = new Set(resp.pages.slice(0, 20).map((p) => p.url));
+      setSelectedUrls(defaultSelected);
+
+      setStep("discovered");
+    } catch (err: any) {
+      setDiscoveryError(err.message || "Failed to discover crawlable pages");
+    } finally {
+      setIsDiscovering(false);
+    }
+  };
+
+  const handleAddSitemapFiles = (files: FileList | null) => {
+    if (!files) return;
+    setSitemapFiles((prev) => {
+      const next = [...prev];
+      for (const f of Array.from(files)) {
+        if (next.length >= 3) break;
+        if (!next.some((g) => g.name === f.name && g.size === f.size)) {
+          next.push(f);
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleRemoveSitemapFile = (index: number) => {
+    setSitemapFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Live count of plausibly valid route lines (full validation is server-side).
+  const validRouteCount = React.useMemo(() => {
+    let n = 0;
+    for (const line of manualRoutes.split(/\r?\n/)) {
+      const t = line.trim();
+      if (!t || !/^https?:\/\//i.test(t)) continue;
+      try {
+        new URL(t);
+        n++;
+      } catch {
+        // skip invalid lines
+      }
+    }
+    return n;
+  }, [manualRoutes]);
 
   // Selection helpers
   const handleToggleUrl = (url: string) => {
@@ -348,6 +427,10 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
     setStep("input");
     setDiscoveryData(null);
     setSelectedUrls(new Set());
+    setSourceTab("website");
+    setSitemapFiles([]);
+    setSitemapUrl("");
+    setManualRoutes("");
     setLogs([]);
     setProgress(null);
     setResult(null);
@@ -436,6 +519,35 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
               </CardDescription>
             </CardHeader>
             <CardContent>
+              <div
+                role="tablist"
+                aria-label="Discovery source"
+                className="mb-4 flex flex-wrap items-center gap-1.5"
+              >
+                {(
+                  [
+                    { key: "website", label: "Website", icon: Globe },
+                    { key: "sitemap", label: "Sitemap files", icon: FileArrowUp },
+                    { key: "routes", label: "Specific routes", icon: ListPlus },
+                  ] as const
+                ).map((t) => (
+                  <Button
+                    key={t.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={sourceTab === t.key}
+                    variant={sourceTab === t.key ? "secondary" : "ghost"}
+                    size="sm"
+                    className="h-7 px-2.5 text-xs"
+                    onClick={() => setSourceTab(t.key)}
+                  >
+                    <t.icon className="size-3.5" aria-hidden="true" />
+                    {t.label}
+                  </Button>
+                ))}
+              </div>
+
+              {sourceTab === "website" && (
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -495,6 +607,164 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
                   Paste any public company site. No login needed.
                 </p>
               </form>
+              )}
+
+              {sourceTab === "sitemap" && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleDiscoverSitemap();
+                }}
+                className="flex min-w-0 flex-col gap-2"
+              >
+                <label
+                  htmlFor="sitemap-files"
+                  className="text-[13px] font-medium"
+                >
+                  Sitemap files (.xml or .xml.gz, up to 3, 5MB each)
+                </label>
+                <Input
+                  id="sitemap-files"
+                  type="file"
+                  accept=".xml,.xml.gz,application/xml,text/xml"
+                  multiple
+                  disabled={isDiscovering}
+                  onChange={(e) => handleAddSitemapFiles(e.target.files)}
+                  className="h-10 font-mono"
+                />
+                {sitemapFiles.length > 0 && (
+                  <ul className="flex flex-col gap-1">
+                    {sitemapFiles.map((f, i) => (
+                      <li
+                        key={`${f.name}-${f.size}`}
+                        className="flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-xs"
+                      >
+                        <span className="min-w-0 truncate font-mono">
+                          {f.name}{" "}
+                          <span className="text-muted-foreground">
+                            ({(f.size / 1024).toFixed(1)} KB)
+                          </span>
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 shrink-0 px-1.5"
+                          onClick={() => handleRemoveSitemapFile(i)}
+                          aria-label={`Remove ${f.name}`}
+                        >
+                          <X className="size-3.5" aria-hidden="true" />
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <label
+                  htmlFor="sitemap-url"
+                  className="mt-1 text-[13px] font-medium"
+                >
+                  Or paste a sitemap URL
+                </label>
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
+                  <Input
+                    id="sitemap-url"
+                    type="url"
+                    inputMode="url"
+                    value={sitemapUrl}
+                    onChange={(e) => setSitemapUrl(e.target.value)}
+                    placeholder="https://example.com/sitemap.xml"
+                    disabled={isDiscovering}
+                    className="h-10 flex-1 font-mono"
+                  />
+                  <Button
+                    type="submit"
+                    disabled={
+                      (sitemapFiles.length === 0 && !sitemapUrl.trim()) ||
+                      isDiscovering
+                    }
+                    className="h-10 shrink-0"
+                  >
+                    {isDiscovering ? (
+                      <>
+                        <CircleNotch
+                          className="size-4 animate-spin"
+                          aria-hidden="true"
+                        />
+                        Discovering
+                      </>
+                    ) : (
+                      <>
+                        <MagnifyingGlass
+                          className="size-4"
+                          aria-hidden="true"
+                        />
+                        Discover pages
+                      </>
+                    )}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Combine files and a sitemap URL if needed. Cross-domain URLs
+                  are dropped automatically.
+                </p>
+              </form>
+              )}
+
+              {sourceTab === "routes" && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleDiscoverSitemap();
+                }}
+                className="flex min-w-0 flex-col gap-2"
+              >
+                <label
+                  htmlFor="manual-routes"
+                  className="text-[13px] font-medium"
+                >
+                  Specific routes, one URL per line
+                </label>
+                <Textarea
+                  id="manual-routes"
+                  value={manualRoutes}
+                  onChange={(e) => setManualRoutes(e.target.value)}
+                  placeholder={"https://example.com/pricing\nhttps://example.com/about"}
+                  disabled={isDiscovering}
+                  rows={5}
+                  className="font-mono"
+                />
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+                  <p className="flex-1 text-xs text-muted-foreground">
+                    {validRouteCount} valid{" "}
+                    {validRouteCount === 1 ? "URL" : "URLs"} · cross-domain
+                    URLs are dropped
+                  </p>
+                  <Button
+                    type="submit"
+                    disabled={validRouteCount === 0 || isDiscovering}
+                    className="h-10 shrink-0"
+                  >
+                    {isDiscovering ? (
+                      <>
+                        <CircleNotch
+                          className="size-4 animate-spin"
+                          aria-hidden="true"
+                        />
+                        Discovering
+                      </>
+                    ) : (
+                      <>
+                        <MagnifyingGlass
+                          className="size-4"
+                          aria-hidden="true"
+                        />
+                        Discover pages
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </form>
+              )}
 
               {discoveryError && (
                 <div
@@ -728,7 +998,14 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
 
       {/* STEP 2: Discovered URLs Table & Page Selector */}
       {step === "discovered" && discoveryData && (
-        <div className="mt-4 min-w-0">
+        <div className="mt-4 min-w-0 space-y-4">
+          {(discoveryData.droppedCrossDomain ?? 0) > 0 && (
+            <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-[13px] text-muted-foreground">
+              {discoveryData.droppedCrossDomain} cross-domain{" "}
+              {discoveryData.droppedCrossDomain === 1 ? "URL was" : "URLs were"}{" "}
+              dropped — only pages on {discoveryData.domain} are kept.
+            </p>
+          )}
           <DiscoveryTable
             discovery={discoveryData}
             selectedUrls={selectedUrls}
