@@ -621,7 +621,7 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
                   htmlFor="sitemap-files"
                   className="text-[13px] font-medium"
                 >
-                  Sitemap files (.xml or .xml.gz, up to 3, 5MB each)
+                  Sitemap files (.xml or .xml.gz, up to 3; 5MB each)
                 </label>
                 <Input
                   id="sitemap-files"
