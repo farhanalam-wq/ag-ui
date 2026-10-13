@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import { gunzipSync } from "node:zlib";
 import { logger } from "@ag-ui/shared";
 import { validateSafeUrl } from "./ssrf";
 
@@ -33,7 +34,7 @@ export interface PrioritySignals {
   /** 0 for the site root, +1 per path level. */
   depth?: number;
   /** Where the URL was found. Owner-curated sources outrank crawled ones. */
-  source?: "llms.txt" | "sitemap" | "homepage" | "root";
+  source?: "llms.txt" | "sitemap" | "homepage" | "root" | "manual";
   /** How many discovery passes surfaced this URL (repeat sightings). */
   sightings?: number;
   /** Sitemap <priority> hint, 0..1, when the sitemap provides one. */
@@ -227,7 +228,7 @@ export interface DiscoveredPage {
   url: string;
   category: "pricing" | "product" | "docs" | "blog" | "general" | "about";
   priority: number;
-  source: "llms.txt" | "sitemap" | "homepage" | "root";
+  source: "llms.txt" | "sitemap" | "homepage" | "root" | "manual";
   depth: number;
 }
 
@@ -246,15 +247,17 @@ export interface DiscoveryInfo {
   sitemapsFollowed: string[];
   byCategory: Record<string, number>;
   bySource: Record<string, number>;
+  /** True when the page list was truncated to maxSitemapUrls (manual/sitemap path). */
+  truncated?: boolean;
 }
 
 const ASSET_EXT = /\.(xml|pdf|png|jpe?g|gif|svg|zip|mp4|webm|webp|css|js|woff2?|ttf|ico)(\?|#|$)/i;
 
-function isSitemapIndex(xml: string): boolean {
+export function isSitemapIndex(xml: string): boolean {
   return xml.includes("<sitemapindex") || (xml.includes("<sitemap>") && /\.xml/i.test(xml.slice(0, 4000)));
 }
 
-function extractLocs(xml: string): string[] {
+export function extractLocs(xml: string): string[] {
   const out: string[] = [];
   const re = /<loc>(https?:\/\/[^<]+)<\/loc>/gi;
   let m: RegExpExecArray | null;
@@ -264,7 +267,7 @@ function extractLocs(xml: string): string[] {
   return out;
 }
 
-function extractSitemapEntries(xml: string): { url: string; priority?: number }[] {
+export function extractSitemapEntries(xml: string): { url: string; priority?: number }[] {
   const out: { url: string; priority?: number }[] = [];
   const blocks = xml.match(/<url>([\s\S]*?)<\/url>/gi) ?? [];
   if (blocks.length === 0) {
@@ -451,6 +454,229 @@ export async function discoverPages(
       byCategory,
       bySource,
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Task 19 — manual sitemap plus URL list input.
+// Pure, unit-testable helpers for the `POST /api/crawler/discover-sitemap`
+// path. Auto-discovery (`discoverPages`) is untouched.
+// ---------------------------------------------------------------------------
+
+/** Thrown when an uploaded sitemap file cannot be parsed. */
+export class SitemapParseError extends Error {
+  readonly reason: "non-xml" | "empty" | "too-large";
+  constructor(reason: SitemapParseError["reason"], message: string) {
+    super(message);
+    this.name = "SitemapParseError";
+    this.reason = reason;
+  }
+}
+
+export interface SitemapEntry {
+  url: string;
+  priority?: number;
+}
+
+/** Max decompressed sitemap text accepted (gzip-bomb guard). */
+const MAX_SITEMAP_TEXT_CHARS = 20_000_000;
+/** Max raw upload bytes accepted (mirrors the 5 MB API cap). */
+const MAX_SITEMAP_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Thin wrapper over `extractSitemapEntries`. Returns `[]` when the XML has
+ * no `<loc>` entries (callers decide whether empty is an error).
+ */
+export function parseSitemapXml(xml: string): SitemapEntry[] {
+  if (xml.length > MAX_SITEMAP_TEXT_CHARS) {
+    throw new SitemapParseError("too-large", "Sitemap content exceeds size limit");
+  }
+  return extractSitemapEntries(xml);
+}
+
+/**
+ * Parses an uploaded `.xml` / `.xml.gz` buffer. Detects gzip by extension
+ * or magic bytes. Throws `SitemapParseError` for non-XML, empty, or
+ * oversize content.
+ */
+export function parseSitemapBuffer(buf: Buffer, filename: string): SitemapEntry[] {
+  if (buf.length > MAX_SITEMAP_BYTES) {
+    throw new SitemapParseError("too-large", `File ${filename} exceeds 5MB limit`);
+  }
+  const lower = filename.toLowerCase();
+  const isGzip =
+    lower.endsWith(".gz") || (buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b);
+  let text: string;
+  try {
+    text = isGzip ? gunzipSync(buf).toString("utf8") : buf.toString("utf8");
+  } catch {
+    throw new SitemapParseError("non-xml", `File ${filename} is not valid XML or gzip content`);
+  }
+  if (text.length > MAX_SITEMAP_TEXT_CHARS) {
+    throw new SitemapParseError("too-large", `File ${filename} decompresses beyond size limit`);
+  }
+  const head = text.slice(0, 4096);
+  if (!head.includes("<urlset") && !head.includes("<sitemapindex") && !head.includes("<loc>")) {
+    throw new SitemapParseError("non-xml", `File ${filename} is not XML sitemap content`);
+  }
+  const entries = extractSitemapEntries(text);
+  if (entries.length === 0) {
+    throw new SitemapParseError("empty", `File ${filename} contains no URLs`);
+  }
+  return entries;
+}
+
+/**
+ * Fetches a pasted sitemap URL server-side with one level of `sitemapindex`
+ * child recursion. SSRF-checked via `validateSafeUrl` like `/discover`.
+ * Never throws on child fetch failures — skips bad children.
+ */
+export async function fetchSitemapUrlWithRecursion(
+  sitemapUrl: string,
+  maxUrls = 2000
+): Promise<SitemapEntry[]> {
+  await validateSafeUrl(sitemapUrl);
+  const { text, status } = await fetchDiscoveryText(sitemapUrl, 8000);
+  if (status < 200 || status >= 300 || !text) return [];
+  if (!isSitemapIndex(text)) {
+    return extractSitemapEntries(text).slice(0, maxUrls);
+  }
+  const out: SitemapEntry[] = [];
+  const children = extractLocs(text)
+    .filter((u) => /\.xml(\?|#|$)/i.test(u))
+    .slice(0, 50);
+  for (const child of children) {
+    try {
+      await validateSafeUrl(child);
+      const { text: childText, status: childStatus } = await fetchDiscoveryText(child, 8000);
+      if (childStatus < 200 || childStatus >= 300 || !childText) continue;
+      for (const entry of extractSitemapEntries(childText)) {
+        out.push(entry);
+        if (out.length >= maxUrls) return out;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return out;
+}
+
+/**
+ * Normalizes one pasted manual URL against the primary domain base.
+ * Returns `null` for blank lines, non-http(s), or cross-host URLs.
+ */
+export function normalizeManualUrl(raw: string, primaryBase: URL): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (!/^https?:\/\//i.test(trimmed)) return null;
+  return normalizeUrl(trimmed, primaryBase);
+}
+
+export interface ManualDiscoveryInput {
+  url: string;
+  priority?: number;
+  source: "sitemap" | "manual";
+}
+
+export interface ManualDiscoveryOptions {
+  maxUrls?: number;
+}
+
+/** True when the raw URL targets a different host than the primary base. */
+function isCrossHost(raw: string, primaryBase: URL): boolean {
+  try {
+    const u = new URL(raw.trim());
+    const baseHost = primaryBase.hostname.replace(/^www\./, "").toLowerCase();
+    const targetHost = u.hostname.replace(/^www\./, "").toLowerCase();
+    return targetHost !== baseHost && !targetHost.endsWith(`.${baseHost}`);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Builds a ranked `DiscoveredPage[]` from merged sitemap + manual entries.
+ * Dedupes by normalized URL (first-seen wins), counts cross-host drops
+ * separately from invalid lines, truncates to `maxUrls` by priority.
+ */
+export async function buildManualDiscovery(
+  entries: ManualDiscoveryInput[],
+  primaryBase: URL,
+  opts?: ManualDiscoveryOptions
+): Promise<{ pages: DiscoveredPage[]; info: DiscoveryInfo; droppedCrossDomain: number }> {
+  const { inferCategory } = await import("./extractor");
+  const t0 = Date.now();
+  const maxUrls = opts?.maxUrls ?? 2000;
+  const domain = primaryBase.hostname.replace(/^www\./, "");
+
+  const seen = new Map<string, DiscoveredPage>();
+  let droppedCrossDomain = 0;
+  const pathDepth = (u: string): number => {
+    try {
+      return new URL(u).pathname.split("/").filter(Boolean).length;
+    } catch {
+      return 1;
+    }
+  };
+
+  for (const entry of entries) {
+    // Only absolute http(s) URLs are accepted here; manual lines are
+    // pre-filtered by `normalizeManualUrl` and sitemap <loc> values are
+    // absolute per spec. This also stops `normalizeUrl` from resolving
+    // garbage like "not a url" into a relative same-host URL.
+    if (!/^https?:\/\//i.test(entry.url.trim())) continue;
+    const normalized = normalizeUrl(entry.url, primaryBase);
+    if (!normalized) {
+      if (isCrossHost(entry.url, primaryBase)) droppedCrossDomain++;
+      continue;
+    }
+    if (ASSET_EXT.test(normalized)) continue;
+    if (seen.has(normalized)) continue;
+    const depth = Math.max(1, pathDepth(normalized));
+    seen.set(normalized, {
+      url: normalized,
+      category: inferCategory(normalized, "") as DiscoveredPage["category"],
+      priority: calculatePriority(normalized, {
+        source: entry.source,
+        depth,
+        sightings: 1,
+        sitemapPriority: entry.priority,
+      }),
+      source: entry.source,
+      depth,
+    });
+  }
+
+  let pages = [...seen.values()].sort((a, b) => b.priority - a.priority);
+  let truncated = false;
+  if (pages.length > maxUrls) {
+    pages = pages.slice(0, maxUrls);
+    truncated = true;
+    logger.info(`[DISCOVERY:MANUAL] Truncated ${seen.size} urls to maxSitemapUrls ${maxUrls}`);
+  }
+
+  const byCategory: Record<string, number> = {};
+  const bySource: Record<string, number> = {};
+  for (const p of pages) {
+    byCategory[p.category] = (byCategory[p.category] ?? 0) + 1;
+    bySource[p.source] = (bySource[p.source] ?? 0) + 1;
+  }
+
+  return {
+    pages,
+    info: {
+      domain,
+      totalUrls: pages.length,
+      durationMs: Date.now() - t0,
+      hasLlmsTxt: false,
+      hasLlmsFull: false,
+      robotsSitemaps: 0,
+      sitemapsFollowed: [],
+      byCategory,
+      bySource,
+      truncated,
+    },
+    droppedCrossDomain,
   };
 }
 
