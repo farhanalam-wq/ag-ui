@@ -500,6 +500,17 @@ export function parseSitemapXml(xml: string): SitemapEntry[] {
  * oversize content.
  */
 export function parseSitemapBuffer(buf: Buffer, filename: string): SitemapEntry[] {
+  return parseSitemapBufferWithMeta(buf, filename).entries;
+}
+
+export interface ParsedSitemap {
+  entries: SitemapEntry[];
+  /** True when the file is a `sitemapindex` (children need one-level fetch). */
+  isIndex: boolean;
+}
+
+/** Same as `parseSitemapBuffer` but also reports index-ness. */
+export function parseSitemapBufferWithMeta(buf: Buffer, filename: string): ParsedSitemap {
   if (buf.length > MAX_SITEMAP_BYTES) {
     throw new SitemapParseError("too-large", `File ${filename} exceeds 5MB limit`);
   }
@@ -523,7 +534,33 @@ export function parseSitemapBuffer(buf: Buffer, filename: string): SitemapEntry[
   if (entries.length === 0) {
     throw new SitemapParseError("empty", `File ${filename} contains no URLs`);
   }
-  return entries;
+  return { entries, isIndex: isSitemapIndex(text) };
+}
+
+/**
+ * Fetches one level of `sitemapindex` children. Each child is SSRF-checked;
+ * failures are skipped. Used for uploaded index files (whose children live
+ * on the web) — mirrors the recursion in `fetchSitemapUrlWithRecursion`.
+ */
+export async function fetchChildSitemaps(
+  childUrls: string[],
+  maxUrls = 2000
+): Promise<SitemapEntry[]> {
+  const out: SitemapEntry[] = [];
+  for (const child of childUrls.slice(0, 50)) {
+    try {
+      await validateSafeUrl(child);
+      const { text, status } = await fetchDiscoveryText(child, 8000);
+      if (status < 200 || status >= 300 || !text) continue;
+      for (const entry of extractSitemapEntries(text)) {
+        out.push(entry);
+        if (out.length >= maxUrls) return out;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return out;
 }
 
 /**
@@ -541,24 +578,10 @@ export async function fetchSitemapUrlWithRecursion(
   if (!isSitemapIndex(text)) {
     return extractSitemapEntries(text).slice(0, maxUrls);
   }
-  const out: SitemapEntry[] = [];
   const children = extractLocs(text)
     .filter((u) => /\.xml(\?|#|$)/i.test(u))
     .slice(0, 50);
-  for (const child of children) {
-    try {
-      await validateSafeUrl(child);
-      const { text: childText, status: childStatus } = await fetchDiscoveryText(child, 8000);
-      if (childStatus < 200 || childStatus >= 300 || !childText) continue;
-      for (const entry of extractSitemapEntries(childText)) {
-        out.push(entry);
-        if (out.length >= maxUrls) return out;
-      }
-    } catch {
-      continue;
-    }
-  }
-  return out;
+  return fetchChildSitemaps(children, maxUrls);
 }
 
 /**

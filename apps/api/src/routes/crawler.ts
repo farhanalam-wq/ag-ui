@@ -3,8 +3,9 @@ import { validateSafeUrl } from "@ag-ui/crawler";
 import { discoverPages } from "@ag-ui/crawler";
 import {
   buildManualDiscovery,
+  fetchChildSitemaps,
   fetchSitemapUrlWithRecursion,
-  parseSitemapBuffer,
+  parseSitemapBufferWithMeta,
   type ManualDiscoveryInput,
 } from "@ag-ui/crawler";
 import { logger } from "@ag-ui/shared";
@@ -183,8 +184,28 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
           return { error: `File "${name}" exceeds the 5MB limit` };
         }
         try {
-          for (const e of parseSitemapBuffer(buffer, name)) {
-            merged.push({ url: e.url, priority: e.priority, source: "sitemap" });
+          const { entries, isIndex } = parseSitemapBufferWithMeta(buffer, name);
+          if (isIndex) {
+            // Uploaded sitemapindex: children live on the web, fetch one
+            // level like the pasted-URL path. Non-xml locs (if any) are kept
+            // as page entries.
+            const pageLocs = entries.filter((e) => !/\.xml(\?|#|$)/i.test(e.url));
+            for (const e of pageLocs) {
+              merged.push({ url: e.url, priority: e.priority, source: "sitemap" });
+            }
+            const childUrls = entries
+              .filter((e) => /\.xml(\?|#|$)/i.test(e.url))
+              .map((e) => e.url);
+            for (const e of await fetchChildSitemaps(childUrls, maxUrls)) {
+              merged.push({ url: e.url, priority: e.priority, source: "sitemap" });
+            }
+            if (pageLocs.length === 0 && childUrls.length === 0) {
+              firstError ??= `File "${name}" contains no URLs`;
+            }
+          } else {
+            for (const e of entries) {
+              merged.push({ url: e.url, priority: e.priority, source: "sitemap" });
+            }
           }
         } catch (err: any) {
           firstError ??= err?.message || `File "${name}" could not be parsed`;

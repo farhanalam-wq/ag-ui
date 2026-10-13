@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { gzipSync } from "node:zlib";
 import {
   buildManualDiscovery,
+  fetchChildSitemaps,
   normalizeManualUrl,
   parseSitemapBuffer,
+  parseSitemapBufferWithMeta,
   parseSitemapXml,
   SitemapParseError,
 } from "./discovery";
@@ -73,6 +75,20 @@ describe("parseSitemapBuffer", () => {
     const big = Buffer.alloc(5 * 1024 * 1024 + 1, "a");
     expect(() => parseSitemapBuffer(big, "big.xml")).toThrow(SitemapParseError);
   });
+
+  test("reports index-ness via WithMeta", () => {
+    expect(parseSitemapBufferWithMeta(Buffer.from(URLSET, "utf8"), "s.xml").isIndex).toBe(
+      false
+    );
+    const meta = parseSitemapBufferWithMeta(Buffer.from(INDEX, "utf8"), "i.xml");
+    expect(meta.isIndex).toBe(true);
+    expect(meta.entries.length).toBe(2);
+    const gzMeta = parseSitemapBufferWithMeta(
+      Buffer.from(gzipSync(Buffer.from(INDEX, "utf8"))),
+      "i.xml.gz"
+    );
+    expect(gzMeta.isIndex).toBe(true);
+  });
 });
 
 describe("normalizeManualUrl", () => {
@@ -86,6 +102,29 @@ describe("normalizeManualUrl", () => {
     expect(normalizeManualUrl("https://evil.com/x", base)).toBeNull();
     expect(normalizeManualUrl("ftp://example.com/x", base)).toBeNull();
     expect(normalizeManualUrl("   ", base)).toBeNull();
+  });
+});
+
+describe("fetchChildSitemaps", () => {
+  test("fetches one level of index children, skips failures", async () => {
+    const realFetch = globalThis.fetch;
+    const childXml = `<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://example.com/a</loc></url><url><loc>https://example.com/b</loc></url></urlset>`;
+    (globalThis as any).fetch = async (url: string) => {
+      if (String(url).endsWith("sitemap-a.xml")) {
+        return { status: 200, text: async () => childXml };
+      }
+      return { status: 404, text: async () => "" };
+    };
+    try {
+      const out = await fetchChildSitemaps(
+        ["https://example.com/sitemap-a.xml", "https://example.com/missing.xml"],
+        2000
+      );
+      expect(out.length).toBe(2);
+      expect(out[0].url).toBe("https://example.com/a");
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 });
 
