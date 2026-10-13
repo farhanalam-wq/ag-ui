@@ -181,6 +181,51 @@ ranked excerpts with scores, `--json` pipes through `jq`.
 - Frontend: source selector with three tabs (Website, Sitemap files, Specific routes) in the input card of `ingestion-studio.tsx`. Sitemap tab holds multi file dropzone plus sitemap URL input plus parsed count preview. Routes tab holds textarea with live valid count. All three converge to `setDiscoveryData` with default top 20 selection. Shared Advanced crawl settings. shadcn primitives plus semantic tokens only, Phosphor icons only.
 - Acceptance: upload of 2 sitemap files plus 5 manual URLs yields one deduped `DiscoveryResponse`, cross domain URLs are dropped with a visible count, index plus gzip fixtures parse, selection and ingest stream run unchanged to READY, and invalid files return 400 with a toast and no state change.
 
+## 20. Web load time overhaul: Next 16.4 bump, drop @thesvg/icons, code-split heavy vendors (P0) (Web impact #1)
+
+- Context Oct 13 2026: `apps/web` loads slowly in dev and prod. Root causes found by chunk audit (`apps/web/.next/static/chunks`: `app/embed/[key] 13M`, `app/playground 9.9M`, `main-app.js 7.4M`, `voice-session_tsx.js 4.2M`, dozens of `shikijs_langs_dist_*` 1-11M each; `.next` 600MB stale). `apps/web/next.config.mjs` has zero perf tactics — only `transpilePackages`. All 26 `app/**/page.tsx` files start with `"use client"` (zero RSC). No `optimizePackageImports`, no `next/font`, no `loading.tsx`/`Suspense`, no route-level splitting for recharts/streamdown/livekit.
+- Files: `apps/web/package.json`, `apps/web/next.config.mjs`, `apps/web/app/layout.tsx`, `apps/web/app/loading.tsx` (new), `apps/web/app/error.tsx` (new), `apps/web/app/page.tsx`, `apps/web/app/playground/page.tsx`, `apps/web/app/embed/[key]/page.tsx`, `apps/web/app/api/icon/route.ts` (delete), `apps/web/components/ai-elements/message.tsx`, `apps/web/components/ui/chart.tsx`, `apps/web/components/ui/select.tsx`, `apps/web/components/openui-client-inner.tsx`, `apps/web/tailwind.config.ts`, `packages/genui/package.json`, `packages/genui/src/icons/registry.ts`, `packages/genui/src/icons/resolver.ts`, `packages/genui/src/icons/tech-icon.tsx`.
+
+- 20a. Bump Next 15.1.7 → 16.4.0 (why: 15.x EOL Oct 21 2026, Critical security patch Oct 14 2026 only lands on 16.x; 16.4 adds lazy compilation of client dynamic imports + smaller Turbopack output, which directly cuts the chunk sizes above).
+  - Bump `apps/web/package.json`: `next@16.4.0`, `react@^19.3`, `react-dom@^19.3`, Node >= 20.9. Run `npx @next/codemod@canary upgrade latest`.
+  - Fix 16 breaking usages: `useParams()`/`useSearchParams()` in `app/embed/[key]/page.tsx` get Suspense boundary (see 20f); `app/api/icon/route.ts` gets `export const runtime = "nodejs"` before deletion (or delete outright per 20b); verify `jsx: preserve` + `transpilePackages` still resolve `workspace:*` links under bun.
+  - Acceptance: `bun install && turbo run build --filter=@ag-ui/web` green; `openui-client-inner.tsx` Renderer smoke-renders; no `resolveIcons`/`metadata` type errors.
+
+- 20b. Remove `@thesvg/icons`, keep `@ag-ui/genui` (why: zero direct uses in `apps/web` source — only transitive via `genuiLibrary`; yet `registry.ts` statically imports 118 `@thesvg/icons/*` modules + `slugs-data.ts` ships a 7,412-slug single-line string into the client graph; `app/api/icon/route.ts` exists only to serve thesvg `dist/*.js` files from disk).
+  - Delete dep from `apps/web/package.json` (`@thesvg/icons@^3.3.7`) and `packages/genui/package.json`.
+  - `packages/genui/src/icons/registry.ts`: delete the 118 static imports + `CORE_ICONS` entries; replace with `export const CORE_ICONS = {}` tombstone; stub `loadIconModule()` to `return null` (keep signature so `tech-icon.tsx`/`resolver.ts` compile); delete the `fetch(/api/icon?slug=)` browser branch and the `import(@thesvg/...)` SSR fallback.
+  - `packages/genui/src/icons/resolver.ts` + `tech-icon.tsx`: short-circuit to existing `getCategoryFallback()` Phosphor icons (`Cube/Code/Database/Cloud/Wrench/Buildings/ShieldCheck/PlugsConnected`); `TechIcon` never suspends on network.
+  - Delete `apps/web/app/api/icon/route.ts` (its `getDistDir()` fallback paths + `readFileSync(dist/<slug>.js)` + svg/hex/title regex parse become dead code once the package is gone).
+  - Keep `slug-index.ts` / `semantic-map.ts` / `slugs-data.ts` files as inert data (no bundle cost once unimported) or stub to `[]` if analyzer still flags them.
+  - Acceptance: `grep -r thesvg apps/web packages/genui --include="*.ts*"` returns zero code hits; build chunk list contains no `thesvg`; `TechGrid/ProductGrid/CompetitorGrid/OverviewCard/ServiceGrid/EnhancedTagBlock/ExecutiveBrief/RouteMap` render with Phosphor fallback cubes and no broken images.
+
+- 20c. Harden `next.config.mjs` (why: 66 `import { X } from "@phosphor-icons/react"` sites across `app/`, `components/ui/`, `packages/genui/src/` each pull the full 1000+ icon barrel without dedupe).
+  - Set `experimental.optimizePackageImports: ["@phosphor-icons/react", "lucide-react", "recharts", "streamdown", "@streamdown/cjk", "@streamdown/code", "sonner"]`, `compiler.removeConsole: { exclude: ["error", "warn"] }`, `poweredByHeader: false`, `productionBrowserSourceMaps: false`. Keep `transpilePackages: ["@ag-ui/contracts", "@ag-ui/shared", "@ag-ui/genui"]`.
+  - Acceptance: prod first-load JS drops on every route; analyzer shows per-icon chunks instead of one Phosphor blob.
+
+- 20d. Code-split recharts + streamdown/shiki (why: `app/page.tsx` statically imports 8 recharts primitives + `components/ui/chart.tsx` does `import * as RechartsPrimitive`; `components/ai-elements/message.tsx` statically imports `Streamdown + @streamdown/cjk + @streamdown/code`, which drags the entire Shiki grammar set into playground/embed).
+  - Recharts: extract charts from `app/page.tsx` into a client island, `dynamic(() => import(...), { ssr: false, loading: skeleton })`; same for `RadarChart` block.
+  - Streamdown: lazy-load `code`/`cjk` plugins in `message.tsx`; remove unused `@streamdown/math`, `@streamdown/mermaid`, `react-markdown` from `apps/web/package.json` (or dynamic-import only where an answer needs them).
+  - Acceptance: no `shikijs_langs_dist_*` in the initial `/` or `/playground` chunk; `/` first-load < 400KB gz; charts pop in behind skeleton without blocking paint.
+
+- 20e. Fix voice + fonts + icon-duplication weight (why: `voice-session_tsx.js 4.2M` — playground already `dynamic`s it but `app/embed/[key]/page.tsx` imports it statically, making embed the heaviest route; `app/layout.tsx` uses `@fontsource-variable/*` render-blocking CSS instead of `next/font`; `components/ui/select.tsx` is the sole `lucide-react` user while everything else uses Phosphor).
+  - `app/embed/[key]/page.tsx`: change `import { VoiceSession }` to `dynamic(() => import("@/components/voice/voice-session"), { ssr: false })` (parity with `app/playground/page.tsx`).
+  - `app/layout.tsx`: replace `@fontsource-variable/hanken-grotesk + jetbrains-mono` CSS imports with `next/font/google` (latin subset, `display: swap`, CSS vars `--font-sans/--font-code` preserved for `globals.css`).
+  - `components/ui/select.tsx`: swap `lucide-react Check/ChevronDown/ChevronUp` → Phosphor equivalents; drop `lucide-react` dep.
+  - `tailwind.config.ts`: drop `./pages/**` (dir does not exist); narrow `../../packages/genui/src/**/*` to `../../packages/genui/src/components/**/*` so dev does not re-scan the icon registry on every rebuild.
+  - Acceptance: `/embed/[key]` chunk drops from ~13M dev; font CSS no longer render-blocks; one icon runtime only.
+
+- 20f. RSC + routing hygiene (why: all-`"use client"` forces full JS per page; `useSearchParams` without `<Suspense>` + `export const dynamic = "force-dynamic"` on embed forces whole-route client render + 5s×40 config-poll waterfall with no skeleton).
+  - Remove `"use client"` from pure presentational routes (`analytics/*`, `agents`, `operations/*`, `settings/*`, `experience/*`, `visitors/*`, `intelligence/*`, `integration/*` where no hooks are used); keep it on `/`, `playground`, `embed/[key]`, `knowledge/*`.
+  - `app/embed/[key]/page.tsx`: wrap the `useSearchParams` subtree in `<Suspense fallback>`; drop `force-dynamic` unless the indexing poll provably needs it.
+  - Add `app/loading.tsx` (chart/chat skeletons) + `app/error.tsx` so transitions never blank.
+  - Acceptance: layout statically renders; route transitions show skeletons; embed works with Suspense boundary and no deopt warning in build output.
+
+- 20g. Cleanup + verify (why: 600MB `.next` inflates `next dev` cold start; dead deps slow resolve).
+  - `rm -rf apps/web/.next`; re-measure cold start + HMR vs pre-fix baseline (Phase 0); run `turbo run build lint`; confirm analyzer: zero `thesvg`, zero initial `shikijs_langs`, per-route JS down; smoke-test overview charts, playground stream, embed chat + voice mount on demand, GenUI cards with fallback icons.
+
+- Branch policy: all of 20a-20g happens on a separate feature branch cut from `main` (e.g. `perf/web-load-overhaul`), never directly on `main`. `main` stays deployable throughout. Merge into `main` only after 20g acceptance is green (build + lint + analyzer gates + smoke tests) via reviewed PR; delete the branch after merge.
+
 ## Demo verification checklist (run in order) (P0) (Verification)
 
 Ran Oct 2026 against nescafe.com scoped to 100 pages (instead of the resend 50/1000 below):
