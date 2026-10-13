@@ -12,8 +12,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { cjk } from "@streamdown/cjk";
-import { code } from "@streamdown/code";
 import type { UIMessage } from "ai";
 import { CaretLeft, CaretRight } from "@phosphor-icons/react";
 import type { ComponentProps, HTMLAttributes, ReactElement } from "react";
@@ -325,20 +323,36 @@ export const MessageBranchPage = ({
 
 export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
-// Code highlighting only — math/mermaid/cjk stay out until an answer needs them.
-const streamdownPlugins = { cjk, code };
-
+// Phase D: the code/cjk plugins (Shiki grammars, the multi-MB chunk) load on
+// demand so they never join the initial playground/embed chunk. Messages render
+// immediately unhighlighted; highlighting attaches when the chunk arrives.
+// Code highlighting only — math/mermaid stay out until an answer needs them.
 export const MessageResponse = memo(
-  ({ className, ...props }: MessageResponseProps) => (
-    <Streamdown
-      className={cn(
-        "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-        className
-      )}
-      plugins={streamdownPlugins}
-      {...props}
-    />
-  ),
+  ({ className, ...props }: MessageResponseProps) => {
+    const [plugins, setPlugins] =
+      useState<MessageResponseProps["plugins"]>(undefined);
+    useEffect(() => {
+      let active = true;
+      Promise.all([import("@streamdown/cjk"), import("@streamdown/code")]).then(
+        ([cjkMod, codeMod]) => {
+          if (active) setPlugins({ cjk: cjkMod.cjk, code: codeMod.code });
+        }
+      );
+      return () => {
+        active = false;
+      };
+    }, []);
+    return (
+      <Streamdown
+        className={cn(
+          "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+          className
+        )}
+        plugins={plugins}
+        {...props}
+      />
+    );
+  },
   (prevProps, nextProps) =>
     prevProps.children === nextProps.children &&
     nextProps.isAnimating === prevProps.isAnimating

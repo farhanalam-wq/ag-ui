@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
   ChartLineUp,
@@ -16,19 +17,8 @@ import {
   Users,
   Info,
 } from "@phosphor-icons/react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  PolarAngleAxis,
-  PolarGrid,
-  Radar,
-  RadarChart,
-  ReferenceArea,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { StudioShell } from "@/components/studio-shell";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -52,23 +42,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from "@/components/ui/chart";
 import { useSelectedCompany } from "@/stores/use-company-store";
 import { getOverviewMock } from "@/mocks/overview";
-
-const trendConfig = {
-  assisted: { label: "Assisted", color: "hsl(var(--chart-1))" },
-  baseline: { label: "Baseline", color: "hsl(var(--chart-7))" },
-} satisfies ChartConfig;
-
-const radarConfig = {
-  share: { label: "Demand share", color: "hsl(var(--chart-1))" },
-} satisfies ChartConfig;
 
 const INTENT_COLORS = [
   "hsl(var(--chart-1))",
@@ -111,6 +86,23 @@ function MetricInfo({ metric }: { metric: keyof typeof METRIC_HELP }) {
 function fmtDelta(delta: string) {
   return delta.replace("WoW", "vs prior 7d");
 }
+
+// Phase D: recharts ships in these islands only — never in the initial load.
+const MonitoringTrendChart = dynamic(
+  () => import("./overview-charts").then((m) => m.MonitoringTrendChart),
+  {
+    ssr: false,
+    loading: () => <Skeleton className="h-[280px] w-full" />,
+  }
+);
+
+const IntentRadarChart = dynamic(
+  () => import("./overview-charts").then((m) => m.IntentRadarChart),
+  {
+    ssr: false,
+    loading: () => <Skeleton className="min-h-[280px] w-full flex-1" />,
+  }
+);
 
 export default function OverviewPage() {
   const router = useRouter();
@@ -447,105 +439,10 @@ export default function OverviewPage() {
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <ChartContainer
-                      key={refreshKey}
-                      config={trendConfig}
-                      className="h-[280px] w-full"
-                    >
-                      <AreaChart
-                        data={demand}
-                        margin={{ top: 4, right: 8, bottom: 0, left: -12 }}
-                      >
-                        <defs>
-                          <linearGradient
-                            id="mon-assisted"
-                            x1="0"
-                            y1="0"
-                            x2="0"
-                            y2="1"
-                          >
-                            <stop
-                              offset="0%"
-                              stopColor="hsl(var(--chart-1))"
-                              stopOpacity={0.22}
-                            />
-                            <stop
-                              offset="100%"
-                              stopColor="hsl(var(--chart-1))"
-                              stopOpacity={0.03}
-                            />
-                          </linearGradient>
-                          <pattern
-                            id="mon-hatch"
-                            width="6"
-                            height="6"
-                            patternTransform="rotate(45)"
-                            patternUnits="userSpaceOnUse"
-                          >
-                            <rect
-                              width="6"
-                              height="6"
-                              fill="hsl(var(--muted) / 0.5)"
-                            />
-                            <line
-                              x1="0"
-                              y1="0"
-                              x2="0"
-                              y2="6"
-                              stroke="hsl(var(--border))"
-                              strokeWidth="1"
-                            />
-                          </pattern>
-                        </defs>
-                        <CartesianGrid
-                          stroke="hsl(var(--border))"
-                          vertical={false}
-                        />
-                        {demand.length > 0 && (
-                          <ReferenceArea
-                            x1={demand[0]?.d}
-                            x2={demand[1]?.d}
-                            fill="url(#mon-hatch)"
-                            fillOpacity={0.6}
-                          />
-                        )}
-                        <XAxis
-                          dataKey="d"
-                          tickLine={false}
-                          axisLine={false}
-                          tick={{
-                            fill: "hsl(var(--muted-foreground))",
-                            fontSize: 12,
-                          }}
-                          minTickGap={32}
-                        />
-                        <YAxis
-                          tickLine={false}
-                          axisLine={false}
-                          tick={{
-                            fill: "hsl(var(--muted-foreground))",
-                            fontSize: 12,
-                          }}
-                          width={40}
-                        />
-                        <ChartTooltip content={<ChartTooltipContent />} />
-                        <Area
-                          dataKey="assisted"
-                          strokeWidth={2}
-                          dot={false}
-                          stroke="var(--color-assisted)"
-                          fill="url(#mon-assisted)"
-                        />
-                        <Area
-                          dataKey="baseline"
-                          fill="none"
-                          strokeWidth={2}
-                          strokeDasharray="5 4"
-                          dot={false}
-                          stroke="var(--color-baseline)"
-                        />
-                      </AreaChart>
-                    </ChartContainer>
+                    <MonitoringTrendChart
+                      demand={demand}
+                      refreshKey={refreshKey}
+                    />
                     <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] uppercase tracking-wide text-muted-foreground">
                       <span className="inline-flex items-center gap-1.5">
                         <span className="inline-block h-2 w-2 rounded-[2px] bg-[hsl(var(--chart-1))]" />
@@ -853,34 +750,7 @@ export default function OverviewPage() {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="flex min-h-0 flex-1 flex-col">
-                      <ChartContainer
-                        config={radarConfig}
-                        className="min-h-[280px] w-full flex-1"
-                      >
-                        <RadarChart
-                          data={radarData}
-                          outerRadius="68%"
-                          margin={{ top: 8, right: 16, bottom: 8, left: 16 }}
-                        >
-                          <PolarGrid stroke="hsl(var(--border))" />
-                          <PolarAngleAxis
-                            dataKey="intent"
-                            tick={{
-                              fill: "hsl(var(--muted-foreground))",
-                              fontSize: 11,
-                            }}
-                          />
-                          <ChartTooltip content={<ChartTooltipContent />} />
-                          <Radar
-                            dataKey="share"
-                            stroke="var(--color-share)"
-                            fill="var(--color-share)"
-                            fillOpacity={0.3}
-                            strokeWidth={2}
-                            dot={false}
-                          />
-                        </RadarChart>
-                      </ChartContainer>
+                      <IntentRadarChart radarData={radarData} />
                       <p className="mt-2 text-xs text-muted-foreground">
                         {data.intentBreakdown[0]?.intent} leads at{" "}
                         {data.intentBreakdown[0]?.share}% of high intent
