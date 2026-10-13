@@ -6,7 +6,7 @@ import "./globals.css";
 
 // Self-hosted variable fonts via next/font (latin subset,
 // display=swap). Same --font-sans / --font-code vars feed globals.css and
-// the Tailwind fontFamily map; no render-blocking fontsource CSS.
+// the Tailwind fontFamily map; no render-blocking font CSS.
 const fontSans = Hanken_Grotesk({
   subsets: ["latin"],
   display: "swap",
