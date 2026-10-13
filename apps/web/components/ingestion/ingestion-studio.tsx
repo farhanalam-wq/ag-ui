@@ -1030,6 +1030,7 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
             error={pipelineError}
             onReset={handleReset}
             appearanceActive={appearanceActive}
+            onTestCompany={onCompanyIndexed}
           />
         </div>
       )}

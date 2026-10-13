@@ -6,7 +6,6 @@ import {
   Copy,
   CircleNotch,
   WarningCircle,
-  ArrowSquareOut,
   ArrowCounterClockwise,
   Code,
 } from "@phosphor-icons/react";
@@ -50,7 +49,13 @@ export function EmbedSnippet({ result }: EmbedSnippetProps) {
 
   const handleRotate = useCallback(async () => {
     rotateToastArmed.current = true;
-    await rotate();
+    const res = await rotate();
+    if (!res.ok) {
+      rotateToastArmed.current = false;
+      toast.error("Key rotation failed", {
+        description: res.message,
+      });
+    }
   }, [rotate]);
 
   useEffect(() => {
@@ -60,11 +65,6 @@ export function EmbedSnippet({ result }: EmbedSnippetProps) {
       toast.success("Fresh key issued", {
         description: "Old embeds stop working immediately.",
         icon: <ArrowCounterClockwise className="size-4" aria-hidden="true" />,
-      });
-    } else if (phase.kind === "error") {
-      rotateToastArmed.current = false;
-      toast.error("Key rotation failed", {
-        description: phase.message,
       });
     }
   }, [phase]);
@@ -167,24 +167,10 @@ export function EmbedSnippet({ result }: EmbedSnippetProps) {
             </Button>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Test opens first-party chat; snippet/preview above remain the embed route */}
-            <Button asChild style={{ backgroundColor: brandColor }}>
-              <a
-                href={`${webOrigin}/playground`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-white hover:opacity-90"
-              >
-                <ArrowSquareOut className="size-3.5" data-icon="inline-start" />
-                <span>Test live chatbot</span>
-              </a>
-            </Button>
-            <span className="font-mono text-[11px] text-muted-foreground">
-              Strict CSP sites may need{" "}
-              <code>frame-src {webOrigin}</code>
-            </span>
-          </div>
+          <p className="font-mono text-[11px] text-muted-foreground">
+            Strict CSP sites may need{" "}
+            <code>frame-src {webOrigin}</code>
+          </p>
         </>
       )}
     </div>
