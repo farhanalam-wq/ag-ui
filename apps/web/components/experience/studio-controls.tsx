@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { CaretDown, CaretRight } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -9,6 +10,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   AVATAR_MODES,
   LAUNCHER_GLYPHS,
@@ -50,33 +56,52 @@ function Section({
   hint,
   fields,
   onResetGroup,
+  defaultOpen = false,
   children,
 }: {
   title: string;
   hint?: string;
   fields: (keyof WidgetThemeOverride)[];
   onResetGroup: (fields: (keyof WidgetThemeOverride)[]) => void;
+  defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <Card className="min-w-0">
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-[14px] font-semibold">{title}</CardTitle>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs font-normal text-muted-foreground"
-            onClick={() => onResetGroup(fields)}
-          >
-            Reset
-          </Button>
-        </div>
-        {hint && (
-          <CardDescription className="text-[12px]">{hint}</CardDescription>
-        )}
-      </CardHeader>
-      <CardContent className="space-y-3 pt-0">{children}</CardContent>
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between gap-2">
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              >
+                {open ? (
+                  <CaretDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                ) : (
+                  <CaretRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                )}
+                <CardTitle className="truncate text-[14px] font-semibold">{title}</CardTitle>
+              </button>
+            </CollapsibleTrigger>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 shrink-0 px-2 text-xs font-normal text-muted-foreground"
+              onClick={() => onResetGroup(fields)}
+            >
+              Reset
+            </Button>
+          </div>
+          {hint && (
+            <CardDescription className="text-[12px]">{hint}</CardDescription>
+          )}
+        </CardHeader>
+        <CollapsibleContent>
+          <CardContent className="space-y-3 pt-0">{children}</CardContent>
+        </CollapsibleContent>
+      </Collapsible>
     </Card>
   );
 }
@@ -100,61 +125,65 @@ function ColorField({
   const shown = text ?? formatHexAs(effective, format);
   const customized = value != null;
   return (
-    <div className="flex items-center gap-2 text-[13px]">
-      <input
-        type="color"
-        value={/^#(?:[0-9a-f]{6})$/i.test(effective) ? effective : fallback}
-        onChange={(e) => {
-          setText(null);
-          onPick(e.target.value);
-        }}
-        className="size-8 shrink-0 cursor-pointer rounded-md border border-border bg-transparent p-0.5"
-        aria-label={label}
-      />
-      <span className="min-w-0 flex-1 text-muted-foreground">
-        {label}
-        {customized && <span className="ml-1 text-[10px]">•</span>}
-      </span>
-      <select
-        value={format}
-        onChange={(e) => {
-          setFormat(e.target.value as ColorFormat);
-          setText(null);
-        }}
-        className="shrink-0 rounded-md border border-border bg-muted/40 px-1 py-1 font-mono text-[11px] text-muted-foreground"
-        aria-label={`${label} color format`}
-      >
-        <option value="hex">hex</option>
-        <option value="rgb">rgb</option>
-        <option value="hsl">hsl</option>
-      </select>
-      <input
-        type="text"
-        value={shown}
-        spellCheck={false}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={() => {
-          if (text == null) return;
-          const hex = parseColorToHex(text);
-          if (hex) onPick(hex);
-          setText(null);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-          if (e.key === "Escape") setText(null);
-        }}
-        className="w-36 shrink-0 rounded-md border border-border bg-muted/40 px-1.5 py-1 font-mono text-[11px] text-muted-foreground"
-        aria-label={`${label} color value`}
-      />
-      {onClear && customized && (
-        <button
-          type="button"
-          onClick={onClear}
-          className="shrink-0 text-[11px] text-muted-foreground underline underline-offset-2"
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2 text-[13px]">
+        <input
+          type="color"
+          value={/^#(?:[0-9a-f]{6})$/i.test(effective) ? effective : fallback}
+          onChange={(e) => {
+            setText(null);
+            onPick(e.target.value);
+          }}
+          className="size-8 shrink-0 cursor-pointer rounded-md border border-border bg-transparent p-0.5"
+          aria-label={label}
+        />
+        <span className="min-w-0 flex-1 truncate text-muted-foreground">
+          {label}
+          {customized && <span className="ml-1 text-[10px]">•</span>}
+        </span>
+        {onClear && customized && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="shrink-0 text-[11px] text-muted-foreground underline underline-offset-2"
+          >
+            clear
+          </button>
+        )}
+      </div>
+      <div className="flex items-center gap-1.5 pl-10">
+        <select
+          value={format}
+          onChange={(e) => {
+            setFormat(e.target.value as ColorFormat);
+            setText(null);
+          }}
+          className="shrink-0 rounded-md border border-border bg-muted/40 px-1 py-1 font-mono text-[11px] text-muted-foreground"
+          aria-label={`${label} color format`}
         >
-          clear
-        </button>
-      )}
+          <option value="hex">hex</option>
+          <option value="rgb">rgb</option>
+          <option value="hsl">hsl</option>
+        </select>
+        <input
+          type="text"
+          value={shown}
+          spellCheck={false}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={() => {
+            if (text == null) return;
+            const hex = parseColorToHex(text);
+            if (hex) onPick(hex);
+            setText(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            if (e.key === "Escape") setText(null);
+          }}
+          className="min-w-0 flex-1 rounded-md border border-border bg-muted/40 px-1.5 py-1 font-mono text-[11px] text-muted-foreground"
+          aria-label={`${label} color value`}
+        />
+      </div>
     </div>
   );
 }
@@ -179,7 +208,7 @@ function RadiusField({
             type="button"
             onClick={() => onPick(r)}
             aria-pressed={value === r}
-            className={`rounded-md border px-2.5 py-1 font-mono text-[11px] transition-colors ${
+            className={`rounded-md border px-2.5 py-1 font-mono text-[11px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${
               value === r
                 ? "border-foreground bg-foreground text-background"
                 : "border-border bg-muted/40 text-muted-foreground hover:bg-muted"
@@ -206,7 +235,7 @@ function RadiusField({
             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
             if (e.key === "Escape") setCustom(null);
           }}
-          className="w-20 rounded-md border border-border bg-muted/40 px-2 py-1 font-mono text-[11px] text-muted-foreground"
+          className="min-w-20 flex-1 rounded-md border border-border bg-muted/40 px-2 py-1 font-mono text-[11px] text-muted-foreground"
           aria-label={`${label} custom radius`}
         />
       </div>
@@ -277,7 +306,7 @@ function Toggle({
       role="switch"
       aria-checked={checked}
       onClick={() => onFlip(!checked)}
-      className="flex w-full items-center justify-between gap-2 text-[13px]"
+      className="flex w-full items-center justify-between gap-2 rounded-md text-[13px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
     >
       <span className="text-muted-foreground">{label}</span>
       <span
@@ -293,6 +322,42 @@ function Toggle({
         />
       </span>
     </button>
+  );
+}
+
+function Segmented({
+  label,
+  value,
+  options,
+  onPick,
+}: {
+  label: string;
+  value: string;
+  options: readonly string[];
+  onPick: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[12px] text-muted-foreground">{label}</p>
+      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={label}>
+        {options.map((o) => (
+          <button
+            key={o}
+            type="button"
+            role="radio"
+            aria-checked={value === o}
+            onClick={() => onPick(o)}
+            className={`rounded-md border px-2.5 py-1 text-[12px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${
+              value === o
+                ? "border-foreground bg-foreground text-background"
+                : "border-border bg-muted/40 text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            {o}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -323,8 +388,8 @@ export function StudioControls({
   const dirtyCount = Object.keys(override).length;
 
   return (
-    <div className="min-w-0 space-y-4">
-      <Card className="min-w-0">
+    <div className="grid min-w-0 items-start gap-4 xl:grid-cols-2">
+      <Card className="min-w-0 xl:col-span-2 lg:sticky lg:top-20 z-10">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between gap-2">
             <div>
@@ -386,6 +451,7 @@ export function StudioControls({
         hint="Preview frame size (uncapped) plus panel corners."
         fields={["panelRadius"]}
         onResetGroup={onResetGroup}
+        defaultOpen
       >
         <div className="grid grid-cols-2 gap-2">
           <label className="block space-y-1 text-[12px] text-muted-foreground">
@@ -396,7 +462,7 @@ export function StudioControls({
               min={200}
               step={10}
               onChange={(e) => onDims(Number(e.target.value) || panelW, panelH)}
-              className="w-full rounded-md border border-border bg-muted/40 px-2 py-1.5 font-mono text-[12px] text-foreground"
+              className="w-full rounded-md border border-border bg-muted/40 px-2 py-1.5 font-mono text-[12px] text-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             />
           </label>
           <label className="block space-y-1 text-[12px] text-muted-foreground">
@@ -407,7 +473,7 @@ export function StudioControls({
               min={200}
               step={10}
               onChange={(e) => onDims(panelW, Number(e.target.value) || panelH)}
-              className="w-full rounded-md border border-border bg-muted/40 px-2 py-1.5 font-mono text-[12px] text-foreground"
+              className="w-full rounded-md border border-border bg-muted/40 px-2 py-1.5 font-mono text-[12px] text-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             />
           </label>
         </div>
@@ -422,6 +488,7 @@ export function StudioControls({
         title="Accents"
         fields={["primary", "secondary"]}
         onResetGroup={onResetGroup}
+        defaultOpen
       >
         <ColorField
           label="Primary"
@@ -454,7 +521,7 @@ export function StudioControls({
           fallback={draft.text}
           onPick={(hex) => onPatch({ text: hex })}
         />
-        <p className="font-mono text-[11px] text-muted-foreground">
+        <p className={`font-mono text-[11px] ${canPublish ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
           Contrast {contrast == null ? "-" : contrast.toFixed(2)}
           {!canPublish && " — below 4.5, publish stays disabled"}
         </p>
@@ -499,20 +566,12 @@ export function StudioControls({
         fields={["launcherMode", "launcherGlyph", "launcherBg", "launcherHover", "launcherBorder"]}
         onResetGroup={onResetGroup}
       >
-        <label className="block space-y-1 text-[12px] text-muted-foreground">
-          <span>Mode</span>
-          <select
-            value={draft.launcherMode}
-            onChange={(e) => onPatch({ launcherMode: e.target.value as LauncherMode })}
-            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[13px] text-foreground"
-          >
-            {LAUNCHER_MODES.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Segmented
+          label="Mode"
+          value={draft.launcherMode}
+          options={LAUNCHER_MODES}
+          onPick={(v) => onPatch({ launcherMode: v as LauncherMode })}
+        />
         <div className="space-y-1.5">
           <p className="text-[12px] text-muted-foreground">Glyph</p>
           <div className="flex flex-wrap gap-1.5">
@@ -522,7 +581,7 @@ export function StudioControls({
                 type="button"
                 onClick={() => onPatch({ launcherGlyph: g })}
                 aria-pressed={draft.launcherGlyph === g}
-                className={`rounded-md border px-2.5 py-1 text-[14px] transition-colors ${
+                className={`rounded-md border px-2.5 py-1 text-[14px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${
                   draft.launcherGlyph === g
                     ? "border-foreground bg-foreground text-background"
                     : "border-border bg-muted/40 text-muted-foreground hover:bg-muted"
@@ -656,20 +715,12 @@ export function StudioControls({
           onPick={(hex) => onPatch({ aiBorder: hex })}
           onClear={() => onPatch({ aiBorder: null })}
         />
-        <label className="block space-y-1 text-[12px] text-muted-foreground">
-          <span>Avatar mode</span>
-          <select
-            value={draft.avatarMode}
-            onChange={(e) => onPatch({ avatarMode: e.target.value as AvatarMode })}
-            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[13px] text-foreground"
-          >
-            {AVATAR_MODES.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Segmented
+          label="Avatar mode"
+          value={draft.avatarMode}
+          options={AVATAR_MODES}
+          onPick={(v) => onPatch({ avatarMode: v as AvatarMode })}
+        />
         <ColorField
           label="Avatar tile bg"
           value={override.avatarBg ?? null}
@@ -753,20 +804,12 @@ export function StudioControls({
         fields={["sendGlyph", "sendBg", "sendText", "micGlyph", "micBg", "micText"]}
         onResetGroup={onResetGroup}
       >
-        <label className="block space-y-1 text-[12px] text-muted-foreground">
-          <span>Send glyph</span>
-          <select
-            value={draft.sendGlyph}
-            onChange={(e) => onPatch({ sendGlyph: e.target.value })}
-            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[13px] text-foreground"
-          >
-            {SEND_GLYPHS.map((g) => (
-              <option key={g} value={g}>
-                {g}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Segmented
+          label="Send glyph"
+          value={draft.sendGlyph}
+          options={SEND_GLYPHS}
+          onPick={(v) => onPatch({ sendGlyph: v })}
+        />
         <ColorField
           label="Send bg"
           value={override.sendBg ?? null}
@@ -781,20 +824,12 @@ export function StudioControls({
           onPick={(hex) => onPatch({ sendText: hex })}
           onClear={() => onPatch({ sendText: null })}
         />
-        <label className="block space-y-1 text-[12px] text-muted-foreground">
-          <span>Mic glyph</span>
-          <select
-            value={draft.micGlyph}
-            onChange={(e) => onPatch({ micGlyph: e.target.value })}
-            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[13px] text-foreground"
-          >
-            {MIC_GLYPHS.map((g) => (
-              <option key={g} value={g}>
-                {g}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Segmented
+          label="Mic glyph"
+          value={draft.micGlyph}
+          options={MIC_GLYPHS}
+          onPick={(v) => onPatch({ micGlyph: v })}
+        />
         <ColorField
           label="Mic bg"
           value={override.micBg ?? null}

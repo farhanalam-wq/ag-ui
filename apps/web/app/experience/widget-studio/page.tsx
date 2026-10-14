@@ -326,7 +326,7 @@ export default function WidgetStudioPage() {
           </Empty>
         ) : (
           <div className="mt-6 grid min-w-0 items-start gap-4 lg:grid-cols-12">
-            <div className="min-w-0 space-y-4 lg:col-span-5">
+            <div className="min-w-0 lg:col-span-7">
               {baseLoading || !draft ? (
                 <Card className="min-w-0">
                   <CardContent className="space-y-2 pt-5">
@@ -355,7 +355,7 @@ export default function WidgetStudioPage() {
                 />
               )}
             </div>
-            <div className="min-w-0 space-y-4 lg:col-span-7 lg:sticky lg:top-20 lg:self-start">
+            <div className="min-w-0 space-y-4 lg:col-span-5 lg:sticky lg:top-20 lg:self-start">
               {draft && (
                 <div className="flex items-center gap-3">
                   <StudioOrbPreview theme={draft} />
@@ -373,12 +373,11 @@ export default function WidgetStudioPage() {
                   onLoad={resendToFrame}
                   sandbox={PANEL_SANDBOX}
                   allow={PANEL_ALLOW}
+                  className="border border-border"
                   style={{
                     width: `min(${panelW}px, 100vw - 32px)`,
                     height: `min(${panelH}px, 100dvh - 140px)`,
-                    border: "1px solid #27272a",
                     borderRadius: draft?.panelRadius ?? 16,
-                    boxShadow: "0 24px 70px rgba(0,0,0,.5)",
                     background: draft?.surface ?? "#09090b",
                   }}
                 />
