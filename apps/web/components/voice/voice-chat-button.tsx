@@ -16,10 +16,14 @@ export function VoiceChatButton({
   className,
   disabled,
   title,
+  style,
+  idleIcon,
 }: {
   className?: string;
   disabled?: boolean;
   title?: string;
+  style?: React.CSSProperties;
+  idleIcon?: React.ReactNode;
 }) {
   const { status, start, stop } = useVoiceSession();
   const busy = status === "fetching" || status === "connecting";
@@ -32,6 +36,7 @@ export function VoiceChatButton({
       disabled={disabled}
       aria-label={active ? "End voice call" : "Start voice call"}
       title={title ?? (active ? "End voice call" : "Start voice call")}
+      style={style}
       className={cn(
         "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border transition-[background-color,border-color,color,transform] active:scale-95 disabled:pointer-events-none disabled:opacity-30 relative before:absolute before:-inset-2 before:content-['']",
         active
@@ -44,6 +49,8 @@ export function VoiceChatButton({
         <CircleNotch className="h-4 w-4 animate-spin" />
       ) : active ? (
         <X className="h-4 w-4" weight="bold" />
+      ) : idleIcon ? (
+        idleIcon
       ) : (
         <Microphone className="h-4 w-4" weight="bold" />
       )}

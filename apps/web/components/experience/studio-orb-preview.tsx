@@ -13,20 +13,36 @@ export const PANEL_SANDBOX =
 export const PANEL_ALLOW = "microphone; autoplay";
 
 interface StudioOrbPreviewProps {
-  theme: Pick<WidgetTheme, "primary" | "secondary" | "radius"> & {
+  theme: Pick<
+    WidgetTheme,
+    | "primary"
+    | "secondary"
+    | "launcherRadius"
+    | "launcherMode"
+    | "launcherGlyph"
+    | "launcherBg"
+    | "launcherHover"
+    | "launcherBorder"
+  > & {
     logoUrl?: string | null;
   };
   label?: string;
 }
 
 /**
- * Static launcher-button preview styled exactly like the loader orb: same
- * 56px circle, same hover swap to secondary, same logo-mark treatment.
+ * Static launcher-button preview styled like the loader orb: 56px circle,
+ * hover swap to secondary, logo-mark treatment. Modes: auto (logo when
+ * available, else brand glyph), glyph, brand (glyph on primary), logo.
  */
 export function StudioOrbPreview({
   theme,
   label = "Open chat assistant",
 }: StudioOrbPreviewProps) {
+  const showLogo =
+    theme.launcherMode === "logo" ||
+    (theme.launcherMode === "auto" && !!theme.logoUrl);
+  const bg = theme.launcherBg ?? theme.primary;
+  const hover = theme.launcherHover ?? theme.secondary;
   return (
     <button
       type="button"
@@ -36,24 +52,22 @@ export function StudioOrbPreview({
       style={{
         width: ORB_SIZE,
         height: ORB_SIZE,
-        borderRadius: 9999,
-        border: "none",
+        borderRadius: theme.launcherRadius,
+        border: theme.launcherBorder ? `1px solid ${theme.launcherBorder}` : "none",
         cursor: "default",
-        background: theme.primary,
+        background: bg,
         fontSize: 24,
         lineHeight: 1,
         boxShadow: "0 8px 30px rgba(0,0,0,.35)",
       }}
       onMouseEnter={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.background =
-          theme.secondary;
+        (e.currentTarget as HTMLButtonElement).style.background = hover;
       }}
       onMouseLeave={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.background =
-          theme.primary;
+        (e.currentTarget as HTMLButtonElement).style.background = bg;
       }}
     >
-      {theme.logoUrl ? (
+      {showLogo && theme.logoUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={theme.logoUrl}
@@ -65,7 +79,7 @@ export function StudioOrbPreview({
           }}
         />
       ) : (
-        <span aria-hidden="true">✦</span>
+        <span aria-hidden="true">{theme.launcherGlyph}</span>
       )}
     </button>
   );

@@ -187,7 +187,7 @@ export interface EmbedConfig {
     bodySurface?: boolean;
     /** Primary-on-surface >= 3: accents may sit on the surface. */
     accentOnSurface?: boolean;
-    surfaceSource?: string;
+    surfaceSource?: "wcag-best" | "tokens" | "default" | "embed-query";
   } | null;
   /** Latest READY stylesheet id; clients skip re-apply when unchanged. */
   themeVersion?: string | null;

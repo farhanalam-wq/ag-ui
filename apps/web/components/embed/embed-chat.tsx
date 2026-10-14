@@ -12,7 +12,18 @@ import {
   PromptInputBadge,
   PromptInputSubmit,
 } from "@/components/ai-elements/prompt-input";
-import { Buildings, CircleNotch, WarningCircle } from "@phosphor-icons/react";
+import {
+  ArrowRight,
+  ArrowUp,
+  Buildings,
+  Check,
+  CircleNotch,
+  Microphone,
+  MicrophoneSlash,
+  PaperPlaneTilt,
+  WarningCircle,
+  Waveform,
+} from "@phosphor-icons/react";
 import { useCompanyChat } from "@/hooks/use-company-chat";
 import { ChatMessageItem } from "@/components/chat-message";
 import { apiClient } from "@/lib/api-client";
@@ -23,6 +34,7 @@ import {
   cleanRadiusValue,
   contrastRatio,
   isLightSurface,
+  isValidOverride,
   mapBrandToWidgetTheme,
   mergeThemeOverride,
   widgetThemeVars,
@@ -61,18 +73,7 @@ interface LoadedChatConfig {
   name: string;
   domain: string;
   ready: boolean;
-  theme?: {
-    primary: string;
-    secondary: string;
-    radius: string;
-    surface: string;
-    text: string;
-    logoUrl: string | null;
-    fullSurface: boolean;
-    bodySurface?: boolean;
-    accentOnSurface?: boolean;
-    surfaceSource?: string;
-  } | null;
+  theme?: Partial<WidgetTheme> | null;
   themeVersion?: string | null;
   brand?: { logoUrl: string | null; tokens: any } | null;
 }
@@ -86,41 +87,34 @@ function suggestedQueriesFor(name: string): string[] {
 }
 
 // Validates a full theme object arriving over the preview message channel.
-// Shared hex/radius/logo guards apply; contrast gates recomputed via the
-// shared merge so preview and studio agree exactly.
+// Base colors are required; every other slot rides through the shared
+// override validators, so new control groups need no channel changes.
 function sanitizeIncomingTheme(t: unknown): WidgetTheme | null {
   try {
     if (!t || typeof t !== "object") return null;
     const r = t as Record<string, unknown>;
-    const override: WidgetThemeOverride = {};
     const primary = cleanHexValue(r.primary);
     const secondary = cleanHexValue(r.secondary);
     const surface = cleanHexValue(r.surface);
     const text = cleanHexValue(r.text);
     if (!primary || !secondary || !surface || !text) return null;
-    override.primary = primary;
-    override.secondary = secondary;
-    override.surface = surface;
-    override.text = text;
+    if (!isValidOverride(t)) return null;
+    const base = mapBrandToWidgetTheme(null);
+    base.primary = primary;
+    base.secondary = secondary;
+    base.surface = surface;
+    base.text = text;
     const radius = cleanRadiusValue(r.radius);
-    override.radius = radius ?? "0.5rem";
-    const logo = cleanLogoUrlValue(
-      typeof r.logoUrl === "string" && r.logoUrl.trim() ? r.logoUrl : null
-    );
-    override.logoUrl = typeof r.logoUrl === "string" && r.logoUrl.trim() ? logo : null;
-    const base: WidgetTheme = {
-      primary,
-      secondary,
-      radius: override.radius,
-      surface,
-      text,
-      logoUrl: override.logoUrl,
-      fullSurface: false,
-      bodySurface: false,
-      accentOnSurface: false,
-      surfaceSource: "tokens",
-    };
-    return mergeThemeOverride(base, override);
+    if (radius) {
+      base.radius = radius;
+      base.panelRadius = radius;
+      base.userRadius = radius;
+      base.aiRadius = radius;
+      base.inputRadius = radius;
+    }
+    const logoRaw = typeof r.logoUrl === "string" && r.logoUrl.trim() ? r.logoUrl : null;
+    base.logoUrl = logoRaw ? cleanLogoUrlValue(logoRaw) : null;
+    return mergeThemeOverride(base, t as WidgetThemeOverride);
   } catch {
     return null;
   }
@@ -201,15 +195,17 @@ function EmbedChatInner({
     let base: WidgetTheme =
       server && typeof server.primary === "string"
         ? {
+            ...mapBrandToWidgetTheme(null),
+            ...server,
             primary: server.primary,
-            secondary: server.secondary,
-            radius: server.radius,
-            surface: server.surface,
-            text: server.text,
-            logoUrl: server.logoUrl,
-            fullSurface: server.fullSurface,
-            bodySurface: server.bodySurface ?? server.fullSurface,
-            accentOnSurface: server.accentOnSurface ?? server.fullSurface,
+            secondary: server.secondary ?? mapBrandToWidgetTheme(null).secondary,
+            radius: server.radius ?? mapBrandToWidgetTheme(null).radius,
+            surface: server.surface ?? mapBrandToWidgetTheme(null).surface,
+            text: server.text ?? mapBrandToWidgetTheme(null).text,
+            logoUrl: server.logoUrl ?? null,
+            fullSurface: server.fullSurface ?? false,
+            bodySurface: server.bodySurface ?? server.fullSurface ?? false,
+            accentOnSurface: server.accentOnSurface ?? server.fullSurface ?? false,
             surfaceSource: (server.surfaceSource as WidgetTheme["surfaceSource"]) ?? "tokens",
           }
         : mapBrandToWidgetTheme(config?.brand?.tokens, config?.brand?.logoUrl);
@@ -251,6 +247,23 @@ function EmbedChatInner({
   const brandColor = theme.primary;
   // Light brand shell: dark-designed pills/badges need readable text treatment.
   const lightShell = theme.bodySurface && isLightSurface(theme.surface);
+
+  const SendGlyph =
+    theme.sendGlyph === "paper-plane"
+      ? PaperPlaneTilt
+      : theme.sendGlyph === "arrow-right"
+        ? ArrowRight
+        : theme.sendGlyph === "check"
+          ? Check
+          : ArrowUp;
+  const MicGlyph =
+    theme.micGlyph === "mic-slash"
+      ? MicrophoneSlash
+      : theme.micGlyph === "wave"
+        ? Waveform
+        : Microphone;
+
+  const headerTitle = theme.headerTitle ?? displayName;
 
   const loadConfig = useCallback(async () => {
     if (identity.kind === "key") {
@@ -403,50 +416,57 @@ function EmbedChatInner({
       {/* Header */}
       <header
         className="flex h-12 shrink-0 items-center gap-2 border-b border-zinc-800 bg-zinc-950/90 px-3"
-        style={
-          theme.bodySurface
+        style={{
+          ...(theme.bodySurface
             ? { backgroundColor: theme.surface, borderColor: theme.secondary, color: theme.text }
-            : undefined
-        }
+            : null),
+          ...(theme.headerBg ? { backgroundColor: theme.headerBg } : null),
+          ...(theme.headerBorder ? { borderColor: theme.headerBorder } : null),
+          ...(theme.headerText ? { color: theme.headerText } : null),
+        }}
       >
-        {theme.logoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={theme.logoUrl}
-            alt={`${displayName} logo`}
-            className="w-7 h-7 rounded-lg object-contain shrink-0 border border-zinc-800 bg-white"
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = "none";
-            }}
-          />
-        ) : (
-          <div
-            className="flex items-center justify-center w-7 h-7 rounded-lg font-bold text-[11px] shrink-0 border"
-            style={{
-              backgroundColor: `${brandColor}20`,
-              color: brandColor,
-              borderColor: theme.secondary,
-              borderRadius: "var(--brand-radius)",
-            }}
-          >
-            {displayName.slice(0, 2).toUpperCase()}
-          </div>
-        )}
+        {theme.showLogo &&
+          (theme.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={theme.logoUrl}
+              alt={`${displayName} logo`}
+              className="w-7 h-7 rounded-lg object-contain shrink-0 border border-zinc-800 bg-white"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = "none";
+              }}
+            />
+          ) : (
+            <div
+              className="flex items-center justify-center w-7 h-7 rounded-lg font-bold text-[11px] shrink-0 border"
+              style={{
+                backgroundColor: `${brandColor}20`,
+                color: theme.headerText ?? brandColor,
+                borderColor: theme.headerBorder ?? theme.secondary,
+                borderRadius: "var(--brand-radius)",
+              }}
+            >
+              {displayName.slice(0, 2).toUpperCase()}
+            </div>
+          ))}
         <div className="min-w-0 flex-1">
           <div
             className="text-xs font-semibold text-zinc-100 truncate"
-            style={theme.bodySurface ? { color: theme.text } : undefined}
+            style={{ color: theme.headerText ?? (theme.bodySurface ? theme.text : undefined) }}
           >
-            {displayName}
+            {headerTitle}
           </div>
           <div
             className="text-[10px] font-mono text-zinc-500 truncate"
-            style={theme.bodySurface ? { color: theme.text, opacity: 0.65 } : undefined}
+            style={{
+              color: theme.headerText ?? (theme.bodySurface ? theme.text : undefined),
+              opacity: theme.headerText ? 0.75 : theme.bodySurface ? 0.65 : undefined,
+            }}
           >
-            {config?.domain || "Company assistant"}
+            {theme.headerDomain ?? config?.domain ?? "Company assistant"}
           </div>
         </div>
-        {phase === "chat" && (
+        {theme.showReady && phase === "chat" && (
           <span
             className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-400"
             style={lightShell ? { color: theme.text } : undefined}
@@ -545,7 +565,12 @@ function EmbedChatInner({
                       handleSubmit(q);
                     }}
                     className="block w-full text-left text-xs rounded-lg border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800 px-3 py-2 text-zinc-300 transition-colors hover:border-[var(--brand-secondary)]"
-                    style={{ borderRadius: "var(--brand-radius)" }}
+                    style={{
+                      borderRadius: theme.panelRadius,
+                      ...(theme.chipBorder ? { borderColor: theme.chipBorder } : null),
+                      ...(theme.chipBg ? { backgroundColor: theme.chipBg } : null),
+                      ...(theme.linkColor ? { color: theme.linkColor } : null),
+                    }}
                   >
                     {q}
                   </button>
@@ -559,6 +584,21 @@ function EmbedChatInner({
                 companyName={config?.name || displayName}
                 brandColor={brandColor}
                 compact
+                theme={{
+                  userBg: theme.userBg,
+                  userText: theme.userText,
+                  userRadius: theme.userRadius,
+                  aiBg: theme.aiBg,
+                  aiText: theme.aiText,
+                  aiBorder: theme.aiBorder,
+                  aiRadius: theme.aiRadius,
+                  avatarMode: theme.avatarMode,
+                  avatarBg: theme.avatarBg,
+                  avatarText: theme.avatarText,
+                  customAvatarUrl: theme.customAvatarUrl,
+                  logoUrl: theme.logoUrl,
+                  linkColor: theme.linkColor,
+                }}
                 onInspectEvidence={handleOpenEvidence}
               />
             ))}
@@ -567,11 +607,13 @@ function EmbedChatInner({
 
           <div
             className="shrink-0 p-2 border-t border-zinc-800 bg-zinc-950/90"
-            style={
-              theme.bodySurface
+            style={{
+              ...(theme.bodySurface
                 ? { backgroundColor: theme.surface, borderColor: theme.secondary }
-                : undefined
-            }
+                : null),
+              ...(theme.inputBg ? { backgroundColor: theme.inputBg } : null),
+              ...(theme.inputBorder ? { borderColor: theme.inputBorder } : null),
+            }}
           >
             <VoiceSession
               key={sessionKey}
@@ -587,11 +629,18 @@ function EmbedChatInner({
               onSubmit={handleSubmit}
               isSubmitting={isStreaming}
               className="w-full border-zinc-800 bg-zinc-900/90 focus-within:border-[var(--brand-primary)]"
+              style={{
+                ...(theme.inputBg ? { backgroundColor: theme.inputBg } : null),
+                ...(theme.inputBorder ? { borderColor: theme.inputBorder } : null),
+                borderRadius: theme.inputRadius,
+                ...(theme.focusRing ? ({ "--tw-ring-color": theme.focusRing } as React.CSSProperties) : null),
+              }}
             >
               <PromptInputBody>
                 <PromptInputTextarea
-                  placeholder={`Ask about ${config?.name || "this company"}…`}
+                  placeholder={theme.placeholderText ?? `Ask about ${config?.name || "this company"}…`}
                   className="text-[13px] text-zinc-100 placeholder-zinc-500 py-1"
+                  style={theme.inputText ? { color: theme.inputText } : undefined}
                   minHeight={40}
                 />
               </PromptInputBody>
@@ -609,11 +658,22 @@ function EmbedChatInner({
                   <VoiceChatButton
                     disabled={phase !== "chat"}
                     title={phase !== "chat" ? "Available when Ready" : undefined}
+                    style={{
+                      ...(theme.micBg ? { backgroundColor: theme.micBg } : null),
+                      ...(theme.micText ? { color: theme.micText } : null),
+                    }}
+                    idleIcon={<MicGlyph className="h-4 w-4" weight="bold" />}
                   />
                 <PromptInputSubmit
                   className="bg-zinc-100 hover:bg-white text-zinc-950 cursor-pointer"
+                  style={{
+                    ...(theme.sendBg ? { backgroundColor: theme.sendBg } : null),
+                    ...(theme.sendText ? { color: theme.sendText } : null),
+                  }}
                   aria-label="Submit prompt"
-                />
+                >
+                  <SendGlyph className="h-4 w-4" weight="bold" />
+                </PromptInputSubmit>
                 </div>
               </PromptInputFooter>
               </PromptInput>

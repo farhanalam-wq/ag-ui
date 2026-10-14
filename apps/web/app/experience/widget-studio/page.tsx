@@ -30,9 +30,11 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSelectedCompany } from "@/stores/use-company-store";
 import { apiClient } from "@/lib/api-client";
+import { copyToClipboard } from "@/lib/copy";
 import {
   contrastRatio,
   isValidOverride,
+  mapBrandToWidgetTheme,
   mergeThemeOverride,
   type WidgetTheme,
   type WidgetThemeOverride,
@@ -45,8 +47,6 @@ import {
   StudioOrbPreview,
 } from "@/components/experience/studio-orb-preview";
 import { StudioControls } from "@/components/experience/studio-controls";
-
-const HEX_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 
 function shortHash(s: string): string {
   let h = 5381;
@@ -69,10 +69,17 @@ export default function WidgetStudioPage() {
   const [baseTheme, setBaseTheme] = useState<WidgetTheme | null>(null);
   const [baseLoading, setBaseLoading] = useState(false);
   const [edits, setEdits] = useState<WidgetThemeOverride>({});
+  const [panelW, setPanelW] = useState(PANEL_W);
+  const [panelH, setPanelH] = useState(PANEL_H);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  const draftKey = companyId ? `widget-studio-draft:${companyId}` : null;
 
   // Base theme comes from the same company detail the preview renderer
   // reads, so controls and preview start from one identical theme.
+  // The server derivation already carries the full slot shape; the merge
+  // below only future-proofs older payloads.
   useEffect(() => {
     if (!companyId) {
       setBaseTheme(null);
@@ -84,35 +91,44 @@ export default function WidgetStudioPage() {
       .get(companyId)
       .then((detail) => {
         if (cancelled) return;
-        const t = detail.theme;
-        const theme: WidgetTheme =
+        const t = detail.theme as unknown as Partial<WidgetTheme> | undefined;
+        const seed: WidgetTheme =
           t && typeof t.primary === "string"
             ? {
+                ...mapBrandToWidgetTheme(null),
                 primary: t.primary,
-                secondary: t.secondary,
-                radius: t.radius,
-                surface: t.surface,
-                text: t.text,
-                logoUrl: t.logoUrl,
-                fullSurface: t.fullSurface,
-                bodySurface: t.bodySurface ?? t.fullSurface,
-                accentOnSurface: t.accentOnSurface ?? t.fullSurface,
+                secondary: t.secondary ?? "#3b82f6",
+                radius: t.radius ?? "0.5rem",
+                surface: t.surface ?? "#09090b",
+                text: t.text ?? "#fafafa",
+                logoUrl: t.logoUrl ?? null,
+                fullSurface: t.fullSurface ?? false,
+                bodySurface: t.bodySurface ?? t.fullSurface ?? false,
+                accentOnSurface: t.accentOnSurface ?? t.fullSurface ?? false,
                 surfaceSource: "tokens",
               }
-            : {
-                primary: "#2563eb",
-                secondary: "#3b82f6",
-                radius: "0.5rem",
-                surface: "#09090b",
-                text: "#fafafa",
-                logoUrl: null,
-                fullSurface: false,
-                bodySurface: false,
-                accentOnSurface: false,
-                surfaceSource: "default",
-              };
-        setBaseTheme(theme);
-        setEdits({});
+            : mapBrandToWidgetTheme(null);
+        setBaseTheme(mergeThemeOverride(seed, (t ?? {}) as WidgetThemeOverride));
+        // Restore an explicit draft save for this company, if one exists.
+        try {
+          const raw = window.localStorage.getItem(`widget-studio-draft:${companyId}`);
+          if (raw) {
+            const parsed: unknown = JSON.parse(raw);
+            if (isValidOverride(parsed)) {
+              setEdits(parsed);
+              setSavedAt(window.localStorage.getItem(`widget-studio-draft:${companyId}:at`));
+            } else {
+              setEdits({});
+              setSavedAt(null);
+            }
+          } else {
+            setEdits({});
+            setSavedAt(null);
+          }
+        } catch {
+          setEdits({});
+          setSavedAt(null);
+        }
       })
       .catch((err) => {
         if (cancelled) return;
@@ -182,19 +198,88 @@ export default function WidgetStudioPage() {
       toast.error("Invalid value", { description: "Theme edit rejected" });
       return;
     }
-    for (const [k, v] of Object.entries(patch)) {
-      if (
-        (k === "primary" || k === "secondary" || k === "surface" || k === "text") &&
-        (typeof v !== "string" || !HEX_RE.test(v.trim()))
-      ) {
-        toast.error("Invalid color", { description: `${k} must be a hex value` });
-        return;
-      }
-    }
     setEdits((prev) => ({ ...prev, ...patch }));
   }, []);
 
   const handleReset = useCallback(() => setEdits({}), []);
+
+  const handleResetGroup = useCallback((fields: (keyof WidgetThemeOverride)[]) => {
+    setEdits((prev) => {
+      const next = { ...prev };
+      for (const f of fields) delete next[f];
+      return next;
+    });
+  }, []);
+
+  const handleDims = useCallback((w: number, h: number) => {
+    if (Number.isFinite(w) && w >= 200) setPanelW(Math.round(w));
+    if (Number.isFinite(h) && h >= 200) setPanelH(Math.round(h));
+  }, []);
+
+  const handleCopy = useCallback(() => {
+    void copyToClipboard(JSON.stringify(edits, null, 2), {
+      successTitle: "Override copied",
+      successDescription: `${Object.keys(edits).length} fields`,
+    });
+  }, [edits]);
+
+  const handlePaste = useCallback((text: string) => {
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (!isValidOverride(parsed)) {
+        toast.error("Invalid override", { description: "Pasted JSON failed validation" });
+        return;
+      }
+      setEdits(parsed);
+      toast.success("Override applied", {
+        description: `${Object.keys(parsed).length} fields`,
+      });
+    } catch {
+      toast.error("Invalid override", { description: "Pasted text is not JSON" });
+    }
+  }, []);
+
+  const handleSave = useCallback(() => {
+    if (!draftKey) return;
+    try {
+      window.localStorage.setItem(draftKey, JSON.stringify(edits));
+      const at = new Date().toLocaleTimeString();
+      window.localStorage.setItem(`${draftKey}:at`, at);
+      setSavedAt(at);
+      toast.success("Draft saved", {
+        description: `${Object.keys(edits).length} fields, preview-only`,
+      });
+    } catch {
+      toast.error("Save failed", { description: "Browser storage unavailable" });
+    }
+  }, [draftKey, edits]);
+
+  const handleAvatarFile = useCallback(
+    (file: File) => {
+      if (!file.type.startsWith("image/")) {
+        toast.error("Invalid artwork", { description: "File must be an image" });
+        return;
+      }
+      if (file.size > 500_000) {
+        toast.error("Invalid artwork", { description: "File must be under 500KB" });
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const url = typeof reader.result === "string" ? reader.result : null;
+        if (!url) {
+          toast.error("Upload failed", { description: "Could not read file" });
+          return;
+        }
+        handlePatch({ customAvatarUrl: url, avatarMode: "custom" });
+      };
+      reader.onerror = () => {
+        toast.error("Upload failed", { description: "Could not read file" });
+      };
+      reader.readAsDataURL(file);
+    },
+    [handlePatch]
+  );
 
   // Stable per company: edits travel over the channel, so the URL never
   // changes while dragging and the frame never reloads.
@@ -252,10 +337,21 @@ export default function WidgetStudioPage() {
               ) : (
                 <StudioControls
                   draft={draft}
+                  override={edits}
                   contrast={contrast}
                   canPublish={contrast != null && contrast >= 4.5}
+                  panelW={panelW}
+                  panelH={panelH}
+                  savedAt={savedAt}
+                  isDirty={Object.keys(edits).length > 0}
                   onPatch={handlePatch}
                   onReset={handleReset}
+                  onResetGroup={handleResetGroup}
+                  onDims={handleDims}
+                  onAvatarFile={handleAvatarFile}
+                  onCopy={handleCopy}
+                  onPaste={handlePaste}
+                  onSave={handleSave}
                 />
               )}
             </div>
@@ -278,10 +374,10 @@ export default function WidgetStudioPage() {
                   sandbox={PANEL_SANDBOX}
                   allow={PANEL_ALLOW}
                   style={{
-                    width: `min(${PANEL_W}px, 100vw - 32px)`,
-                    height: `min(${PANEL_H}px, 100dvh - 140px)`,
+                    width: `min(${panelW}px, 100vw - 32px)`,
+                    height: `min(${panelH}px, 100dvh - 140px)`,
                     border: "1px solid #27272a",
-                    borderRadius: 16,
+                    borderRadius: draft?.panelRadius ?? 16,
                     boxShadow: "0 24px 70px rgba(0,0,0,.5)",
                     background: draft?.surface ?? "#09090b",
                   }}
