@@ -9,10 +9,12 @@ import {
   companies,
   companySnapshots,
   brands,
+  brandStylesheets,
   documents,
   chunks,
   facts,
   eq,
+  and,
   upsertChunkPoints,
   invalidateCompanyContextCache,
 } from "@ag-ui/database";
@@ -58,25 +60,44 @@ export const crawlWorker = new Worker<CrawlJobData>(
         `[CRAWL WORKER] Crawl completed for ${url}: ${crawlResult.pagesCrawled} pages, ${crawlResult.documents.length} docs`
       );
 
-      // 3. Upsert brand tokens
-      const existingBrand = await db.query.brands.findFirst({
-        where: eq(brands.companyId, companyId),
-      });
+      // 3. Brand fallback (TASKS #21a): dembrandt brand-worker is the sole
+      // writer. Only upsert crawler cheerio tokens when no READY
+      // brand_stylesheets row exists; never overwrite READY-derived tokens.
+      const [readySheet] = await db
+        .select({ id: brandStylesheets.id })
+        .from(brandStylesheets)
+        .where(
+          and(
+            eq(brandStylesheets.companyId, companyId),
+            eq(brandStylesheets.status, "READY")
+          )
+        )
+        .limit(1);
+      if (readySheet) {
+        logger.info(
+          `[CRAWL WORKER] Brand skipped (READY stylesheet ${readySheet.id} exists, worker owns tokens)`
+        );
+      } else {
+        const existingBrand = await db.query.brands.findFirst({
+          where: eq(brands.companyId, companyId),
+        });
 
-      if (existingBrand) {
-        await db
-          .update(brands)
-          .set({
+        if (existingBrand) {
+          await db
+            .update(brands)
+            .set({
+              logoUrl: crawlResult.brand.logoUrl,
+              tokens: crawlResult.brand.tokens,
+            })
+            .where(eq(brands.id, existingBrand.id));
+        } else {
+          await db.insert(brands).values({
+            companyId,
             logoUrl: crawlResult.brand.logoUrl,
             tokens: crawlResult.brand.tokens,
-          })
-          .where(eq(brands.id, existingBrand.id));
-      } else {
-        await db.insert(brands).values({
-          companyId,
-          logoUrl: crawlResult.brand.logoUrl,
-          tokens: crawlResult.brand.tokens,
-        });
+          });
+        }
+        logger.info(`[CRAWL WORKER] Brand fallback upserted (no READY stylesheet)`);
       }
 
       // 4. Insert extracted documents
