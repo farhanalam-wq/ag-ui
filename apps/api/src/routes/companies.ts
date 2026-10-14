@@ -19,7 +19,8 @@ import {
 } from "@ag-ui/database";
 import { crawlQueue } from "@ag-ui/queues";
 import { validateSafeUrl, SSRFError } from "@ag-ui/crawler";
-import { logger } from "@ag-ui/shared";
+import { logger, mapBrandToWidgetTheme } from "@ag-ui/shared";
+import { resolveThemeStylesheetId } from "@ag-ui/database";
 
 export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
   // 1. Submit a company URL for ingestion
@@ -271,11 +272,38 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
         .where(eq(brands.companyId, company.id))
         .limit(1);
 
+      // Same derivation as the public widget config so company-scoped
+      // surfaces (studio preview) start from the exact production theme.
+      const themeVersion = await resolveThemeStylesheetId(
+        company.id,
+        snapshots[0]?.id ?? null
+      );
+      let stylesheetWcag: unknown;
+      try {
+        if (themeVersion) {
+          const [sheet] = await db
+            .select({ wcag: brandStylesheets.wcag })
+            .from(brandStylesheets)
+            .where(eq(brandStylesheets.id, themeVersion))
+            .limit(1);
+          stylesheetWcag = sheet?.wcag ?? undefined;
+        }
+      } catch {
+        stylesheetWcag = undefined;
+      }
+      const theme = mapBrandToWidgetTheme(
+        brand?.tokens,
+        brand?.logoUrl,
+        stylesheetWcag
+      );
+
       return {
         company,
         latestSnapshot: snapshots[0] || null,
         snapshots,
         brand: brand || null,
+        theme,
+        themeVersion,
       };
     },
     {

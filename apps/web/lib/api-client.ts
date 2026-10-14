@@ -140,6 +140,10 @@ export interface CompanyDetailResponse {
       typography?: Record<string, any>;
     };
   };
+  /** Production theme derivation (same as widget config); prefer over mapping locally. */
+  theme?: EmbedConfig["theme"];
+  /** Latest READY stylesheet id backing the theme. */
+  themeVersion?: string | null;
 }
 
 export interface ChatStreamPayload {

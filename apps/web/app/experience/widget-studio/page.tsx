@@ -1,5 +1,17 @@
 "use client";
 
+/**
+ * Widget Studio: exact preview of the production widget with live controls.
+ *
+ * Loader vs renderer, stated plainly: `public/embed.js` is the loader
+ * (launcher button, lazy iframe, config fetch, first-paint params) and is
+ * never touched here. The preview below is the same chat bundle the public
+ * widget serves, mounted in an iframe for style isolation — parity by
+ * definition, minus loader chrome. The launcher strip above it is a static
+ * replica sharing the loader's dimension constants. Preview identity is the
+ * selected company (studio session), so no widget key ever appears here.
+ */
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Buildings, CircleNotch } from "@phosphor-icons/react";
@@ -20,11 +32,8 @@ import { useSelectedCompany } from "@/stores/use-company-store";
 import { apiClient } from "@/lib/api-client";
 import {
   contrastRatio,
-  mapBrandToWidgetTheme,
   type WidgetTheme,
 } from "@ag-ui/shared/client";
-import { useWidgetKeys } from "@/components/integration/use-widget-keys";
-import { defaultApiBase } from "@/components/integration/snippet-builder";
 import {
   PANEL_ALLOW,
   PANEL_H,
@@ -45,55 +54,60 @@ function shortHash(s: string): string {
 }
 
 /**
- * Live widget preview. Mounts the production embed route in an iframe (same
- * bundle, parity by definition) and pushes theme edits over a message
- * channel — the frame never reloads while dragging controls. Answer-only
- * flags ride on the URL; nothing here writes to the brand.
+ * Live widget preview. Mounts the company-keyed preview renderer in an
+ * iframe (same bundle as prod, style isolation included) and pushes theme
+ * edits over a message channel — the frame never reloads while dragging
+ * controls. Answer-only flags ride on the URL; nothing here writes to the
+ * brand.
  */
 export default function WidgetStudioPage() {
   const selectedCompany = useSelectedCompany();
   const companyId = selectedCompany?.id ?? null;
-  const { phase } = useWidgetKeys(companyId);
-  const [apiBase] = useState<string>(() => defaultApiBase());
-  const [manualKey, setManualKey] = useState("");
-  const [manualKeyApplied, setManualKeyApplied] = useState<string | null>(null);
   const [baseTheme, setBaseTheme] = useState<WidgetTheme | null>(null);
   const [baseLoading, setBaseLoading] = useState(false);
   const [edits, setEdits] = useState<Partial<WidgetTheme>>({});
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
-  const issuedRaw = phase.kind === "ready" ? phase.raw : null;
-  const raw = issuedRaw ?? manualKeyApplied;
-
-  // Base theme comes from the same config the production widget reads, so
-  // the preview starts pixel-identical before any edit.
+  // Base theme comes from the same company detail the preview renderer
+  // reads, so controls and preview start from one identical theme.
   useEffect(() => {
-    if (!raw) {
+    if (!companyId) {
       setBaseTheme(null);
       return;
     }
     let cancelled = false;
     setBaseLoading(true);
-    apiClient.embed
-      .getConfig(raw, apiBase)
-      .then((cfg) => {
+    apiClient.companies
+      .get(companyId)
+      .then((detail) => {
         if (cancelled) return;
+        const t = detail.theme;
         const theme: WidgetTheme =
-          cfg.theme && typeof cfg.theme.primary === "string"
+          t && typeof t.primary === "string"
             ? {
-                primary: cfg.theme.primary,
-                secondary: cfg.theme.secondary,
-                radius: cfg.theme.radius,
-                surface: cfg.theme.surface,
-                text: cfg.theme.text,
-                logoUrl: cfg.theme.logoUrl,
-                fullSurface: cfg.theme.fullSurface,
-                bodySurface: cfg.theme.bodySurface ?? cfg.theme.fullSurface,
-                accentOnSurface:
-                  cfg.theme.accentOnSurface ?? cfg.theme.fullSurface,
+                primary: t.primary,
+                secondary: t.secondary,
+                radius: t.radius,
+                surface: t.surface,
+                text: t.text,
+                logoUrl: t.logoUrl,
+                fullSurface: t.fullSurface,
+                bodySurface: t.bodySurface ?? t.fullSurface,
+                accentOnSurface: t.accentOnSurface ?? t.fullSurface,
                 surfaceSource: "tokens",
               }
-            : mapBrandToWidgetTheme(cfg.brand?.tokens, cfg.brand?.logoUrl);
+            : {
+                primary: "#2563eb",
+                secondary: "#3b82f6",
+                radius: "0.5rem",
+                surface: "#09090b",
+                text: "#fafafa",
+                logoUrl: null,
+                fullSurface: false,
+                bodySurface: false,
+                accentOnSurface: false,
+                surfaceSource: "default",
+              };
         setBaseTheme(theme);
         setEdits({});
       })
@@ -110,7 +124,7 @@ export default function WidgetStudioPage() {
     return () => {
       cancelled = true;
     };
-  }, [raw, apiBase]);
+  }, [companyId]);
 
   const draft: WidgetTheme | null = useMemo(() => {
     if (!baseTheme) return null;
@@ -184,23 +198,13 @@ export default function WidgetStudioPage() {
 
   const handleReset = useCallback(() => setEdits({}), []);
 
-  // Initial paint params come from the loaded base only — draft edits travel
-  // over the channel, so the URL stays stable and the frame never reloads.
+  // Stable per company: edits travel over the channel, so the URL never
+  // changes while dragging and the frame never reloads.
   const frameSrc = useMemo(() => {
-    if (!raw) return null;
-    const q = new URLSearchParams({
-      api: apiBase,
-      preview: "1",
-      noCitations: "1",
-      title: selectedCompany?.name ?? "Assistant",
-    });
-    if (baseTheme) {
-      q.set("color", baseTheme.primary);
-      q.set("surface", baseTheme.surface);
-      q.set("text", baseTheme.text);
-    }
-    return `/embed/${encodeURIComponent(raw)}?${q.toString()}`;
-  }, [raw, apiBase, selectedCompany?.name, baseTheme]);
+    if (!companyId) return null;
+    const q = new URLSearchParams({ company: companyId });
+    return `/experience/widget-studio/preview?${q.toString()}`;
+  }, [companyId]);
 
   return (
     <StudioShell crumbs={[{ label: "Experience" }, { label: "Widget Studio" }]}>
@@ -217,7 +221,7 @@ export default function WidgetStudioPage() {
           </div>
         </div>
 
-        {!selectedCompany ? (
+        {!selectedCompany || !companyId ? (
           <Empty className="mt-6">
             <EmptyHeader>
               <EmptyMedia variant="icon">
@@ -237,36 +241,6 @@ export default function WidgetStudioPage() {
               </Button>
             </EmptyContent>
           </Empty>
-        ) : !raw ? (
-          <Card className="mt-6 min-w-0">
-            <CardContent className="space-y-3 pt-5">
-              <p className="text-[13px] text-muted-foreground max-w-[65ch]">
-                {phase.kind === "issuing"
-                  ? "Issuing a preview key…"
-                  : "No fresh preview key — raws are shown once and never stored. Paste one from Integration → Embed Snippet, or rotate there for a fresh snippet."}
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  value={manualKey}
-                  onChange={(e) => setManualKey(e.target.value)}
-                  placeholder="agw_…"
-                  spellCheck={false}
-                  className="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-3 font-mono text-xs"
-                  aria-label="Widget key for preview"
-                />
-                <Button
-                  size="sm"
-                  disabled={!manualKey.trim()}
-                  onClick={() => setManualKeyApplied(manualKey.trim())}
-                >
-                  Load preview
-                </Button>
-                <Button size="sm" variant="outline" asChild>
-                  <Link href="/integration/embed-snippet">Open Embed Snippet</Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
         ) : (
           <div className="mt-6 grid min-w-0 items-start gap-4 lg:grid-cols-12">
             <div className="min-w-0 space-y-4 lg:col-span-5">
@@ -299,7 +273,7 @@ export default function WidgetStudioPage() {
               {frameSrc && (
                 <iframe
                   ref={iframeRef}
-                  key={raw}
+                  key={companyId}
                   src={frameSrc}
                   title={`Widget preview for ${selectedCompany.name}`}
                   onLoad={resendToFrame}
