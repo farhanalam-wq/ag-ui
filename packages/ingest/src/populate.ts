@@ -86,9 +86,9 @@ export async function populateDb(
     return { companyId, snapshotId: snapId, version, insertedDocs: 0, chunkCount: 0, factCount: 0, ms: Date.now() - t0 };
   }
 
-  // Brand fallback (TASKS #21a): dembrandt brand-worker is the sole writer.
-  // Cheerio extractBrandIntelligence only runs as emergency fallback when no
-  // READY brand_stylesheets row exists. Never overwrite READY-derived tokens.
+  // Brand fallback: the extractor worker is the sole writer. The lightweight
+  // scrape below only runs as emergency fallback when no READY stylesheet
+  // row exists. Never overwrite extractor-derived tokens.
   try {
     const [readySheet] = await db
       .select({ id: brandStylesheets.id })

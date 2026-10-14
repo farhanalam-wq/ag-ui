@@ -60,9 +60,9 @@ export const crawlWorker = new Worker<CrawlJobData>(
         `[CRAWL WORKER] Crawl completed for ${url}: ${crawlResult.pagesCrawled} pages, ${crawlResult.documents.length} docs`
       );
 
-      // 3. Brand fallback (TASKS #21a): dembrandt brand-worker is the sole
-      // writer. Only upsert crawler cheerio tokens when no READY
-      // brand_stylesheets row exists; never overwrite READY-derived tokens.
+      // 3. Brand fallback: the extractor worker is the sole writer. Only
+      // upsert crawl tokens when no READY stylesheet row exists; never
+      // overwrite extractor-derived tokens.
       const [readySheet] = await db
         .select({ id: brandStylesheets.id })
         .from(brandStylesheets)

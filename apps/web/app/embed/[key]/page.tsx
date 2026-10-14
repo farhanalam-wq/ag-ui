@@ -51,6 +51,56 @@ function suggestedQueriesFor(name: string): string[] {
   ];
 }
 
+// Validates a full theme object arriving over the preview message channel.
+// Returns a sanitized theme with recomputed contrast gates, or null when the
+// payload is unusable. Mirrors the guards in the shared theme module without
+// importing its internals.
+function sanitizeIncomingTheme(t: unknown): WidgetTheme | null {
+  try {
+    if (!t || typeof t !== "object") return null;
+    const r = t as Record<string, unknown>;
+    const hex = (v: unknown): string | null =>
+      typeof v === "string" && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v.trim())
+        ? v.trim().toLowerCase()
+        : null;
+    const primary = hex(r.primary);
+    const secondary = hex(r.secondary);
+    const surface = hex(r.surface);
+    const text = hex(r.text);
+    if (!primary || !secondary || !surface || !text) return null;
+    const radius =
+      typeof r.radius === "string" &&
+      /^(0|(?:\d+(?:\.\d+)?)(px|rem|%))$/.test(r.radius.trim())
+        ? r.radius.trim()
+        : "0.5rem";
+    let logoUrl: string | null = null;
+    if (typeof r.logoUrl === "string" && r.logoUrl.trim()) {
+      try {
+        const u = new URL(r.logoUrl.trim());
+        if (u.protocol === "https:") logoUrl = r.logoUrl.trim();
+      } catch {
+        logoUrl = null;
+      }
+    }
+    const bodySurface = contrastRatio(text, surface) >= 4.5;
+    const accentOnSurface = contrastRatio(primary, surface) >= 3;
+    return {
+      primary,
+      secondary,
+      radius,
+      surface,
+      text,
+      logoUrl,
+      fullSurface: bodySurface && accentOnSurface,
+      bodySurface,
+      accentOnSurface,
+      surfaceSource: "tokens",
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default function EmbedChatPage() {
   return (
     <Suspense
@@ -63,12 +113,14 @@ export default function EmbedChatPage() {
         </div>
       }
     >
-      <EmbedChatPageInner />
+      <EmbedChatInner />
     </Suspense>
   );
 }
 
-function EmbedChatPageInner() {
+// Named (not exported — route files only allow route exports) for clarity.
+// Live preview tooling mounts the production route in an iframe only.
+function EmbedChatInner() {
   const params = useParams();
   const searchParams = useSearchParams();
   const rawKey = params?.key;
@@ -87,6 +139,10 @@ function EmbedChatPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Live preview override, set only via the parent-tooling message channel
+  // below. Null in production; a full sanitized theme while previewing.
+  const [liveTheme, setLiveTheme] = useState<WidgetTheme | null>(null);
+  const [liveVersion, setLiveVersion] = useState<string | null>(null);
 
   const {
     messages,
@@ -138,13 +194,17 @@ function EmbedChatPageInner() {
         };
       }
     }
+    // Preview tooling sends a full theme over the message channel (sanitized
+    // on receipt). It wins over URL overrides — production never sets it,
+    // so default rendering is unchanged.
+    if (liveTheme) return liveTheme;
     if (colorOverride && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(colorOverride.trim())) {
       const primary = colorOverride.trim().toLowerCase();
       const accentOnSurface = contrastRatio(primary, base.surface) >= 3;
       return { ...base, primary, accentOnSurface, fullSurface: base.bodySurface && accentOnSurface };
     }
     return base;
-  }, [config, colorOverride, surfaceParam, textParam]);
+  }, [config, colorOverride, surfaceParam, textParam, liveTheme]);
 
   function isHexParam(v: unknown): v is string {
     return typeof v === "string" && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v.trim());
@@ -179,7 +239,7 @@ function EmbedChatPageInner() {
     try {
       const fingerprint = JSON.stringify({
         v: widgetThemeVars(theme),
-        tv: config?.themeVersion ?? null,
+        tv: liveVersion ?? config?.themeVersion ?? null,
       });
       if (appliedThemeVersion.current === fingerprint) return;
       appliedThemeVersion.current = fingerprint;
@@ -187,7 +247,32 @@ function EmbedChatPageInner() {
     } catch {
       // non-DOM environment — no-op
     }
-  }, [theme, config?.themeVersion]);
+  }, [theme, config?.themeVersion, liveVersion]);
+
+  // Live preview channel: the studio page posts full themes here while
+  // dragging controls. Every field is re-validated (page URL content is
+  // untrusted) and contrast gates are recomputed before applying.
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      try {
+        const data = e.data as any;
+        if (!data || data.type !== "ag-ui/theme" || !data.theme) return;
+        const next = sanitizeIncomingTheme(data.theme);
+        if (!next) return;
+        setLiveTheme(next);
+        setLiveVersion(
+          typeof data.themeVersion === "string" ? data.themeVersion : "live"
+        );
+        if (typeof data.dark === "boolean") {
+          document.documentElement.classList.toggle("dark", data.dark);
+        }
+      } catch {
+        // malformed preview message — ignore
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
