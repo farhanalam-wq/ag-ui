@@ -18,11 +18,16 @@ import { ChatMessageItem } from "@/components/chat-message";
 import { apiClient } from "@/lib/api-client";
 import {
   applyWidgetTheme,
+  cleanHexValue,
+  cleanLogoUrlValue,
+  cleanRadiusValue,
   contrastRatio,
   isLightSurface,
   mapBrandToWidgetTheme,
+  mergeThemeOverride,
   widgetThemeVars,
   type WidgetTheme,
+  type WidgetThemeOverride,
 } from "@ag-ui/shared/client";
 // Heavy LiveKit session loads on demand (client-only) so the initial chat
 // chunk stays light.
@@ -81,50 +86,41 @@ function suggestedQueriesFor(name: string): string[] {
 }
 
 // Validates a full theme object arriving over the preview message channel.
-// Returns a sanitized theme with recomputed contrast gates, or null when the
-// payload is unusable. Mirrors the guards in the shared theme module without
-// importing its internals.
+// Shared hex/radius/logo guards apply; contrast gates recomputed via the
+// shared merge so preview and studio agree exactly.
 function sanitizeIncomingTheme(t: unknown): WidgetTheme | null {
   try {
     if (!t || typeof t !== "object") return null;
     const r = t as Record<string, unknown>;
-    const hex = (v: unknown): string | null =>
-      typeof v === "string" && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v.trim())
-        ? v.trim().toLowerCase()
-        : null;
-    const primary = hex(r.primary);
-    const secondary = hex(r.secondary);
-    const surface = hex(r.surface);
-    const text = hex(r.text);
+    const override: WidgetThemeOverride = {};
+    const primary = cleanHexValue(r.primary);
+    const secondary = cleanHexValue(r.secondary);
+    const surface = cleanHexValue(r.surface);
+    const text = cleanHexValue(r.text);
     if (!primary || !secondary || !surface || !text) return null;
-    const radius =
-      typeof r.radius === "string" &&
-      /^(0|(?:\d+(?:\.\d+)?)(px|rem|%))$/.test(r.radius.trim())
-        ? r.radius.trim()
-        : "0.5rem";
-    let logoUrl: string | null = null;
-    if (typeof r.logoUrl === "string" && r.logoUrl.trim()) {
-      try {
-        const u = new URL(r.logoUrl.trim());
-        if (u.protocol === "https:") logoUrl = r.logoUrl.trim();
-      } catch {
-        logoUrl = null;
-      }
-    }
-    const bodySurface = contrastRatio(text, surface) >= 4.5;
-    const accentOnSurface = contrastRatio(primary, surface) >= 3;
-    return {
+    override.primary = primary;
+    override.secondary = secondary;
+    override.surface = surface;
+    override.text = text;
+    const radius = cleanRadiusValue(r.radius);
+    override.radius = radius ?? "0.5rem";
+    const logo = cleanLogoUrlValue(
+      typeof r.logoUrl === "string" && r.logoUrl.trim() ? r.logoUrl : null
+    );
+    override.logoUrl = typeof r.logoUrl === "string" && r.logoUrl.trim() ? logo : null;
+    const base: WidgetTheme = {
       primary,
       secondary,
-      radius,
+      radius: override.radius,
       surface,
       text,
-      logoUrl,
-      fullSurface: bodySurface && accentOnSurface,
-      bodySurface,
-      accentOnSurface,
+      logoUrl: override.logoUrl,
+      fullSurface: false,
+      bodySurface: false,
+      accentOnSurface: false,
       surfaceSource: "tokens",
     };
+    return mergeThemeOverride(base, override);
   } catch {
     return null;
   }

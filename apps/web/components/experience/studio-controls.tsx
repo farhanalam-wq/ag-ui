@@ -8,13 +8,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { WidgetTheme } from "@ag-ui/shared/client";
+import type { WidgetTheme, WidgetThemeOverride } from "@ag-ui/shared/client";
 
 interface StudioControlsProps {
   draft: WidgetTheme;
   contrast: number | null;
   canPublish: boolean;
-  onPatch: (patch: Partial<WidgetTheme>) => void;
+  onPatch: (patch: WidgetThemeOverride) => void;
   onReset: () => void;
 }
 

@@ -44,7 +44,75 @@ const DEFAULTS: WidgetTheme = {
 };
 
 const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
-const RADIUS_RE = /^(0|(?:\d+(?:\.\d+)?)(px|rem|%))$/;
+export const RADIUS_RE = /^(0|(?:\d+(?:\.\d+)?)(px|rem|%))$/;
+
+/** Flat JSON-safe override: every control writes fields of this object. */
+export interface WidgetThemeOverride {
+  primary?: string;
+  secondary?: string;
+  radius?: string;
+  surface?: string;
+  text?: string;
+  logoUrl?: string | null;
+}
+
+/** Canonical lowercase hex, or null when unusable. */
+export function cleanHexValue(v: unknown): string | null {
+  if (typeof v === "string" && HEX_RE.test(v.trim())) return v.trim().toLowerCase();
+  return null;
+}
+
+export function cleanRadiusValue(v: unknown): string | null {
+  if (typeof v === "string" && RADIUS_RE.test(v.trim())) return v.trim();
+  return null;
+}
+
+export function cleanLogoUrlValue(v: unknown): string | null {
+  return cleanLogoUrl(v);
+}
+
+/** True when every present override field is well-formed. */
+export function isValidOverride(o: unknown): o is WidgetThemeOverride {
+  if (!o || typeof o !== "object") return false;
+  const r = o as Record<string, unknown>;
+  for (const k of ["primary", "secondary", "surface", "text"] as const) {
+    if (r[k] !== undefined && cleanHexValue(r[k]) === null) return false;
+  }
+  if (r.radius !== undefined && cleanRadiusValue(r.radius) === null) return false;
+  if (r.logoUrl !== undefined && r.logoUrl !== null) {
+    if (cleanLogoUrlValue(r.logoUrl) === null) return false;
+  }
+  return true;
+}
+
+/** Merges extraction base with a draft override, recomputing contrast gates. */
+export function mergeThemeOverride(
+  base: WidgetTheme,
+  override: WidgetThemeOverride
+): WidgetTheme {
+  const merged: WidgetTheme = { ...base };
+  const primary = override.primary !== undefined ? cleanHexValue(override.primary) : undefined;
+  const secondary = override.secondary !== undefined ? cleanHexValue(override.secondary) : undefined;
+  const surface = override.surface !== undefined ? cleanHexValue(override.surface) : undefined;
+  const text = override.text !== undefined ? cleanHexValue(override.text) : undefined;
+  const radius = override.radius !== undefined ? cleanRadiusValue(override.radius) : undefined;
+  if (primary) merged.primary = primary;
+  if (secondary) merged.secondary = secondary;
+  if (surface) merged.surface = surface;
+  if (text) merged.text = text;
+  if (radius) merged.radius = radius;
+  if (override.logoUrl !== undefined) {
+    merged.logoUrl = override.logoUrl === null ? null : cleanLogoUrlValue(override.logoUrl);
+  }
+  const bodySurface = contrastRatio(merged.text, merged.surface) >= 4.5;
+  const accentOnSurface = contrastRatio(merged.primary, merged.surface) >= 3;
+  return {
+    ...merged,
+    bodySurface,
+    accentOnSurface,
+    fullSurface: bodySurface && accentOnSurface,
+  };
+}
 
 function cleanHex(v: unknown, fallback: string): string {
   if (typeof v === "string" && HEX_RE.test(v.trim())) return v.trim().toLowerCase();

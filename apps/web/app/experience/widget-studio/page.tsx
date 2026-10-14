@@ -32,7 +32,10 @@ import { useSelectedCompany } from "@/stores/use-company-store";
 import { apiClient } from "@/lib/api-client";
 import {
   contrastRatio,
+  isValidOverride,
+  mergeThemeOverride,
   type WidgetTheme,
+  type WidgetThemeOverride,
 } from "@ag-ui/shared/client";
 import {
   PANEL_ALLOW,
@@ -65,7 +68,7 @@ export default function WidgetStudioPage() {
   const companyId = selectedCompany?.id ?? null;
   const [baseTheme, setBaseTheme] = useState<WidgetTheme | null>(null);
   const [baseLoading, setBaseLoading] = useState(false);
-  const [edits, setEdits] = useState<Partial<WidgetTheme>>({});
+  const [edits, setEdits] = useState<WidgetThemeOverride>({});
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   // Base theme comes from the same company detail the preview renderer
@@ -128,16 +131,7 @@ export default function WidgetStudioPage() {
 
   const draft: WidgetTheme | null = useMemo(() => {
     if (!baseTheme) return null;
-    const merged: WidgetTheme = { ...baseTheme, ...edits };
-    // Recompute the contrast gates on every edit, same thresholds as prod.
-    const bodySurface = contrastRatio(merged.text, merged.surface) >= 4.5;
-    const accentOnSurface = contrastRatio(merged.primary, merged.surface) >= 3;
-    return {
-      ...merged,
-      bodySurface,
-      accentOnSurface,
-      fullSurface: bodySurface && accentOnSurface,
-    };
+    return mergeThemeOverride(baseTheme, edits);
   }, [baseTheme, edits]);
 
   const draftVersion = useMemo(
@@ -183,7 +177,11 @@ export default function WidgetStudioPage() {
     }
   }, [draft, draftVersion]);
 
-  const handlePatch = useCallback((patch: Partial<WidgetTheme>) => {
+  const handlePatch = useCallback((patch: WidgetThemeOverride) => {
+    if (!isValidOverride(patch)) {
+      toast.error("Invalid value", { description: "Theme edit rejected" });
+      return;
+    }
     for (const [k, v] of Object.entries(patch)) {
       if (
         (k === "primary" || k === "secondary" || k === "surface" || k === "text") &&
