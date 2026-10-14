@@ -235,6 +235,135 @@ export function cleanAvatarUrlValue(v: unknown): string | null {
   return cleanLogoUrl(v);
 }
 
+function clampByte(n: number): number {
+  return Math.max(0, Math.min(255, Math.round(n)));
+}
+
+function bytesToHex(r: number, g: number, b: number): string {
+  const h = (n: number) => clampByte(n).toString(16).padStart(2, "0");
+  return `#${h(r)}${h(g)}${h(b)}`;
+}
+
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  const hh = ((h % 360) + 360) % 360;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((hh / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r = 0, g = 0, b = 0;
+  if (hh < 60) [r, g, b] = [c, x, 0];
+  else if (hh < 120) [r, g, b] = [x, c, 0];
+  else if (hh < 180) [r, g, b] = [0, c, x];
+  else if (hh < 240) [r, g, b] = [0, x, c];
+  else if (hh < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
+}
+
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  const rn = r / 255, gn = g / 255, bn = b / 255;
+  const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h = 0;
+  if (max === rn) h = ((gn - bn) / d + (gn < bn ? 6 : 0)) * 60;
+  else if (max === gn) h = ((bn - rn) / d + 2) * 60;
+  else h = ((rn - gn) / d + 4) * 60;
+  return [h, s, l];
+}
+
+function parseRgbArgs(args: string): [number, number, number] | null {
+  const parts = args
+    .replace(/\//g, " ")
+    .split(/[\s,]+/)
+    .filter((p) => p.length > 0);
+  if (parts.length !== 3 && parts.length !== 4) return null;
+  const nums = parts.slice(0, 3).map((p) => {
+    if (p.endsWith("%")) {
+      const n = Number(p.slice(0, -1));
+      if (!Number.isFinite(n) || n < 0 || n > 100) return NaN;
+      return (n / 100) * 255;
+    }
+    const n = Number(p);
+    return n;
+  });
+  if (nums.some((n) => !Number.isFinite(n) || n < 0 || n > 255)) return null;
+  if (parts.length === 4) {
+    const aRaw = parts[3];
+    const a = aRaw.endsWith("%") ? Number(aRaw.slice(0, -1)) / 100 : Number(aRaw);
+    if (!Number.isFinite(a) || a < 0.99) return null;
+  }
+  return [nums[0], nums[1], nums[2]];
+}
+
+function parseHslArgs(args: string): [number, number, number] | null {
+  const parts = args
+    .replace(/\//g, " ")
+    .split(/[\s,]+/)
+    .filter((p) => p.length > 0);
+  if (parts.length !== 3 && parts.length !== 4) return null;
+  const h = Number(parts[0].replace(/(deg|turn|rad)$/, ""));
+  if (!Number.isFinite(h)) return null;
+  const pct = (p: string): number | null => {
+    if (!p.endsWith("%")) return null;
+    const n = Number(p.slice(0, -1));
+    return Number.isFinite(n) && n >= 0 && n <= 100 ? n / 100 : null;
+  };
+  const s = pct(parts[1]);
+  const l = pct(parts[2]);
+  if (s === null || l === null) return null;
+  if (parts.length === 4) {
+    const aRaw = parts[3];
+    const a = aRaw.endsWith("%") ? Number(aRaw.slice(0, -1)) / 100 : Number(aRaw);
+    if (!Number.isFinite(a) || a < 0.99) return null;
+  }
+  return hslToRgb(h, s, l);
+}
+
+export type ColorFormat = "hex" | "rgb" | "hsl";
+
+/**
+ * Parses hex, rgb()/rgba(), hsl()/hsla() into canonical lowercase hex.
+ * Anything else (named colors, oklch, alpha < 1) returns null.
+ */
+export function parseColorToHex(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim().toLowerCase();
+  if (HEX_RE.test(t)) {
+    const c = t.slice(1);
+    const full = c.length === 3 ? c.split("").map((x) => x + x).join("") : c;
+    return `#${full}`;
+  }
+  let m = t.match(/^rgba?\((.+)\)$/);
+  if (m) {
+    const rgb = parseRgbArgs(m[1]);
+    return rgb ? bytesToHex(...rgb) : null;
+  }
+  m = t.match(/^hsla?\((.+)\)$/);
+  if (m) {
+    const rgb = parseHslArgs(m[1]);
+    return rgb ? bytesToHex(...rgb) : null;
+  }
+  return null;
+}
+
+/** Renders a canonical hex in the requested display format. */
+export function formatHexAs(hex: string, format: ColorFormat): string {
+  const h = cleanHexValue(hex) ?? "#000000";
+  const c = h.slice(1);
+  const full = c.length === 3 ? c.split("").map((x) => x + x).join("") : c;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  if (format === "rgb") return `rgb(${r}, ${g}, ${b})`;
+  if (format === "hsl") {
+    const [hh, s, l] = rgbToHsl(r, g, b);
+    return `hsl(${Math.round(hh)}, ${Math.round(s * 100)}%, ${Math.round(l * 100)}%)`;
+  }
+  return h;
+}
+
 /** True when every present override field is well-formed. */
 export function isValidOverride(o: unknown): o is WidgetThemeOverride {
   if (!o || typeof o !== "object") return false;

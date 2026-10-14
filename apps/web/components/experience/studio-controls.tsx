@@ -15,7 +15,10 @@ import {
   LAUNCHER_MODES,
   MIC_GLYPHS,
   SEND_GLYPHS,
+  formatHexAs,
+  parseColorToHex,
   type AvatarMode,
+  type ColorFormat,
   type LauncherMode,
   type WidgetTheme,
   type WidgetThemeOverride,
@@ -91,14 +94,16 @@ function ColorField({
   onPick: (hex: string) => void;
   onClear?: () => void;
 }) {
+  const [format, setFormat] = useState<ColorFormat>("hex");
   const [text, setText] = useState<string | null>(null);
-  const shown = text ?? value ?? fallback;
+  const effective = value ?? fallback;
+  const shown = text ?? formatHexAs(effective, format);
   const customized = value != null;
   return (
-    <label className="flex items-center gap-2 text-[13px]">
+    <div className="flex items-center gap-2 text-[13px]">
       <input
         type="color"
-        value={/^#(?:[0-9a-f]{6})$/i.test(shown) ? shown : fallback}
+        value={/^#(?:[0-9a-f]{6})$/i.test(effective) ? effective : fallback}
         onChange={(e) => {
           setText(null);
           onPick(e.target.value);
@@ -110,6 +115,19 @@ function ColorField({
         {label}
         {customized && <span className="ml-1 text-[10px]">•</span>}
       </span>
+      <select
+        value={format}
+        onChange={(e) => {
+          setFormat(e.target.value as ColorFormat);
+          setText(null);
+        }}
+        className="shrink-0 rounded-md border border-border bg-muted/40 px-1 py-1 font-mono text-[11px] text-muted-foreground"
+        aria-label={`${label} color format`}
+      >
+        <option value="hex">hex</option>
+        <option value="rgb">rgb</option>
+        <option value="hsl">hsl</option>
+      </select>
       <input
         type="text"
         value={shown}
@@ -117,16 +135,16 @@ function ColorField({
         onChange={(e) => setText(e.target.value)}
         onBlur={() => {
           if (text == null) return;
-          const v = text.trim().toLowerCase();
-          if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/.test(v)) onPick(v);
+          const hex = parseColorToHex(text);
+          if (hex) onPick(hex);
           setText(null);
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter") (e.target as HTMLInputElement).blur();
           if (e.key === "Escape") setText(null);
         }}
-        className="w-20 shrink-0 rounded-md border border-border bg-muted/40 px-1.5 py-1 font-mono text-[11px] text-muted-foreground"
-        aria-label={`${label} hex value`}
+        className="w-36 shrink-0 rounded-md border border-border bg-muted/40 px-1.5 py-1 font-mono text-[11px] text-muted-foreground"
+        aria-label={`${label} color value`}
       />
       {onClear && customized && (
         <button
@@ -137,7 +155,7 @@ function ColorField({
           clear
         </button>
       )}
-    </label>
+    </div>
   );
 }
 
