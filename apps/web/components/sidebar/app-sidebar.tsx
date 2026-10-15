@@ -16,7 +16,7 @@ import { findNavItemByHref } from "./nav-config";
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   companies: CompanyItem[];
-  selectedCompany: CompanyItem;
+  selectedCompany: CompanyItem | null;
   onSelectCompany: (company: CompanyItem) => void;
   onOpenAddCompany: () => void | Promise<void>;
 }

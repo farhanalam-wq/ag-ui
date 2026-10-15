@@ -60,20 +60,18 @@ export function StudioShell({
       defaultOpen={true}
       className="bg-background text-foreground"
     >
-      {selectedCompany && (
-        <AppSidebar
-          companies={companies}
-          selectedCompany={selectedCompany}
-          onSelectCompany={(comp) => {
-            if (onSelectCompany) {
-              onSelectCompany(comp);
-            } else {
-              useCompanyStore.getState().select(comp.id);
-            }
-          }}
-          onOpenAddCompany={() => router.push("/knowledge/ingest")}
-        />
-      )}
+      <AppSidebar
+        companies={companies}
+        selectedCompany={selectedCompany}
+        onSelectCompany={(comp) => {
+          if (onSelectCompany) {
+            onSelectCompany(comp);
+          } else {
+            useCompanyStore.getState().select(comp.id);
+          }
+        }}
+        onOpenAddCompany={() => router.push("/knowledge/ingest")}
+      />
 
       <SidebarInset className="min-w-0 flex-1 overflow-x-clip bg-background transition-colors duration-200">
         <a

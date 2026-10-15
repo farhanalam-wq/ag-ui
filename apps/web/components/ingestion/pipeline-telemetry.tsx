@@ -299,8 +299,10 @@ export function PipelineTelemetry({
             {error}
           </p>
           <p className="mt-1 text-[13px] text-muted-foreground">
-            The site may block automated reads, or the connection dropped.
-            Retry, or pick fewer pages.
+            Check the activity log below for the per-page failure list —
+            common causes are bot protection (403), JS-only pages (retry
+            with Playwright), or timeouts. Retry with fewer pages, or cancel
+            the stuck job and start fresh.
           </p>
           <Button
             type="button"

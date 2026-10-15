@@ -33,6 +33,61 @@ export class PipelineExitError extends Error {
 /** Task 6 — job statuses that count as live for the concurrency cap. */
 export const LIVE_JOB_STATUSES = ["QUEUED", "DISCOVERING", "CRAWLING", "PARSING", "EMBEDDING"];
 
+/** Terminal statuses — a job already here must never be overwritten by a failure path. */
+const TERMINAL_JOB_STATUSES = ["READY", "FAILED", "CANCELLED"];
+
+/**
+ * Best-effort failure marker: flips a live job + snapshot to FAILED with the
+ * real cause in error_sample. Never throws — progress/failure paths stay
+ * non-fatal to the marking itself. Skips jobs that already reached terminal.
+ */
+async function markJobFailed(
+  crawlJobId: string,
+  snapshotId: string | null,
+  errorSample: unknown
+): Promise<void> {
+  try {
+    const [current] = await db
+      .select({ status: crawlJobs.status })
+      .from(crawlJobs)
+      .where(eq(crawlJobs.id, crawlJobId))
+      .limit(1);
+    if (current && !TERMINAL_JOB_STATUSES.includes(current.status)) {
+      await db
+        .update(crawlJobs)
+        .set({ status: "FAILED", errorSample: errorSample as any, updatedAt: new Date() })
+        .where(eq(crawlJobs.id, crawlJobId));
+    }
+  } catch {
+    // Non-blocking
+  }
+  if (snapshotId) {
+    try {
+      const [snap] = await db
+        .select({ status: companySnapshots.status })
+        .from(companySnapshots)
+        .where(eq(companySnapshots.id, snapshotId))
+        .limit(1);
+      if (snap && !TERMINAL_JOB_STATUSES.includes(snap.status)) {
+        await db
+          .update(companySnapshots)
+          .set({ status: "FAILED" })
+          .where(eq(companySnapshots.id, snapshotId));
+      }
+    } catch {
+      // Non-blocking
+    }
+  }
+}
+
+/** One-line summary of the first few dead letters for error messages. */
+function summarizeDeadLetters(deadLetters: any[], max = 3): string {
+  return (deadLetters ?? []).slice(0, max).map((f: any) => {
+    const st = f.status !== null && f.status !== undefined ? `HTTP ${f.status}` : "NET";
+    return `${f.url} (${st}, attempts=${f.attempts}): ${f.error}`;
+  }).join(" | ");
+}
+
 export interface IngestPipelineResult {
   companyId: string;
   companyName: string;
@@ -248,7 +303,7 @@ export async function runIngestPipeline(
             totalMs: Date.now() - tStart,
           },
         };
-      } else if (["QUEUED", "CRAWLING", "PROCESSING", "EMBEDDING"].includes(existingJob.status)) {
+      } else if (LIVE_JOB_STATUSES.includes(existingJob.status)) {
         throw new PipelineExitError(
           `[IDEMPOTENCY HIT] Active crawl job ${existingJob.id} is currently ${existingJob.status} for the identical selection. Wait for it or cancel it before resubmitting.`,
           2
@@ -308,43 +363,57 @@ export async function runIngestPipeline(
     }
   }
 
-  // Phase 3: concurrent crawl + parse.
-  const { docs, rootHtml, stats } = await crawlPages(
-    selected,
-    baseUrl as URL,
-    opts,
-    async (progress) => {
-      if (jobContext) {
+  // Phase 3: concurrent crawl + parse. Any throw below must strand nothing:
+  // the job + snapshot flip to FAILED with the real cause (previously a
+  // crash here left a live PARSING row blocking the cap forever).
+  let docs: Awaited<ReturnType<typeof crawlPages>>["docs"];
+  let rootHtml: string | null;
+  let stats: Record<string, any>;
+  try {
+    ({ docs, rootHtml, stats } = await crawlPages(
+      selected,
+      baseUrl as URL,
+      opts,
+      async (progress) => {
+        if (jobContext) {
+          try {
+            const updateData: any = {
+              crawled: progress.crawled,
+              docs: progress.docs,
+              failed: progress.failed,
+              updatedAt: new Date(),
+            };
+            if (progress.stage) updateData.status = progress.stage;
+            await db.update(crawlJobs).set(updateData).where(eq(crawlJobs.id, jobContext.crawlJobId));
+          } catch {
+            // Non-blocking progress update
+          }
+        }
         try {
-          const updateData: any = {
+          await opts.onProgress?.({
+            stage: (progress.stage as any) || "CRAWLING",
+            jobId: jobContext?.crawlJobId,
+            companyId: jobContext?.companyId,
+            snapshotId: jobContext?.snapshotId,
             crawled: progress.crawled,
             docs: progress.docs,
             failed: progress.failed,
-            updatedAt: new Date(),
-          };
-          if (progress.stage) updateData.status = progress.stage;
-          await db.update(crawlJobs).set(updateData).where(eq(crawlJobs.id, jobContext.crawlJobId));
+            skippedThin: progress.skippedThin ?? 0,
+            totalSelected: selected.length,
+          });
         } catch {
-          // Non-blocking progress update
+          // Non-blocking
         }
       }
-      try {
-        await opts.onProgress?.({
-          stage: (progress.stage as any) || "CRAWLING",
-          jobId: jobContext?.crawlJobId,
-          companyId: jobContext?.companyId,
-          snapshotId: jobContext?.snapshotId,
-          crawled: progress.crawled,
-          docs: progress.docs,
-          failed: progress.failed,
-          skippedThin: progress.skippedThin ?? stats?.skippedThin ?? 0,
-          totalSelected: selected.length,
-        });
-      } catch {
-        // Non-blocking
-      }
+    ));
+  } catch (err: any) {
+    if (jobContext) {
+      await markJobFailed(jobContext.crawlJobId, jobContext.snapshotId, [
+        { stage: "crawl", error: String(err?.message ?? err) },
+      ]);
     }
-  );
+    throw err;
+  }
   const elapsedCrawl = ((stats.ms as number) / 1000).toFixed(1);
   const pps = (docs.length / Math.max(0.5, (stats.ms as number) / 1000)).toFixed(1);
   console.log(`[CRAWL] done: docs=${docs.length} failed=${stats.failed} retries=${stats.retries} http=${stats.httpCount} playwright=${stats.pwCount} thin/dup=${stats.skippedThin} in ${elapsedCrawl}s (${pps} docs/s)`);
@@ -356,6 +425,22 @@ export async function runIngestPipeline(
     }
   }
   if (opts.dryRun || docs.length === 0) {
+    if (!opts.dryRun && docs.length === 0 && jobContext) {
+      // Every page dead-lettered (WAF/403, JS shell, timeouts). Fail loudly
+      // with the real per-page causes instead of stranding a live row that
+      // blocks the concurrency cap on the next attempt.
+      const sample = summarizeDeadLetters(stats.deadLetters);
+      await markJobFailed(
+        jobContext.crawlJobId,
+        jobContext.snapshotId,
+        (stats.deadLetters ?? []).slice(0, 200)
+      );
+      throw new Error(
+        `[CRAWL] all ${selected.length} pages failed, 0 docs kept. ` +
+        `Top failures: ${sample || "unknown"}. ` +
+        `Full list in crawl_jobs.error_sample.`
+      );
+    }
     console.log(`[DRY] ${opts.dryRun ? "--dry-run: skipping DB." : "no docs: skipping DB."} Top docs:`);
     docs.slice(0, 5).forEach((d, i) => console.log(`  ${i + 1}. [${d.category}] ${d.title} (${d.content.length} chars) ${d.url}`));
     return {
@@ -382,7 +467,21 @@ export async function runIngestPipeline(
     });
   } catch {}
 
-  const res = await populateDb(baseUrl as URL, domain, docs, rootHtml, opts, stats, jobContext);
+  // Phase 4: populate DB (chunk → embed → facts). populateDb marks FAILED on
+  // its known error branches; this catch covers anything unexpected so no
+  // throw path leaves a live row behind.
+  let res: Awaited<ReturnType<typeof populateDb>>;
+  try {
+    res = await populateDb(baseUrl as URL, domain, docs, rootHtml, opts, stats, jobContext);
+  } catch (err: any) {
+    if (jobContext) {
+      await markJobFailed(jobContext.crawlJobId, jobContext.snapshotId, [
+        ...(stats.deadLetters ?? []).slice(0, 199),
+        { stage: "populate", error: String(err?.message ?? err) },
+      ]);
+    }
+    throw err;
+  }
 
   if (opts.withBrand && res.companyId && res.snapshotId) {
     try {
