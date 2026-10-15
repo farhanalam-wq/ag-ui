@@ -43,11 +43,13 @@ export default function WebsiteAnalyticsPage() {
   const [live, setLive] = useState<RealtimeSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [liveAt, setLiveAt] = useState<string | null>(null);
 
   useEffect(() => {
     if (!company) {
       setData(null);
       setLive(null);
+      setLiveAt(null);
       return;
     }
     let cancelled = false;
@@ -61,6 +63,7 @@ export default function WebsiteAnalyticsPage() {
         if (!cancelled) {
           setData(w);
           setLive(r);
+          setLiveAt(new Date().toLocaleTimeString());
           setLoading(false);
         }
       })
@@ -74,6 +77,26 @@ export default function WebsiteAnalyticsPage() {
       cancelled = true;
     };
   }, [company?.id, range, refreshKey]);
+
+  // Live strip polls on its own clock (30s): cheap 30-min window read behind
+  // a 15s endpoint cache. Main analytics intentionally do NOT poll — they
+  // move on the worker's 15-min rollup tick, so re-fetching them faster
+  // would only burn DB for identical numbers.
+  useEffect(() => {
+    if (!company) return;
+    const id = window.setInterval(() => {
+      apiClient.analytics
+        .realtime(company.id)
+        .then((r) => {
+          setLive(r);
+          setLiveAt(new Date().toLocaleTimeString());
+        })
+        .catch(() => {
+          /* transient — next tick retries, strip keeps last values */
+        });
+    }, 30_000);
+    return () => window.clearInterval(id);
+  }, [company?.id]);
 
   const demand = useMemo(
     () =>
@@ -172,8 +195,7 @@ export default function WebsiteAnalyticsPage() {
                 <span className="inline-flex items-center gap-2 font-medium">
                   <Lightning className="size-4 text-violet-500" aria-hidden="true" />
                   Last 30 min
-                </span>
-                <span className="tabular-nums">
+                </span>                <span className="tabular-nums">
                   <strong>{live.views.toLocaleString()}</strong>{" "}
                   <span className="text-muted-foreground">views</span>
                 </span>
@@ -184,6 +206,11 @@ export default function WebsiteAnalyticsPage() {
                 {live.topPaths[0] && (
                   <span className="truncate font-mono text-xs text-muted-foreground">
                     Top: {live.topPaths[0].path} ({live.topPaths[0].views})
+                  </span>
+                )}
+                {liveAt && (
+                  <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                    Updated {liveAt} · refreshes every 30s
                   </span>
                 )}
               </CardContent>
@@ -333,7 +360,8 @@ export default function WebsiteAnalyticsPage() {
           )}
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Globe className="size-3.5" aria-hidden="true" />
-            Humans only — bot traffic is filtered at write time.
+            Humans only — bot traffic is filtered at write time. Totals refresh
+            on the 15-minute rollup; the strip above is live within ~30s.
           </p>
         </div>
       )}

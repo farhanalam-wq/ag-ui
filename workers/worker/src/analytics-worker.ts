@@ -70,25 +70,31 @@ async function ensurePartitions(rows: BufferedEvent[]): Promise<void> {
     const { key, from, to } = monthKey(r.created_at);
     if (!months.has(key) && !knownPartitions.has(key)) months.set(key, { from, to });
   }
-  for (const [key, { from, to }] of months) {
-    try {
-      await client.unsafe(
-        `CREATE TABLE IF NOT EXISTS page_views_${key} PARTITION OF page_views FOR VALUES FROM ('${from}') TO ('${to}');`
-      );
-      await client.unsafe(
-        `CREATE INDEX IF NOT EXISTS page_views_${key}_company_time_idx ON page_views_${key} (company_id, created_at);`
-      );
-      await client.unsafe(
-        `CREATE INDEX IF NOT EXISTS page_views_${key}_session_idx ON page_views_${key} (session_hash);`
-      );
-    } catch (err: any) {
-      // Concurrent worker race on first touch: 42P07/42710 means the
-      // partition now exists — safe to proceed. Anything else rethrows.
-      const code = String(err?.code ?? "");
-      if (code !== "42P07" && code !== "42710") throw err;
+  if (months.size === 0) return;
+  // CREATE TABLE/INDEX IF NOT EXISTS emits 42P07 NOTICEs on first touch;
+  // run them in one transaction with notices muted so logs stay readable.
+  await client.begin(async (sql) => {
+    await sql`SET LOCAL client_min_messages TO WARNING`;
+    for (const [key, { from, to }] of months) {
+      try {
+        await sql.unsafe(
+          `CREATE TABLE IF NOT EXISTS page_views_${key} PARTITION OF page_views FOR VALUES FROM ('${from}') TO ('${to}');`
+        );
+        await sql.unsafe(
+          `CREATE INDEX IF NOT EXISTS page_views_${key}_company_time_idx ON page_views_${key} (company_id, created_at);`
+        );
+        await sql.unsafe(
+          `CREATE INDEX IF NOT EXISTS page_views_${key}_session_idx ON page_views_${key} (session_hash);`
+        );
+      } catch (err: any) {
+        // Concurrent worker race on first touch: 42P07/42710 means the
+        // partition now exists — safe to proceed. Anything else rethrows.
+        const code = String(err?.code ?? "");
+        if (code !== "42P07" && code !== "42710") throw err;
+      }
+      knownPartitions.add(key);
     }
-    knownPartitions.add(key);
-  }
+  });
 }
 
 const COLS = [

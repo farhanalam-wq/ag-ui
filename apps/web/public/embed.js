@@ -299,6 +299,9 @@
           headers: { "Content-Type": "application/json" },
           body: body,
           keepalive: true,
+          // Tracking is anonymous (key in URL, no cookies): never send
+          // credentials, so a wildcard ACAO can never block us either.
+          credentials: "omit",
         }).catch(function () {});
       } catch (e) {
         /* fire-and-forget */

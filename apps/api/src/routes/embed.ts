@@ -384,7 +384,18 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
   .post(
     "/:key/track",
     async ({ params, body, set, request }) => {
-      set.headers["access-control-allow-origin"] = "*";
+      // Anonymous endpoint (the only credential is the widget key in the URL;
+      // no cookies or sessions exist), so echoing the caller origin is safe
+      // and works for credentialed and plain requests alike. A hardcoded "*"
+      // breaks browsers that send credentials (track POSTs were stored
+      // server-side while the page logged ERR_FAILED).
+      const origin = request.headers.get("origin");
+      if (origin) {
+        set.headers["access-control-allow-origin"] = origin;
+        set.headers["vary"] = "Origin";
+      } else {
+        set.headers["access-control-allow-origin"] = "*";
+      }
 
       const resolved = await resolveActiveKey(params.key);
       if (resolved.error === "not_found") {

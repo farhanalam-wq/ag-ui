@@ -224,7 +224,8 @@ export default function ConversionsPage() {
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Target className="size-3.5" aria-hidden="true" />
             Fire conversion events with a value from the snippet
-            (<code>data-ag-convert</code>) to fill this page.
+            (<code>data-ag-convert</code>) to fill this page. Totals refresh
+            on the 15-minute rollup.
           </p>
         </div>
       )}
