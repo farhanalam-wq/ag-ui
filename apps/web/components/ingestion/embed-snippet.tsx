@@ -25,6 +25,7 @@ export function EmbedSnippet({ result }: EmbedSnippetProps) {
   const [apiBase] = useState<string>(() => defaultApiBase());
   const [copied, setCopied] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [track, setTrack] = useState(false);
   const rotateToastArmed = useRef(false);
 
   useEffect(() => setMounted(true), []);
@@ -34,7 +35,7 @@ export function EmbedSnippet({ result }: EmbedSnippetProps) {
 
   const raw = phase.kind === "ready" ? phase.raw : null;
   const snippet = raw
-    ? buildSnippet({ webOrigin, raw, apiBase, companyName: result.companyName })
+    ? buildSnippet({ webOrigin, raw, apiBase, companyName: result.companyName, track })
     : null;
 
   const handleCopy = useCallback(async () => {
@@ -171,6 +172,15 @@ export function EmbedSnippet({ result }: EmbedSnippetProps) {
             Strict CSP sites may need{" "}
             <code>frame-src {webOrigin}</code>
           </p>
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={track}
+              onChange={(e) => setTrack(e.target.checked)}
+              className="size-3.5 accent-primary"
+            />
+            Track page visits (cookieless pageviews + conversions)
+          </label>
         </>
       )}
     </div>

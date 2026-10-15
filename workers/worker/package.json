@@ -19,7 +19,8 @@
     "dembrandt": "0.38.0",
     "@ag-ui/extract": "workspace:*",
     "@ag-ui/queues": "workspace:*",
-    "@ag-ui/shared": "workspace:*"
+    "@ag-ui/shared": "workspace:*",
+    "@ag-ui/analytics": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",

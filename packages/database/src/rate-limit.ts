@@ -67,3 +67,31 @@ export async function checkEmbedRateLimit(
     return { allowed: true, retryAfterSec: 0 };
   }
 }
+
+/**
+ * Tracking-event rate limit (pageviews/conversions). Pageviews are
+ * high-volume by nature (SPAs, campaigns), so this gets its own generous
+ * budget separate from chat: per key-hash + IP, fail-open like chat.
+ * One tenant's bot flood burns only its own buckets (noisy-neighbor safe).
+ */
+export async function checkTrackRateLimit(
+  keyHash: string,
+  ip: string
+): Promise<EmbedRateLimitResult> {
+  // Deliberately generous: B2C visitors share IPs behind carrier-grade NAT,
+  // so per-IP can only be an abuse backstop, never a precision throttle.
+  // Precision throttling is per-key and lands in Phase 5 with quotas.
+  const perMin = rateLimitEnv("TRACK_RATE_PER_MIN", 1000);
+  const perDay = rateLimitEnv("TRACK_RATE_PER_DAY", 50000);
+  const r = await getRedisClient();
+  if (!r) return { allowed: true, retryAfterSec: 0 };
+
+  try {
+    const min = await checkBucket(r, bucketKey("track", "min", keyHash, ip), perMin, 60);
+    if (!min.allowed) return min;
+    const day = await checkBucket(r, bucketKey("track", "day", keyHash, ip), perDay, 86400);
+    return day;
+  } catch {
+    return { allowed: true, retryAfterSec: 0 };
+  }
+}

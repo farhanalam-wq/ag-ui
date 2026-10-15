@@ -6,6 +6,8 @@ export interface SnippetInput {
   apiBase: string;
   companyName: string;
   position?: "bottom-right" | "bottom-left";
+  /** Opt-in cookieless traffic tracking (pageviews + conversions). Default off. */
+  track?: boolean;
 }
 
 export function defaultApiBase(): string {
@@ -23,8 +25,9 @@ export function buildSnippet(input: SnippetInput): string {
   const title = `${input.companyName} Help`;
   const positionAttr =
     input.position === "bottom-left" ? `\n  data-position="bottom-left"` : "";
+  const trackAttr = input.track ? `\n  data-track="on"` : "";
   // defer is intentionally the LAST attribute.
-  return `<script src="${input.webOrigin}/embed.js"\n  data-widget-key="${input.raw}"\n  data-api-base="${apiBase}"\n  data-title="${title}"${positionAttr} defer></script>`;
+  return `<script src="${input.webOrigin}/embed.js"\n  data-widget-key="${input.raw}"\n  data-api-base="${apiBase}"\n  data-title="${title}"${positionAttr}${trackAttr} defer></script>`;
 }
 
 export const FRAMEWORK_NOTES: Record<FrameworkId, { label: string; note: string }> = {

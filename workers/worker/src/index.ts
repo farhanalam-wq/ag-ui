@@ -327,3 +327,6 @@ import "./enrich-worker";
 
 // Brand extraction worker (dembrandt -> brand_stylesheets + brands).
 import "./brand-worker";
+
+// Analytics batch writer (track events -> page_views, buffered + deduped).
+import "./analytics-worker";

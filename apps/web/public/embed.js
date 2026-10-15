@@ -211,8 +211,171 @@
   document.body.appendChild(orb);
   document.body.appendChild(frame);
 
-  // --- Readiness / brand pre-check (best-effort, never blocks render) -------
-  if (!widgetKey) return;
+  // --- Cookieless traffic tracking (opt-in via data-track="on") -------------
+  // ~1KB, zero dependencies. Pageviews (incl. SPA route changes) and
+  // data-ag-convert clicks beacon to POST /api/embed/:key/track.
+  // Identity stays server-side: the snippet sends only a random per-tab
+  // session id; visitor hashing happens at the collector edge.
+  // Respects DNT both ways (skips here, collector drops regardless).
+  try {
+    if (trackEnabled() && widgetKey) initTracking();
+  } catch (e) {
+    /* tracking must never break the widget */
+  }
+
+  function trackEnabled() {
+    if (dataset.track !== "on") return false;
+    try {
+      if (navigator.doNotTrack === "1") return false;
+    } catch (e) {
+      /* fall through */
+    }
+    return true;
+  }
+
+  function initTracking() {
+    var sessKey = "ag_sess";
+    var sessionId = null;
+    try {
+      sessionId = window.sessionStorage.getItem(sessKey);
+      if (!sessionId) {
+        sessionId = newEventId();
+        window.sessionStorage.setItem(sessKey, sessionId);
+      }
+    } catch (e) {
+      sessionId = newEventId();
+    }
+
+    function newEventId() {
+      try {
+        if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+      } catch (e) {
+        /* fall through */
+      }
+      return "ag-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 12);
+    }
+
+    function viewport() {
+      try {
+        return window.innerWidth + "x" + window.innerHeight;
+      } catch (e) {
+        return "";
+      }
+    }
+
+    function send(type, extra) {
+      var payload = {
+        event_id: newEventId(),
+        type: type,
+        url: String(window.location.href).slice(0, 2048),
+        referrer: String(document.referrer || "").slice(0, 2048),
+        viewport: viewport(),
+        user_agent: String(navigator.userAgent || "").slice(0, 300),
+        session_hash: sessionId,
+      };
+      if (extra) {
+        for (var k in extra) {
+          if (Object.prototype.hasOwnProperty.call(extra, k)) payload[k] = extra[k];
+        }
+      }
+      var body;
+      try {
+        body = JSON.stringify(payload);
+      } catch (e) {
+        return;
+      }
+      var endpoint = apiBase + "/api/embed/" + encodeURIComponent(widgetKey) + "/track";
+      try {
+        if (navigator.sendBeacon) {
+          var blob = new Blob([body], { type: "application/json" });
+          if (navigator.sendBeacon(endpoint, blob)) return;
+        }
+      } catch (e) {
+        /* fall through to fetch */
+      }
+      try {
+        fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: body,
+          keepalive: true,
+        }).catch(function () {});
+      } catch (e) {
+        /* fire-and-forget */
+      }
+    }
+
+    var lastTrackedUrl = null;
+    var pageviewSent = false;
+    function trackPageview() {
+      var href = String(window.location.href);
+      if (href === lastTrackedUrl) return;
+      lastTrackedUrl = href;
+      pageviewSent = true;
+      send("pageview");
+    }
+
+    function trackVisiblePageview() {
+      if (document.visibilityState === "visible") {
+        trackPageview();
+      } else {
+        var onVis = function () {
+          if (document.visibilityState === "visible") {
+            document.removeEventListener("visibilitychange", onVis);
+            trackPageview();
+          }
+        };
+        document.addEventListener("visibilitychange", onVis);
+      }
+    }
+
+    trackVisiblePageview();
+
+    // SPA route changes (history API + back/forward).
+    function wrapHistory(fnName) {
+      try {
+        var orig = window.history[fnName];
+        if (!orig) return;
+        window.history[fnName] = function () {
+          var r = orig.apply(this, arguments);
+          window.setTimeout(trackPageview, 0);
+          return r;
+        };
+      } catch (e) {
+        /* fall through */
+      }
+    }
+    wrapHistory("pushState");
+    wrapHistory("replaceState");
+    window.addEventListener("popstate", function () {
+      window.setTimeout(trackPageview, 0);
+    });
+
+    // Unload flush: only if nothing was sent yet (avoids double count).
+    window.addEventListener("pagehide", function () {
+      if (!pageviewSent) trackPageview();
+    });
+
+    // B2C conversions: <button data-ag-convert data-value="49.99">Buy</button>.
+    document.addEventListener("click", function (ev) {
+      var el = ev.target && ev.target.closest ? ev.target.closest("[data-ag-convert]") : null;
+      if (!el) return;
+      var extra = {};
+      var v = el.getAttribute("data-value");
+      if (v !== null && v !== "") extra.value = v;
+      var name = el.getAttribute("data-convert-name");
+      if (name) extra.meta = { name: name.slice(0, 64) };
+      send("conversion", extra);
+    });
+
+    // Custom events: __agUiTrack("conversion", { value: 49.99 }).
+    window.__agUiTrack = function (type, extra) {
+      if (type !== "pageview" && type !== "conversion") return;
+      send(type, extra || {});
+    };
+  }
+
+  // --- Readiness / brand pre-check (best-effort, never blocks render) -------  if (!widgetKey) return;
   fetch(apiBase + "/api/embed/" + encodeURIComponent(widgetKey) + "/config")
     .then(function (res) {
       if (res.status === 404) {
