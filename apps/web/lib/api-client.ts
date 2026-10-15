@@ -37,8 +37,42 @@ export interface DiscoveredPageItem {
   depth: number;
 }
 
-export interface DiscoveryResponse {
-  success: boolean;
+export interface WebsiteAnalytics {
+  companyId: string;
+  rangeDays: number;
+  totals: { sessions: number; pageviews: number; uniques: number | null; conversions: number };
+  trend: { d: string; pageviews: number; sessions: number }[];
+  topPages: { label: string; views: number }[];
+  referrers: { label: string; views: number }[];
+  viewports: { label: string; views: number }[];
+  dataQuality: string[];
+}
+
+export interface ConversionAnalytics {
+  companyId: string;
+  rangeDays: number;
+  totals: {
+    conversions: number;
+    revenue: number;
+    assistedConversions: number;
+    assistedRevenue: number;
+    conversionRate: number;
+    revenuePerSession: number;
+  };
+  daily: { d: string; conversions: number; revenue: number }[];
+  funnel: { stage: string; count: number; pctOfTop: number }[];
+  dataQuality: string[];
+}
+
+export interface RealtimeSnapshot {
+  companyId: string;
+  windowMinutes: number;
+  views: number;
+  sessions: number;
+  topPaths: { path: string; views: number }[];
+}
+
+export interface DiscoveryResponse {  success: boolean;
   domain: string;
   origin: string;
   pages: DiscoveredPageItem[];
@@ -393,6 +427,58 @@ class ApiClient {
       if (res.status === 404) throw new Error("Company not found");
       if (!res.ok) {
         throw new Error(`Failed to get version timeline: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+  };
+
+  /**
+   * Analytics endpoints (live measured metrics; same shapes as web mocks)
+   */
+  analytics = {
+    overview: async (
+      companyId: string,
+      range: "7d" | "14d" | "30d" = "14d"
+    ): Promise<import("@/mocks/overview").OverviewMock> => {
+      const res = await fetch(
+        `${this.baseUrl}/api/analytics/overview?companyId=${encodeURIComponent(companyId)}&range=${range}`
+      );
+      if (res.status === 404) throw new Error("Company not found");
+      if (!res.ok) {
+        throw new Error(`Overview unavailable: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+
+    website: async (companyId: string, range = "30d"): Promise<WebsiteAnalytics> => {
+      const res = await fetch(
+        `${this.baseUrl}/api/analytics/website?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      );
+      if (res.status === 404) throw new Error("Company not found");
+      if (!res.ok) {
+        throw new Error(`Website analytics unavailable: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+
+    conversions: async (companyId: string, range = "30d"): Promise<ConversionAnalytics> => {
+      const res = await fetch(
+        `${this.baseUrl}/api/analytics/conversions?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      );
+      if (res.status === 404) throw new Error("Company not found");
+      if (!res.ok) {
+        throw new Error(`Conversion analytics unavailable: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+
+    realtime: async (companyId: string): Promise<RealtimeSnapshot> => {
+      const res = await fetch(
+        `${this.baseUrl}/api/analytics/realtime?companyId=${encodeURIComponent(companyId)}`
+      );
+      if (res.status === 404) throw new Error("Company not found");
+      if (!res.ok) {
+        throw new Error(`Realtime snapshot unavailable: HTTP ${res.status}`);
       }
       return res.json();
     },

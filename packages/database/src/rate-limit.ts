@@ -69,18 +69,40 @@ export async function checkEmbedRateLimit(
 }
 
 /**
+ * Tracking-event daily quota per widget key. Separate from the per-IP rate
+ * limit: this bounds one tenant's total ingest (noisy-neighbor containment
+ * at the key level). Shed, never stall — over-quota beacons get a 202 with
+ * reason "quota" and are dropped before enqueue.
+ */
+export async function checkTrackQuota(
+  keyId: string
+): Promise<{ allowed: boolean; remaining: number }> {
+  const cap = rateLimitEnv("TRACK_QUOTA_PER_DAY", 100_000);
+  const r = await getRedisClient();
+  if (!r) return { allowed: true, remaining: cap };
+
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    const key = `tquota:${keyId}:${day}`;
+    const n: number = await r.incr(key);
+    if (n === 1) await r.expire(key, 86_400);
+    return { allowed: n <= cap, remaining: Math.max(0, cap - n) };
+  } catch {
+    return { allowed: true, remaining: cap };
+  }
+}
+
+/**
  * Tracking-event rate limit (pageviews/conversions). Pageviews are
  * high-volume by nature (SPAs, campaigns), so this gets its own generous
  * budget separate from chat: per key-hash + IP, fail-open like chat.
- * One tenant's bot flood burns only its own buckets (noisy-neighbor safe).
+ * Deliberately generous (CGNAT shares IPs): precision throttling is the
+ * per-key daily quota above, not this backstop.
  */
 export async function checkTrackRateLimit(
   keyHash: string,
   ip: string
 ): Promise<EmbedRateLimitResult> {
-  // Deliberately generous: B2C visitors share IPs behind carrier-grade NAT,
-  // so per-IP can only be an abuse backstop, never a precision throttle.
-  // Precision throttling is per-key and lands in Phase 5 with quotas.
   const perMin = rateLimitEnv("TRACK_RATE_PER_MIN", 1000);
   const perDay = rateLimitEnv("TRACK_RATE_PER_DAY", 50000);
   const r = await getRedisClient();

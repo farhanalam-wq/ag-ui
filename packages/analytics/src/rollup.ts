@@ -17,19 +17,17 @@
 import { randomUUID } from "node:crypto";
 import { client } from "@ag-ui/database";
 import { dailyUniquesKey } from "./identity";
+import type { CacheRedis } from "./cache";
 
 export const SESSION_GAP_MINUTES = 30;
 export const HLL_TTL_SECONDS = 30 * 86_400;
 
 /** Minimal Redis surface (kept structural so tests can stub it). */
-export interface RollupRedis {
+export interface RollupRedis extends CacheRedis {
   set(key: string, val: string, ...args: unknown[]): Promise<unknown>;
   eval(script: string, numkeys: number, ...args: unknown[]): Promise<unknown>;
   pfadd(key: string, ...members: string[]): Promise<unknown>;
-  pfcount(...keys: string[]): Promise<number>;
-  expire(key: string, secs: number): Promise<unknown>;
   scan(cursor: string, ...args: unknown[]): Promise<[string, string[]]>;
-  del(...keys: string[]): Promise<unknown>;
 }
 
 const ISLAND_CASE = `CASE WHEN prev IS NULL OR created_at - prev > interval '${SESSION_GAP_MINUTES} minutes' THEN 1 ELSE 0 END`;

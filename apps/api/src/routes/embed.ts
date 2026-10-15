@@ -18,6 +18,7 @@ import {
   deleteWidgetKey,
   checkEmbedRateLimit,
   checkTrackRateLimit,
+  checkTrackQuota,
   resolveThemeStylesheetId,
   listDomainsByKey,
   getKeyCompanyId,
@@ -420,6 +421,13 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
         set.status = 429;
         set.headers["retry-after"] = String(limit.retryAfterSec);
         return { tracked: false, reason: "rate-limited", retryAfterSec: limit.retryAfterSec };
+      }
+
+      // Per-key daily quota: one tenant's flood burns only its own budget.
+      const quota = await checkTrackQuota(resolved.row.id);
+      if (!quota.allowed) {
+        set.status = 202;
+        return { tracked: false, reason: "quota" };
       }
 
       const ua = (request.headers.get("user-agent") || "").slice(0, 300);
