@@ -6,13 +6,25 @@
  * storage budget so a malicious or buggy client cannot blow up a row.
  */
 
-export type TrackEventType = "pageview" | "chat_open" | "chat_message" | "conversion";
+export type TrackEventType =
+  | "pageview"
+  | "chat_open"
+  | "chat_message"
+  | "conversion"
+  | "scroll"
+  | "download"
+  | "click"
+  | "heartbeat";
 
 export const TRACK_EVENT_TYPES: readonly TrackEventType[] = [
   "pageview",
   "chat_open",
   "chat_message",
   "conversion",
+  "scroll",
+  "download",
+  "click",
+  "heartbeat",
 ] as const;
 
 /** Raw payload as submitted by the snippet / collector. */

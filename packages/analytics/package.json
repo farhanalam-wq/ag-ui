@@ -10,7 +10,9 @@
   },
   "dependencies": {
     "@ag-ui/database": "workspace:*",
-    "@ag-ui/shared": "workspace:*"
+    "@ag-ui/genui": "workspace:*",
+    "@ag-ui/shared": "workspace:*",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "typescript": "^5.7.3"

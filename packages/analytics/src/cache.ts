@@ -5,7 +5,13 @@
  * revalidate so concurrent dashboard owners never stampede the DB, and a
  * slow recompute never blocks a render. Fail-open: Redis down means
  * compute-directly, never an error.
+ *
+ * Observability: cache-miss recomputes are timed; anything slower than
+ * SLOW_MS logs a warning with the key so heavy tenants surface in logs.
  */
+import { logger } from "@ag-ui/shared";
+
+export const SLOW_COMPUTE_MS = 2000;
 
 export interface CacheRedis {
   get(key: string): Promise<string | null>;
@@ -57,7 +63,14 @@ export async function withAnalyticsCache<T>(
     // Corrupt entry or Redis wobble: fall through to compute.
   }
   await redis.incr("ana:misses").catch(() => {});
+  const t0 = Date.now();
   const data = await compute();
+  const tookMs = Date.now() - t0;
+  if (tookMs >= SLOW_COMPUTE_MS) {
+    try {
+      logger.warn(`[ANALYTICS] slow recompute: ${key} took ${tookMs}ms`);
+    } catch {}
+  }
   try {
     await redis.setex(key, freshSecs + swrSecs, JSON.stringify({ v: data, t: Date.now() }));
   } catch {}

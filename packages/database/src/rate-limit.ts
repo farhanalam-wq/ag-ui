@@ -117,3 +117,26 @@ export async function checkTrackRateLimit(
     return { allowed: true, retryAfterSec: 0 };
   }
 }
+
+/**
+ * Analytics read rate limit: generous per-IP backstop so one scraper
+ * cannot stampede the rollup queries past the cache. Fail-open on Redis
+ * outage (same policy as the write path). Limits are env-tunable.
+ */
+export async function checkAnalyticsReadLimit(
+  ip: string
+): Promise<EmbedRateLimitResult> {
+  const perMin = rateLimitEnv("ANALYTICS_READ_PER_MIN", 300);
+  const perDay = rateLimitEnv("ANALYTICS_READ_PER_DAY", 10000);
+  const r = await getRedisClient();
+  if (!r) return { allowed: true, retryAfterSec: 0 };
+
+  try {
+    const min = await checkBucket(r, bucketKey("ana-read", "min", "global", ip), perMin, 60);
+    if (!min.allowed) return min;
+    const day = await checkBucket(r, bucketKey("ana-read", "day", "global", ip), perDay, 86400);
+    return day;
+  } catch {
+    return { allowed: true, retryAfterSec: 0 };
+  }
+}

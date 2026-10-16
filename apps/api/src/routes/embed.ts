@@ -39,7 +39,7 @@ import { analyticsQueue } from "@ag-ui/queues";
 import { validateTrackEvent, hashVisitor, dailySalt, newSessionHash } from "@ag-ui/analytics";
 import { randomUUID } from "node:crypto";
 
-function getClientIp(request: Request): string {
+export function getClientIp(request: Request): string {
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) return forwarded.split(",")[0].trim();
   const realIp = request.headers.get("x-real-ip");

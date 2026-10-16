@@ -310,12 +310,20 @@
 
     var lastTrackedUrl = null;
     var pageviewSent = false;
+    var scrollFired = {};
     function trackPageview() {
       var href = String(window.location.href);
       if (href === lastTrackedUrl) return;
       lastTrackedUrl = href;
       pageviewSent = true;
-      send("pageview");
+      scrollFired = {};
+      var title = "";
+      try {
+        title = String(document.title || "").slice(0, 128);
+      } catch (e) {
+        /* fall through */
+      }
+      send("pageview", title ? { meta: { title: title } } : undefined);
     }
 
     function trackVisiblePageview() {
@@ -360,20 +368,88 @@
     });
 
     // B2C conversions: <button data-ag-convert data-value="49.99">Buy</button>.
+    // Configured clicks: any [data-ag-click="name"]. File downloads (anchor
+    // download attr or file extension) beacon as download with the href.
+    var FILE_EXT = /\.(pdf|zip|csv|xlsx?|pptx?|docx?|txt|mp3|mp4|dmg|exe)$/i;
     document.addEventListener("click", function (ev) {
       var el = ev.target && ev.target.closest ? ev.target.closest("[data-ag-convert]") : null;
-      if (!el) return;
-      var extra = {};
-      var v = el.getAttribute("data-value");
-      if (v !== null && v !== "") extra.value = v;
-      var name = el.getAttribute("data-convert-name");
-      if (name) extra.meta = { name: name.slice(0, 64) };
-      send("conversion", extra);
+      if (el) {
+        var extra = {};
+        var v = el.getAttribute("data-value");
+        if (v !== null && v !== "") extra.value = v;
+        var name = el.getAttribute("data-convert-name");
+        if (name) extra.meta = { name: name.slice(0, 64) };
+        send("conversion", extra);
+        return;
+      }
+      var t = ev.target && ev.target.closest ? ev.target.closest("[data-ag-click],a,button") : null;
+      if (!t) return;
+      var cn = t.getAttribute ? t.getAttribute("data-ag-click") : null;
+      if (cn) {
+        send("click", { meta: { name: String(cn).slice(0, 64) } });
+        return;
+      }
+      if (t.tagName === "A") {
+        var href = t.getAttribute("href") || "";
+        if (t.hasAttribute("download") || FILE_EXT.test(href.split(/[?#]/)[0])) {
+          send("download", { meta: { href: href.slice(0, 512) } });
+        }
+      }
     });
+
+    // Scroll depth: fire once per threshold per page (25/50/75/90).
+    var scrollTick = false;
+    function checkScroll() {
+      scrollTick = false;
+      var depth = 0;
+      try {
+        var h = document.documentElement.scrollHeight - window.innerHeight;
+        depth = h > 0 ? (window.scrollY + window.innerHeight) / (h + window.innerHeight) : 1;
+      } catch (e) {
+        return;
+      }
+      var marks = [0.25, 0.5, 0.75, 0.9];
+      for (var i = 0; i < marks.length; i++) {
+        if (depth >= marks[i] && !scrollFired[marks[i]]) {
+          scrollFired[marks[i]] = true;
+          send("scroll", { meta: { depth: Math.round(marks[i] * 100) } });
+        }
+      }
+    }
+    window.addEventListener(
+      "scroll",
+      function () {
+        lastActive = Date.now();
+        if (!scrollTick) {
+          scrollTick = true;
+          if (window.requestAnimationFrame) window.requestAnimationFrame(checkScroll);
+          else window.setTimeout(checkScroll, 200);
+        }
+      },
+      { passive: true }
+    );
+
+    // Heartbeat: every 15s while visible and recently active. Volume guard:
+    // beacon only (no fetch retry storm), and the worker batches writes.
+    var lastActive = Date.now();
+    function markActive() {
+      lastActive = Date.now();
+    }
+    window.addEventListener("mousemove", markActive, { passive: true });
+    window.addEventListener("keydown", markActive);
+    window.setInterval(function () {
+      try {
+        if (document.visibilityState === "visible" && Date.now() - lastActive < 30000) {
+          send("heartbeat");
+        }
+      } catch (e) {
+        /* fire-and-forget */
+      }
+    }, 15000);
 
     // Custom events: __agUiTrack("conversion", { value: 49.99 }).
     window.__agUiTrack = function (type, extra) {
-      if (type !== "pageview" && type !== "conversion") return;
+      if (type !== "pageview" && type !== "conversion" && type !== "scroll" && type !== "download" && type !== "click" && type !== "heartbeat") return;
       send(type, extra || {});
     };
   }

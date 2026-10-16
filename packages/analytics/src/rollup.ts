@@ -53,15 +53,18 @@ export async function upsertSessions(fromISO: string, toISO: string): Promise<nu
       SELECT company_id, session_hash,
              MIN(created_at) AS started_at, MAX(created_at) AS ended_at,
              COUNT(*) FILTER (WHERE type = 'pageview')::int AS pageviews,
+             -- Heartbeat-derived active time: 15s per beat, capped at 30min/island.
+             LEAST(COUNT(*) FILTER (WHERE type = 'heartbeat') * 15, 1800)::int AS active_seconds,
              BOOL_OR(type = 'conversion') AS converted,
              COALESCE(SUM(value) FILTER (WHERE type = 'conversion'), 0) AS revenue
       FROM islands GROUP BY company_id, session_hash, island
     )
-    INSERT INTO sessions (company_id, session_hash, started_at, ended_at, pageview_count, converted, revenue)
-    SELECT company_id, session_hash, started_at, ended_at, pageviews, converted, revenue FROM sess
+    INSERT INTO sessions (company_id, session_hash, started_at, ended_at, pageview_count, active_seconds, converted, revenue)
+    SELECT company_id, session_hash, started_at, ended_at, pageviews, active_seconds, converted, revenue FROM sess
     ON CONFLICT (company_id, session_hash, started_at) DO UPDATE SET
       ended_at = EXCLUDED.ended_at,
       pageview_count = EXCLUDED.pageview_count,
+      active_seconds = EXCLUDED.active_seconds,
       converted = EXCLUDED.converted,
       revenue = EXCLUDED.revenue
     RETURNING id;`,
@@ -70,10 +73,17 @@ export async function upsertSessions(fromISO: string, toISO: string): Promise<nu
   return rows.length;
 }
 
-const METRIC_COLS = "pageviews, sessions, conversions, revenue, chat_opens, messages";
+const METRIC_COLS = "pageviews, sessions, conversions, revenue, chat_opens, messages, scrolls, downloads, clicks, heartbeats";
 const METRIC_UPDATE = `pageviews = EXCLUDED.pageviews, sessions = EXCLUDED.sessions,
   conversions = EXCLUDED.conversions, revenue = EXCLUDED.revenue,
-  chat_opens = EXCLUDED.chat_opens, messages = EXCLUDED.messages`;
+  chat_opens = EXCLUDED.chat_opens, messages = EXCLUDED.messages,
+  scrolls = EXCLUDED.scrolls, downloads = EXCLUDED.downloads,
+  clicks = EXCLUDED.clicks, heartbeats = EXCLUDED.heartbeats`;
+
+const ENGAGEMENT_CTE = `COUNT(*) FILTER (WHERE type = 'scroll')::int AS scrolls,
+        COUNT(*) FILTER (WHERE type = 'download')::int AS downloads,
+        COUNT(*) FILTER (WHERE type = 'click')::int AS clicks,
+        COUNT(*) FILTER (WHERE type = 'heartbeat')::int AS heartbeats`;
 
 /** Recomputes one hourly bucket for all companies with raw data in it. */
 export async function buildHourlyRollup(hourISO: string): Promise<number> {
@@ -90,7 +100,8 @@ export async function buildHourlyRollup(hourISO: string): Promise<number> {
         COUNT(*) FILTER (WHERE type = 'conversion')::int AS conversions,
         COALESCE(SUM(value) FILTER (WHERE type = 'conversion'), 0) AS revenue,
         COUNT(*) FILTER (WHERE type = 'chat_open')::int AS chat_opens,
-        COUNT(*) FILTER (WHERE type = 'chat_message')::int AS messages
+        COUNT(*) FILTER (WHERE type = 'chat_message')::int AS messages,
+        ${ENGAGEMENT_CTE}
       FROM page_views WHERE created_at >= $1 AND created_at < $2 GROUP BY company_id
     ),
     ss AS (
@@ -99,7 +110,8 @@ export async function buildHourlyRollup(hourISO: string): Promise<number> {
     )
     INSERT INTO metrics_hourly (company_id, hour, ${METRIC_COLS})
     SELECT pv.company_id, $1::timestamptz, pv.pageviews, COALESCE(ss.sessions, 0),
-      pv.conversions, pv.revenue, pv.chat_opens, pv.messages
+      pv.conversions, pv.revenue, pv.chat_opens, pv.messages,
+      pv.scrolls, pv.downloads, pv.clicks, pv.heartbeats
     FROM pv LEFT JOIN ss ON ss.company_id = pv.company_id
     ON CONFLICT (company_id, hour) DO UPDATE SET ${METRIC_UPDATE}
     RETURNING company_id;`,
@@ -122,7 +134,8 @@ export async function buildDailyRollup(dayISO: string): Promise<number> {
         COUNT(*) FILTER (WHERE type = 'conversion')::int AS conversions,
         COALESCE(SUM(value) FILTER (WHERE type = 'conversion'), 0) AS revenue,
         COUNT(*) FILTER (WHERE type = 'chat_open')::int AS chat_opens,
-        COUNT(*) FILTER (WHERE type = 'chat_message')::int AS messages
+        COUNT(*) FILTER (WHERE type = 'chat_message')::int AS messages,
+        ${ENGAGEMENT_CTE}
       FROM page_views WHERE created_at >= $1 AND created_at < $2 GROUP BY company_id
     ),
     ss AS (
@@ -131,7 +144,8 @@ export async function buildDailyRollup(dayISO: string): Promise<number> {
     )
     INSERT INTO metrics_daily (company_id, day, ${METRIC_COLS})
     SELECT pv.company_id, $1::date, pv.pageviews, COALESCE(ss.sessions, 0),
-      pv.conversions, pv.revenue, pv.chat_opens, pv.messages
+      pv.conversions, pv.revenue, pv.chat_opens, pv.messages,
+      pv.scrolls, pv.downloads, pv.clicks, pv.heartbeats
     FROM pv LEFT JOIN ss ON ss.company_id = pv.company_id
     ON CONFLICT (company_id, day) DO UPDATE SET ${METRIC_UPDATE}
     RETURNING company_id;`,

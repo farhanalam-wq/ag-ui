@@ -17,5 +17,8 @@ export * from "./components/geo-card";
 export * from "./components/executive-brief";
 export * from "./components/global-network-map";
 export * from "./components/route-map";
+export * from "./components/analytics-trend";
+export * from "./components/analytics-table";
 
 export * from "./registry/genui-library";
+export * from "./registry/analytics-schemas";

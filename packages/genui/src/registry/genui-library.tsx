@@ -15,6 +15,8 @@ import { GeoCard as GeoCardComponent } from "../components/geo-card";
 import { ExecutiveBrief as ExecutiveBriefComponent } from "../components/executive-brief";
 import { GlobalNetworkMap as GlobalNetworkMapComponent } from "../components/global-network-map";
 import { RouteMap as RouteMapComponent } from "../components/route-map";
+import { AnalyticsTrend as AnalyticsTrendComponent } from "../components/analytics-trend";
+import { AnalyticsTable as AnalyticsTableComponent } from "../components/analytics-table";
 
 // 1. Schema for TechGrid
 export const TechGridSchema = z.object({
@@ -63,21 +65,10 @@ export const PricingGridSchema = z.object({
   title: z.string().optional().describe("Optional section title"),
 });
 
-// 4. Schema for MetricGrid
-export const MetricItemSchema = z.object({
-  label: z.string().describe("Metric label, e.g. Global Delivery Rate, API Latency"),
-  value: z.string().describe("Primary value, e.g. 99.8%, <100ms, 50k+"),
-  change: z.string().optional().describe("Change indicator, e.g. +12% MoM"),
-  trend: z.enum(["up", "down", "neutral"]).optional().describe("Trend direction"),
-  subtitle: z.string().optional().describe("Context or footnote note"),
-  icon: z.string().optional().describe("Semantic icon hint"),
-});
-
-export const MetricGridSchema = z.object({
-  metrics: z.array(MetricItemSchema).describe("List of KPI indicators"),
-  title: z.string().optional().describe("Optional section title"),
-  columns: z.number().optional().describe("Number of columns"),
-});
+// 4. Schema for MetricGrid (contract lives in ./analytics-schemas so
+// server-side builders can import it without pulling React)
+import { MetricItemSchema, MetricGridSchema } from "./analytics-schemas";
+export { MetricItemSchema, MetricGridSchema };
 
 // 5. Schema for TagBlock
 export const TagBlockSchema = z.object({
@@ -233,6 +224,20 @@ export const RouteMapSchema = z.object({
   companyName: z.string().optional().describe("Company name"),
 });
 
+// 14. Schemas for analytics widgets (contracts live in
+// ./analytics-schemas so server-side builders stay React-free)
+import {
+  AnalyticsTrendPointSchema,
+  AnalyticsTrendSchema,
+  AnalyticsTableRowSchema,
+  AnalyticsTableSchema,
+} from "./analytics-schemas";
+export {
+  AnalyticsTrendPointSchema,
+  AnalyticsTrendSchema,
+  AnalyticsTableRowSchema,
+  AnalyticsTableSchema,
+};
 // OpenUI Component Definitions
 export const OpenUITechGrid = defineComponent({
   name: "TechGrid",
@@ -325,6 +330,20 @@ export const OpenUIRouteMap = defineComponent({
   component: ({ props }) => <RouteMapComponent {...(props as any)} />,
 });
 
+export const OpenUIAnalyticsTrend = defineComponent({
+  name: "AnalyticsTrend",
+  props: AnalyticsTrendSchema,
+  description: "First-party analytics trend (line or bar) from ordered label/value points. Points must be measured data, never invented.",
+  component: ({ props }) => <AnalyticsTrendComponent {...(props as any)} />,
+});
+
+export const OpenUIAnalyticsTable = defineComponent({
+  name: "AnalyticsTable",
+  props: AnalyticsTableSchema,
+  description: "First-party analytics ranked table with views/sessions rows. Rows must be measured data, never invented.",
+  component: ({ props }) => <AnalyticsTableComponent {...(props as any)} />,
+});
+
 export const genuiComponentGroups = [
   ...openuiComponentGroups,
   {
@@ -340,6 +359,8 @@ export const genuiComponentGroups = [
       "GlobalNetworkMap",
       "RouteMap",
       "MetricGrid",
+      "AnalyticsTrend",
+      "AnalyticsTable",
       "ExecutiveBrief",
       "GraphicBanner",
     ],
@@ -354,6 +375,8 @@ export const genuiComponentGroups = [
       "- GlobalNetworkMap: World map showing global office network, HQ radar pulse, hub counts, and country tags.",
       "- RouteMap: Turn-by-turn route navigation between origin and destination with distance/time HUD and roadmap.",
       "- MetricGrid: High-impact KPI statistics, deltas, and trends.",
+      "- AnalyticsTrend: Measured label/value trend as line or bar (analytics only).",
+      "- AnalyticsTable: Measured ranked rows with views/sessions (analytics only).",
       "- ExecutiveBrief: Universal intelligent card for any query with bold takeaway, facts, and breakdown.",
       "- GraphicBanner: Luminous procedural grid banner for visual topic header accents.",
     ],
@@ -382,5 +405,7 @@ export const genuiLibrary = createLibrary({
     OpenUIExecutiveBrief,
     OpenUIGlobalNetworkMap,
     OpenUIRouteMap,
+    OpenUIAnalyticsTrend,
+    OpenUIAnalyticsTable,
   ],
 });
