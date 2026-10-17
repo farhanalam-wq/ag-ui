@@ -221,11 +221,20 @@ ranked excerpts with scores, `--json` pipes through `jq`.
   - `app/embed/[key]/page.tsx`: wrap the `useSearchParams` subtree in `<Suspense fallback>`; drop `force-dynamic` unless the indexing poll provably needs it.
   - Add `app/loading.tsx` (chart/chat skeletons) + `app/error.tsx` so transitions never blank.
   - Acceptance: layout statically renders; route transitions show skeletons; embed works with Suspense boundary and no deopt warning in build output.
+  - Status: ✅ DONE (Oct 2026). Boundaries + embed Suspense landed with the perf PRs; the `"use client"` removal (17 presentational routes) landed on `feat/widget-studio` (`98eae4e`) — an accepted deviation from the 20a-20g branch policy below.
 
 - 20g. Cleanup + verify (why: 600MB `.next` inflates `next dev` cold start; dead deps slow resolve).
   - `rm -rf apps/web/.next`; re-measure cold start + HMR vs pre-fix baseline (Phase 0); run `turbo run build lint`; confirm analyzer: zero `thesvg`, zero initial `shikijs_langs`, per-route JS down; smoke-test overview charts, playground stream, embed chat + voice mount on demand, GenUI cards with fallback icons.
+  - **Results (Oct 18 2026, `feat/widget-studio`):**
+    - `.next`: 475 MB → 372 MB after a cold build, of which 240 MB is `.next/dev` + 92 MB cache; production `static` = 16 MB, 368 chunks, 15 MB JS, largest chunk 0.75 MB (the old embed chunk was 13 MB).
+    - `next build` cold: 20 s. `next dev` cold start: 453 ms (stale `.next`) → 346 ms (fresh). `turbo run build` clean; `turbo run test` green (17 tests, 2 packages).
+    - Initial JS: `/` **288 KB gz** (target < 400 KB ✅); `/playground` **439 KB gz** (baseline 9.9 MB raw dev); `/embed/<key>` ~1.1 MB raw incl. the 0.58 MB livekit chunk.
+    - Zero `thesvg` anywhere in `.next`; zero shikijs in production `static` (only in `.next/dev` build artifacts).
+    - Smoke: home charts render (2 recharts surfaces, 0 broken images); all 17 server-rendered routes render badge + h1 + icon, 0 console errors; embed chat renders under `?noCitations=1` with no evidence UI and 0 broken images; playground streams a real answer (25 deltas); the `brand` SSE already carries the hashed `themeVersion`.
+    - **Findings:** (1) `VoiceSession` is code-split but rendered unconditionally (`embed-chat.tsx:692`), so the 0.58 MB livekit chunk loads on first paint of `/embed` and `/playground` — deferring it behind the mic button is a follow-up. (2) GenUI smoke item is **not applicable**: chat is text-only and `OpenUIRenderer` is unreferenced dead code — restore or drop the acceptance line. (3) `turbo run lint` is vacuous: every package's `lint` is `echo "<pkg>: lint ok"`, so a green lint is no signal until real ESLint lands.
+    - Follow-up closed: the company-detail theme-merge gap (unmerged `theme` + bare `themeVersion`) was fixed in `f94bfd2` — `GET /api/companies/:id` now resolves via the shared resolver and exposes a pristine `baseTheme`.
 
-- Branch policy: all of 20a-20g happens on a separate feature branch cut from `main` (e.g. `perf/web-load-overhaul`), never directly on `main`. `main` stays deployable throughout. Merge into `main` only after 20g acceptance is green (build + lint + analyzer gates + smoke tests) via reviewed PR; delete the branch after merge.
+- Branch policy: all of 20a-20g happens on a separate feature branch cut from `main` (e.g. `perf/web-load-overhaul`), never directly on `main`. `main` stays deployable throughout. Merge into `main` only after 20g acceptance is green (build + lint + analyzer gates + smoke tests) via reviewed PR; delete the branch after merge. (Deviation, accepted: 20f + 20g landed on `feat/widget-studio` and merge to `main` through that branch's PR.)
 
 - Implementation plan — web load overhaul (`perf/web-load-overhaul`). Order is A → G, each independently verifiable; B/C may parallelize after A. Riskiest is A (major bump) — timebox it before touching components.
   - Phase A — framework bump (Next 15.1.7 → 16.4, React → 19.3): bump `apps/web/package.json`, run the Next upgrade codemod, fix breaking usages (Suspense around `useSearchParams` in embed, route runtime exports). Acceptance: `bun install && turbo run build --filter=@ag-ui/web` green, GenUI renderer smoke-renders, no type errors. Do this first — everything else builds on the new compiler behavior.
@@ -266,6 +275,8 @@ ranked excerpts with scores, `--json` pipes through `jq`.
 - 21e. Persist draft → publish without clobbering brand (why: dembrandt re-crawl must never wipe manual tweaks).
   - `widget_theme_overrides` table; `GET /:key/config` merges `mapBrandToWidgetTheme(tokens,logo,wcag)+override` → `theme`, `themeVersion=stylesheetId+overrideHash`. `retrieval.ts brandWithVersion` carries same version so chat `brand` SSE re-themes open widgets. Studio `Publish` upserts override + busts `qctx` cache; `Discard` deletes row.
   - Acceptance: Publish → config returns new `themeVersion`, open embed re-themes no-reload; dembrandt re-extract preserves override; Discard restores extraction theme.
+
+- 21f (follow-up, non-blocking — sprint). Studio deep-link: `app/experience/widget-studio/page.tsx` ignores `?company=` (its `companyId` comes from the persisted `useSelectedCompany` store), so a shared/bookmarked studio URL silently resolves to the viewer's own selected company. Only `…/widget-studio/preview` honours the param. Fix: read `useSearchParams()`, seed the store selection on mount, URL wins without a wrong-company flash.
 
 - Branch policy: all of 21a-21e happens on feature branch `feat/widget-studio` cut from `main`, never directly on `main`. `main` stays deployable throughout. Merge into `main` only after 21b screenshot-diff + 21c/21d/21e acceptance is green via reviewed PR; delete the branch after merge.
 
