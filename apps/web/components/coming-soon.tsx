@@ -1,14 +1,60 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import type { Icon } from "@phosphor-icons/react";
-import { ArrowLeft, Hammer } from "@phosphor-icons/react";
+import {
+  ArrowLeft,
+  ChatCircleText,
+  CreditCard,
+  Crosshair,
+  Globe,
+  Hammer,
+  Key,
+  Lightning,
+  ListBullets,
+  Robot,
+  SlidersHorizontal,
+  Smiley,
+  Target,
+  User,
+  UserPlus,
+  Users,
+  WarningCircle,
+} from "@phosphor-icons/react";
+
+/**
+ * Icon names accepted by `<ComingSoon>`.
+ *
+ * Deliberately a string (not a Phosphor component) so server-component routes
+ * can render the placeholder without crossing a non-serializable value over the
+ * server → client boundary. The actual Phosphor imports stay in this client
+ * module.
+ */
+export const COMING_SOON_ICONS = {
+  robot: Robot,
+  target: Target,
+  crosshair: Crosshair,
+  globe: Globe,
+  "sliders-horizontal": SlidersHorizontal,
+  smiley: Smiley,
+  lightning: Lightning,
+  "list-bullets": ListBullets,
+  "warning-circle": WarningCircle,
+  user: User,
+  key: Key,
+  "credit-card": CreditCard,
+  users: Users,
+  "chat-circle-text": ChatCircleText,
+  "user-plus": UserPlus,
+} as const;
+
+export type ComingSoonIcon = keyof typeof COMING_SOON_ICONS;
 
 interface ComingSoonProps {
   title: string;
   /** Optional one-liner describing planned content. Falls back to generic copy. */
   description?: string;
-  icon?: Icon;
+  /** Serializable icon name; see {@link COMING_SOON_ICONS}. Defaults to a hammer. */
+  icon?: ComingSoonIcon;
   /** Where the back button navigates. Defaults to "/" (Overview). */
   backHref?: string;
   /** Label for the back button. Defaults to "Back to Overview". */
@@ -22,7 +68,7 @@ interface ComingSoonProps {
  */
 export function ComingSoon({ title, description, icon, backHref = "/", backLabel = "Back to Overview" }: ComingSoonProps) {
   const router = useRouter();
-  const Icon = icon ?? Hammer;
+  const Icon = icon ? COMING_SOON_ICONS[icon] : Hammer;
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center p-4 sm:p-6">
