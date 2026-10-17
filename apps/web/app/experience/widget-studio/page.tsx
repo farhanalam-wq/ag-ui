@@ -98,12 +98,12 @@ export default function WidgetStudioPage() {
 
   const draftKey = companyId ? `widget-studio-draft:${companyId}` : null;
 
-  // Base theme comes from the same company detail the preview renderer
-  // reads, so controls and preview start from one identical theme. The
-  // published override (server) and any local draft seed the controls; the
-  // draft is an unsaved scratch and never auto-publishes.
-  // The server derivation already carries the full slot shape; the merge
-  // below only future-proofs older payloads.
+  // Base theme is the server's pristine extraction theme (`baseTheme`), kept
+  // override-free so "Reset to brand" clears any published override. The
+  // published override and any local draft seed the controls; the draft is an
+  // unsaved scratch and never auto-publishes.
+  // The payload already carries the full slot shape; the spread below only
+  // future-proofs older/partial payloads.
   useEffect(() => {
     if (!companyId) {
       setBaseTheme(null);
@@ -124,24 +124,12 @@ export default function WidgetStudioPage() {
         ]);
         if (cancelled) return;
 
-        const t = detail.theme as unknown as Partial<WidgetTheme> | undefined;
-        const seed: WidgetTheme =
+        const t = detail.baseTheme as unknown as Partial<WidgetTheme> | undefined;
+        setBaseTheme(
           t && typeof t.primary === "string"
-            ? {
-                ...mapBrandToWidgetTheme(null),
-                primary: t.primary,
-                secondary: t.secondary ?? "#3b82f6",
-                radius: t.radius ?? "0.5rem",
-                surface: t.surface ?? "#09090b",
-                text: t.text ?? "#fafafa",
-                logoUrl: t.logoUrl ?? null,
-                fullSurface: t.fullSurface ?? false,
-                bodySurface: t.bodySurface ?? t.fullSurface ?? false,
-                accentOnSurface: t.accentOnSurface ?? t.fullSurface ?? false,
-                surfaceSource: "tokens",
-              }
-            : mapBrandToWidgetTheme(null);
-        setBaseTheme(mergeThemeOverride(seed, (t ?? {}) as WidgetThemeOverride));
+            ? { ...mapBrandToWidgetTheme(null), ...t }
+            : mapBrandToWidgetTheme(null)
+        );
 
         const published =
           themeOverride.override && isValidOverride(themeOverride.override)

@@ -142,9 +142,11 @@ export interface CompanyDetailResponse {
       typography?: Record<string, any>;
     };
   };
-  /** Production theme derivation (same as widget config); prefer over mapping locally. */
+  /** Effective theme: published override merged in, via the shared resolver. Same derivation as the widget config. */
   theme?: EmbedConfig["theme"];
-  /** Latest READY stylesheet id backing the theme. */
+  /** Pristine extraction theme (published override NOT applied); studio base / "Reset to brand" reference. */
+  baseTheme?: EmbedConfig["theme"];
+  /** Effective theme version; `stylesheetId:hash8` when an override is published, else bare `stylesheetId`. */
   themeVersion?: string | null;
 }
 

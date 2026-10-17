@@ -277,29 +277,38 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
         .where(eq(brands.companyId, company.id))
         .limit(1);
 
-      // Same derivation as the public widget config so company-scoped
-      // surfaces (studio preview) start from the exact production theme.
-      const themeVersion = await resolveThemeStylesheetId(
-        company.id,
-        snapshots[0]?.id ?? null
-      );
+      const snapshotId = snapshots[0]?.id ?? null;
+
+      // Pristine extraction theme (published override NOT applied). It is the
+      // studio's base and its "Reset to brand" reference, so it must stay
+      // override-free — the merged `theme` below never feeds a reset.
+      const stylesheetId = await resolveThemeStylesheetId(company.id, snapshotId);
       let stylesheetWcag: unknown;
       try {
-        if (themeVersion) {
+        if (stylesheetId) {
           const [sheet] = await db
             .select({ wcag: brandStylesheets.wcag })
             .from(brandStylesheets)
-            .where(eq(brandStylesheets.id, themeVersion))
+            .where(eq(brandStylesheets.id, stylesheetId))
             .limit(1);
           stylesheetWcag = sheet?.wcag ?? undefined;
         }
       } catch {
         stylesheetWcag = undefined;
       }
-      const theme = mapBrandToWidgetTheme(
+      const baseTheme = mapBrandToWidgetTheme(
         brand?.tokens,
         brand?.logoUrl,
         stylesheetWcag
+      );
+
+      // Effective theme + version via the single shared resolver — the exact
+      // derivation the public widget config and retrieval use, so the studio
+      // and the embed's company-scoped path agree with prod by construction
+      // (merged override, `stylesheetId:hash8` version).
+      const { theme, themeVersion } = await resolveCompanyWidgetTheme(
+        company.id,
+        snapshotId
       );
 
       return {
@@ -308,6 +317,7 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
         snapshots,
         brand: brand || null,
         theme,
+        baseTheme,
         themeVersion,
       };
     },
