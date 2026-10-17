@@ -43,6 +43,13 @@
       "when": 1791440830840,
       "tag": "0005_shocking_nebula",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792234312674,
+      "tag": "0006_woozy_talos",
+      "breakpoints": true
     }
   ]
 }

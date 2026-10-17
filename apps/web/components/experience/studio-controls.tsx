@@ -39,6 +39,11 @@ interface StudioControlsProps {
   panelH: number;
   savedAt: string | null;
   isDirty: boolean;
+  /** When the override was last published (null = nothing published). */
+  publishedAt: string | null;
+  /** Current edits differ from the published override. */
+  isPublishedDirty: boolean;
+  publishing: boolean;
   onPatch: (patch: WidgetThemeOverride) => void;
   onReset: () => void;
   onResetGroup: (fields: (keyof WidgetThemeOverride)[]) => void;
@@ -47,6 +52,8 @@ interface StudioControlsProps {
   onCopy: () => void;
   onPaste: (text: string) => void;
   onSave: () => void;
+  onPublish: () => void;
+  onDiscard: () => void;
 }
 
 const RADIUS_PRESETS = ["0px", "4px", "8px", "12px", "9999px"];
@@ -374,6 +381,9 @@ export function StudioControls({
   panelH,
   savedAt,
   isDirty,
+  publishedAt,
+  isPublishedDirty,
+  publishing,
   onPatch,
   onReset,
   onResetGroup,
@@ -382,6 +392,8 @@ export function StudioControls({
   onCopy,
   onPaste,
   onSave,
+  onPublish,
+  onDiscard,
 }: StudioControlsProps) {
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
@@ -400,6 +412,7 @@ export function StudioControls({
                   ? ` ${dirtyCount} override field${dirtyCount === 1 ? "" : "s"}.`
                   : " Matches brand extraction."}
                 {savedAt ? ` Draft saved ${savedAt}.` : ""}
+                {publishedAt ? " Published." : ""}
               </CardDescription>
             </div>
             <Button variant="outline" size="sm" onClick={onReset}>
@@ -408,6 +421,30 @@ export function StudioControls({
           </div>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-1.5 pt-0">
+          <Button
+            variant="default"
+            size="sm"
+            onClick={onPublish}
+            disabled={!canPublish || !isPublishedDirty || publishing}
+            title={
+              !canPublish
+                ? "Raise text/surface contrast to 4.5 before publishing"
+                : !isPublishedDirty
+                  ? "No changes to publish"
+                  : undefined
+            }
+          >
+            {publishing ? "Publishing…" : "Publish"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onDiscard}
+            disabled={publishing || !publishedAt}
+            title={!publishedAt ? "Nothing published to discard" : undefined}
+          >
+            Discard
+          </Button>
           <Button variant="outline" size="sm" onClick={onCopy}>
             Copy override
           </Button>
@@ -418,7 +455,7 @@ export function StudioControls({
           >
             {pasteOpen ? "Close paste" : "Paste override"}
           </Button>
-          <Button variant="default" size="sm" onClick={onSave}>
+          <Button variant="outline" size="sm" onClick={onSave}>
             Save draft
           </Button>
         </CardContent>

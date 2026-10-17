@@ -56,6 +56,17 @@ function shortHash(s: string): string {
   return h.toString(16).padStart(8, "0");
 }
 
+/** Stable-key JSON for order-insensitive override comparison. */
+function stableKey(v: unknown): string {
+  if (v === null || typeof v !== "object") return JSON.stringify(v ?? null);
+  if (Array.isArray(v)) return `[${v.map(stableKey).join(",")}]`;
+  const o = v as Record<string, unknown>;
+  return `{${Object.keys(o)
+    .sort()
+    .map((k) => `${JSON.stringify(k)}:${stableKey(o[k])}`)
+    .join(",")}}`;
+}
+
 /**
  * Live widget preview. Mounts the company-keyed preview renderer in an
  * iframe (same bundle as prod, style isolation included) and pushes theme
@@ -69,6 +80,9 @@ export default function WidgetStudioPage() {
   const [baseTheme, setBaseTheme] = useState<WidgetTheme | null>(null);
   const [baseLoading, setBaseLoading] = useState(false);
   const [edits, setEdits] = useState<WidgetThemeOverride>({});
+  const [publishedOverride, setPublishedOverride] = useState<WidgetThemeOverride | null>(null);
+  const [publishedAt, setPublishedAt] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
   const [panelW, setPanelW] = useState(PANEL_W);
   const [panelH, setPanelH] = useState(PANEL_H);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -77,20 +91,31 @@ export default function WidgetStudioPage() {
   const draftKey = companyId ? `widget-studio-draft:${companyId}` : null;
 
   // Base theme comes from the same company detail the preview renderer
-  // reads, so controls and preview start from one identical theme.
+  // reads, so controls and preview start from one identical theme. The
+  // published override (server) and any local draft seed the controls; the
+  // draft is an unsaved scratch and never auto-publishes.
   // The server derivation already carries the full slot shape; the merge
   // below only future-proofs older payloads.
   useEffect(() => {
     if (!companyId) {
       setBaseTheme(null);
+      setPublishedOverride(null);
+      setPublishedAt(null);
       return;
     }
     let cancelled = false;
     setBaseLoading(true);
-    apiClient.companies
-      .get(companyId)
-      .then((detail) => {
+    (async () => {
+      try {
+        const [detail, themeOverride] = await Promise.all([
+          apiClient.companies.get(companyId),
+          apiClient.companies.getWidgetTheme(companyId).catch(() => ({
+            override: null as WidgetThemeOverride | null,
+            updatedAt: null as string | null,
+          })),
+        ]);
         if (cancelled) return;
+
         const t = detail.theme as unknown as Partial<WidgetTheme> | undefined;
         const seed: WidgetTheme =
           t && typeof t.primary === "string"
@@ -109,37 +134,47 @@ export default function WidgetStudioPage() {
               }
             : mapBrandToWidgetTheme(null);
         setBaseTheme(mergeThemeOverride(seed, (t ?? {}) as WidgetThemeOverride));
-        // Restore an explicit draft save for this company, if one exists.
+
+        const published =
+          themeOverride.override && isValidOverride(themeOverride.override)
+            ? themeOverride.override
+            : null;
+        setPublishedOverride(published);
+        setPublishedAt(themeOverride.updatedAt ?? null);
+
+        // Restore an explicit local draft (unsaved scratch) for this company
+        // if present; otherwise reflect the published override.
+        let restored: WidgetThemeOverride | null = null;
+        let restoredAt: string | null = null;
         try {
           const raw = window.localStorage.getItem(`widget-studio-draft:${companyId}`);
           if (raw) {
             const parsed: unknown = JSON.parse(raw);
             if (isValidOverride(parsed)) {
-              setEdits(parsed);
-              setSavedAt(window.localStorage.getItem(`widget-studio-draft:${companyId}:at`));
-            } else {
-              setEdits({});
-              setSavedAt(null);
+              restored = parsed;
+              restoredAt = window.localStorage.getItem(`widget-studio-draft:${companyId}:at`);
             }
-          } else {
-            setEdits({});
-            setSavedAt(null);
           }
         } catch {
-          setEdits({});
+          // unreadable draft — fall back to published
+        }
+        if (restored) {
+          setEdits(restored);
+          setSavedAt(restoredAt);
+        } else {
+          setEdits(published ?? {});
           setSavedAt(null);
         }
-      })
-      .catch((err) => {
+      } catch (err) {
         if (cancelled) return;
         toast.error("Could not load widget config", {
           description: err instanceof Error ? err.message : "Unknown error",
         });
         setBaseTheme(null);
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setBaseLoading(false);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -156,6 +191,11 @@ export default function WidgetStudioPage() {
   );
 
   const contrast = draft ? contrastRatio(draft.text, draft.surface) : null;
+
+  const isPublishedDirty = useMemo(
+    () => stableKey(edits) !== stableKey(publishedOverride ?? {}),
+    [edits, publishedOverride]
+  );
 
   // Push edits into the frame. Source is stable across drafts, so no reload.
   useEffect(() => {
@@ -254,6 +294,76 @@ export default function WidgetStudioPage() {
     }
   }, [draftKey, edits]);
 
+  // Publish is the only DB write: it upserts the company's override and the
+  // server busts the retrieval cache so open embeds re-theme over SSE.
+  const handlePublish = useCallback(async () => {
+    if (!companyId) return;
+    if (contrast != null && contrast < 4.5) {
+      toast.error("Cannot publish", {
+        description: "Text/surface contrast is below 4.5",
+      });
+      return;
+    }
+    setPublishing(true);
+    try {
+      const res = await apiClient.companies.publishWidgetTheme(companyId, edits);
+      const published =
+        res.override && isValidOverride(res.override) ? res.override : edits;
+      setPublishedOverride(published);
+      setPublishedAt(res.updatedAt ?? new Date().toISOString());
+      // The published override is now the source of truth; drop the local
+      // scratch so a later reload shows the live theme.
+      try {
+        if (draftKey) {
+          window.localStorage.removeItem(draftKey);
+          window.localStorage.removeItem(`${draftKey}:at`);
+        }
+      } catch {
+        // storage unavailable
+      }
+      setSavedAt(null);
+      const count = Object.keys(edits).length;
+      toast.success("Theme published", {
+        description: `${count} field${count === 1 ? "" : "s"} live`,
+      });
+    } catch (err) {
+      toast.error("Publish failed", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    } finally {
+      setPublishing(false);
+    }
+  }, [companyId, contrast, edits, draftKey]);
+
+  const handleDiscard = useCallback(async () => {
+    if (!companyId) return;
+    setPublishing(true);
+    try {
+      await apiClient.companies.discardWidgetTheme(companyId);
+      setPublishedOverride(null);
+      setPublishedAt(null);
+      setEdits({});
+      try {
+        if (draftKey) {
+          window.localStorage.removeItem(draftKey);
+          window.localStorage.removeItem(`${draftKey}:at`);
+        }
+      } catch {
+        // storage unavailable
+      }
+      setSavedAt(null);
+      toast.success("Reverted to brand", {
+        description: "Published override removed",
+      });
+    } catch (err) {
+      toast.error("Discard failed", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    } finally {
+      setPublishing(false);
+    }
+  }, [companyId, draftKey]);
+
   const handleAvatarFile = useCallback(
     (file: File) => {
       if (!file.type.startsWith("image/")) {
@@ -344,6 +454,9 @@ export default function WidgetStudioPage() {
                   panelH={panelH}
                   savedAt={savedAt}
                   isDirty={Object.keys(edits).length > 0}
+                  publishedAt={publishedAt}
+                  isPublishedDirty={isPublishedDirty}
+                  publishing={publishing}
                   onPatch={handlePatch}
                   onReset={handleReset}
                   onResetGroup={handleResetGroup}
@@ -352,6 +465,8 @@ export default function WidgetStudioPage() {
                   onCopy={handleCopy}
                   onPaste={handlePaste}
                   onSave={handleSave}
+                  onPublish={handlePublish}
+                  onDiscard={handleDiscard}
                 />
               )}
             </div>

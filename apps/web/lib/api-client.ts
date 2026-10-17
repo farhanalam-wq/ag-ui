@@ -6,6 +6,8 @@
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
+import type { WidgetThemeOverride } from "@ag-ui/shared/client";
+
 export interface CompanySummary {
   id: string;
   name: string;
@@ -397,6 +399,49 @@ class ApiClient {
       if (res.status === 404) throw new Error("Company not found");
       if (!res.ok) {
         throw new Error(`Failed to get version timeline: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+
+    /** Published (studio) widget theme override for a company, if any. */
+    getWidgetTheme: async (
+      id: string
+    ): Promise<{ override: WidgetThemeOverride | null; updatedAt: string | null }> => {
+      const res = await fetch(`${this.baseUrl}/api/companies/${id}/widget-theme`);
+      if (res.status === 404) throw new Error("Company not found");
+      if (!res.ok) {
+        throw new Error(`Failed to get widget theme: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+
+    /** Publish (upsert) a company's widget theme override. */
+    publishWidgetTheme: async (
+      id: string,
+      override: WidgetThemeOverride
+    ): Promise<{ override: WidgetThemeOverride; updatedAt: string; themeVersion: string | null }> => {
+      const res = await fetch(`${this.baseUrl}/api/companies/${id}/widget-theme`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ override }),
+      });
+      if (res.status === 404) throw new Error("Company not found");
+      if (res.status === 422) throw new Error("Invalid theme override");
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Failed to publish theme: HTTP ${res.status} - ${errText}`);
+      }
+      return res.json();
+    },
+
+    /** Discard a company's published widget theme override (revert to brand). */
+    discardWidgetTheme: async (id: string): Promise<{ deleted: boolean }> => {
+      const res = await fetch(`${this.baseUrl}/api/companies/${id}/widget-theme`, {
+        method: "DELETE",
+      });
+      if (res.status === 404) throw new Error("Company not found");
+      if (!res.ok) {
+        throw new Error(`Failed to discard theme: HTTP ${res.status}`);
       }
       return res.json();
     },

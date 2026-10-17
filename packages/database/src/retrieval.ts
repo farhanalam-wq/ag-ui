@@ -15,9 +15,10 @@
 
 import { db } from "./index";
 import { companies, companySnapshots, brands, chunks, documents, facts } from "./schema";
-import { resolveThemeStylesheetId } from "./theme";
+import { resolveCompanyWidgetTheme } from "./theme";
 import { eq, desc, inArray, and, or, isNull } from "drizzle-orm";
 import { generateEmbeddings, logger } from "@ag-ui/shared";
+import type { WidgetTheme } from "@ag-ui/shared";
 import { selectFactsForQuery, orderCandidatesByIntent } from "@ag-ui/shared";
 import type { Evidence } from "@ag-ui/contracts";
 import { queryChunkPoints, mmrDiversify } from "./qdrant";
@@ -40,6 +41,11 @@ export interface RetrievedContext {
     tokens: any;
     /** Latest READY stylesheet id — widget clients skip re-theming when unchanged. */
     themeVersion?: string | null;
+    /**
+     * Server-merged widget theme (extraction + published studio override).
+     * Open embeds re-theme from this over SSE when the studio publishes.
+     */
+    theme?: WidgetTheme | null;
   } | null;
   facts: {
     subject: string;
@@ -93,10 +99,15 @@ export async function retrieveCompanyContext(
     .orderBy(desc(companySnapshots.version))
     .limit(1);
 
-  // Theme version scoped to the effective snapshot: restoring docs to an
-  // older version automatically re-themes to that version's stylesheet.
-  const themeVersion = await resolveThemeStylesheetId(companyId, latestSnapshot?.id ?? null);
-  const brandWithVersion = brand ? { ...brand, themeVersion } : null;
+  // Theme scoped to the effective snapshot: restoring docs to an older
+  // version automatically re-themes to that version's stylesheet. The
+  // published studio override (if any) is merged on top, and its hash
+  // rides in themeVersion so clients re-theme only on real change.
+  const { theme, themeVersion } = await resolveCompanyWidgetTheme(
+    companyId,
+    latestSnapshot?.id ?? null
+  );
+  const brandWithVersion = brand ? { ...brand, themeVersion, theme } : null;
 
   if (!latestSnapshot) {
     return {

@@ -187,6 +187,7 @@ function EmbedChatInner({
     sendMessage,
     appendVoiceTranscript,
     openDrawerWithEvidence,
+    activeBrand,
   } = useCompanyChat();
 
   const displayName = titleOverride || config?.name || "Assistant";
@@ -196,6 +197,15 @@ function EmbedChatInner({
   // accents so an unreadable host override can't claim fullSurface).
   const appliedThemeVersion = React.useRef<string | null>(null);
   const theme: WidgetTheme = React.useMemo(() => {
+    // Studio preview channel wins outright (live draft edits).
+    if (liveTheme) return liveTheme;
+    // Published theme streamed over the chat SSE brand event (already merged
+    // + sanitized server-side): repaints open embeds when the studio
+    // publishes — no reload required.
+    const sseTheme = activeBrand?.theme;
+    if (sseTheme && typeof sseTheme.primary === "string") {
+      return sseTheme as WidgetTheme;
+    }
     const server = config?.theme;
     let base: WidgetTheme =
       server && typeof server.primary === "string"
@@ -214,10 +224,6 @@ function EmbedChatInner({
             surfaceSource: (server.surfaceSource as WidgetTheme["surfaceSource"]) ?? "tokens",
           }
         : mapBrandToWidgetTheme(config?.brand?.tokens, config?.brand?.logoUrl);
-    // Preview tooling sends a full theme over the message channel (sanitized
-    // on receipt). It wins over URL overrides — production never sets it,
-    // so default rendering is unchanged.
-    if (liveTheme) return liveTheme;
     // First paint (config not yet loaded): trust the loader-forwarded pair
     // only when the pair passes body contrast on its own — a crafted URL
     // can never paint unreadable text.
@@ -243,7 +249,7 @@ function EmbedChatInner({
       return { ...base, primary, accentOnSurface, fullSurface: base.bodySurface && accentOnSurface };
     }
     return base;
-  }, [config, colorOverride, surfaceParam, textParam, liveTheme]);
+  }, [config, colorOverride, surfaceParam, textParam, liveTheme, activeBrand]);
 
   function isHexParam(v: unknown): v is string {
     return typeof v === "string" && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v.trim());
