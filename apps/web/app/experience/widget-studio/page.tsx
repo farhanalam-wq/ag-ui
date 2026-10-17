@@ -13,6 +13,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTheme } from "next-themes";
 import Link from "next/link";
 import { ArrowRight, Buildings, CircleNotch } from "@phosphor-icons/react";
 import { toast } from "sonner";
@@ -47,6 +48,10 @@ import {
   StudioOrbPreview,
 } from "@/components/experience/studio-orb-preview";
 import { StudioControls } from "@/components/experience/studio-controls";
+
+/** Shared press feedback for the studio action cluster (reduced-motion safe). */
+const ACTION_BTN =
+  "transition-[color,background-color,transform] active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100";
 
 function shortHash(s: string): string {
   let h = 5381;
@@ -85,7 +90,10 @@ export default function WidgetStudioPage() {
   const [publishing, setPublishing] = useState(false);
   const [panelW, setPanelW] = useState(PANEL_W);
   const [panelH, setPanelH] = useState(PANEL_H);
+  const [previewMode, setPreviewMode] = useState<"auto" | "light" | "dark">("auto");
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState("");
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   const draftKey = companyId ? `widget-studio-draft:${companyId}` : null;
@@ -191,47 +199,74 @@ export default function WidgetStudioPage() {
   );
 
   const contrast = draft ? contrastRatio(draft.text, draft.surface) : null;
+  const canPublish = contrast != null && contrast >= 4.5;
 
   const isPublishedDirty = useMemo(
     () => stableKey(edits) !== stableKey(publishedOverride ?? {}),
     [edits, publishedOverride]
   );
 
-  // Push edits into the frame. Source is stable across drafts, so no reload.
-  useEffect(() => {
-    if (!draft || !draftVersion) return;
-    const frame = iframeRef.current;
-    if (!frame?.contentWindow) return;
-    try {
-      const dark =
-        typeof document !== "undefined"
-          ? document.documentElement.classList.contains("dark")
-          : true;
-      frame.contentWindow.postMessage(
-        { type: "ag-ui/theme", theme: draft, themeVersion: draftVersion, dark },
-        window.location.origin
-      );
-    } catch {
-      // frame not ready — the onLoad resend below covers it
-    }
-  }, [draft, draftVersion]);
+  // Effective light/dark for the preview: an explicit toggle wins, else follow
+  // the studio's own mode (same next-themes provider as the shell toggle).
+  const { resolvedTheme } = useTheme();
+  const effectiveDark =
+    previewMode === "auto"
+      ? resolvedTheme === "dark"
+      : previewMode === "dark";
 
-  const resendToFrame = useCallback(() => {
+  const postTheme = useCallback(() => {
     const frame = iframeRef.current;
     if (!frame?.contentWindow || !draft || !draftVersion) return;
     try {
-      const dark =
-        typeof document !== "undefined"
-          ? document.documentElement.classList.contains("dark")
-          : true;
       frame.contentWindow.postMessage(
-        { type: "ag-ui/theme", theme: draft, themeVersion: draftVersion, dark },
+        {
+          type: "ag-ui/theme",
+          theme: draft,
+          themeVersion: draftVersion,
+          dark: effectiveDark,
+          mode: previewMode,
+        },
         window.location.origin
       );
     } catch {
-      // ignore — next edit resends
+      // frame not ready — the ready handshake below covers it
     }
-  }, [draft, draftVersion]);
+  }, [draft, draftVersion, effectiveDark, previewMode]);
+
+  // Mode-only message on change so the frame re-syncs without a full theme post.
+  useEffect(() => {
+    const frame = iframeRef.current;
+    if (!frame?.contentWindow) return;
+    try {
+      frame.contentWindow.postMessage(
+        { type: "ag-ui/mode", dark: effectiveDark, mode: previewMode },
+        window.location.origin
+      );
+    } catch {
+      // ignore — next theme post carries the mode
+    }
+  }, [effectiveDark, previewMode]);
+
+  // Push edits into the frame. Source is stable across drafts, so no reload.
+  useEffect(() => {
+    postTheme();
+  }, [postTheme]);
+
+  const resendToFrame = useCallback(() => {
+    postTheme();
+  }, [postTheme]);
+
+  // Child handshake: when the frame reports ready, (re)send theme + mode. This
+  // removes the load/post race that could drop the very first message.
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return;
+      const data = e.data as { type?: string } | null;
+      if (data?.type === "ag-ui/ready") postTheme();
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [postTheme]);
 
   const handlePatch = useCallback((patch: WidgetThemeOverride) => {
     if (!isValidOverride(patch)) {
@@ -399,19 +434,123 @@ export default function WidgetStudioPage() {
     return `/experience/widget-studio/preview?${q.toString()}`;
   }, [companyId]);
 
+  const dirtyCount = Object.keys(edits).length;
+  const statusText = [
+    dirtyCount > 0
+      ? `${dirtyCount} override field${dirtyCount === 1 ? "" : "s"}`
+      : "Matches brand extraction",
+    savedAt ? `draft saved ${savedAt}` : null,
+    publishedAt ? "published" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
     <StudioShell crumbs={[{ label: "Experience" }, { label: "Widget Studio" }]}>
       <div className="min-w-0">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="text-[30px] leading-9 tracking-tight font-semibold">
-              Widget Studio
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1 max-w-[65ch]">
-              Exact preview of the production widget with live theme controls.
-              Answer-only, nothing sends anywhere except the preview.
-            </p>
+        <div className="sticky top-14 z-20 -mx-4 border-b border-border bg-background/85 px-4 py-2.5 backdrop-blur md:-mx-6 md:px-6">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <div className="min-w-0">
+              <h1 className="text-[22px] leading-7 tracking-tight font-semibold">
+                Widget Studio
+              </h1>
+              <p className="truncate text-[12px] leading-4 text-muted-foreground">
+                Exact preview of the production widget with live theme controls.
+              </p>
+            </div>
+
+            {selectedCompany && companyId && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Button
+                  size="sm"
+                  className={ACTION_BTN}
+                  onClick={handlePublish}
+                  disabled={!canPublish || !isPublishedDirty || publishing}
+                  title={
+                    !canPublish
+                      ? "Raise text/surface contrast to 4.5 before publishing"
+                      : !isPublishedDirty
+                        ? "No changes to publish"
+                        : undefined
+                  }
+                >
+                  {publishing ? "Publishing…" : "Publish"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={ACTION_BTN}
+                  onClick={handleSave}
+                >
+                  Save draft
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={ACTION_BTN}
+                  onClick={handleCopy}
+                >
+                  Copy override
+                </Button>
+                <div className="relative">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={ACTION_BTN}
+                    onClick={() => setPasteOpen((v) => !v)}
+                  >
+                    {pasteOpen ? "Close" : "Paste override"}
+                  </Button>
+                  {pasteOpen && (
+                    <div className="absolute right-0 top-full z-30 mt-2 w-72 space-y-2 rounded-lg border border-border bg-popover p-2 shadow-xl">
+                      <textarea
+                        value={pasteText}
+                        onChange={(e) => setPasteText(e.target.value)}
+                        placeholder='{"primary":"#9b6a45"}'
+                        spellCheck={false}
+                        rows={3}
+                        className="w-full rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px]"
+                      />
+                      <Button
+                        size="sm"
+                        className={`${ACTION_BTN} w-full`}
+                        onClick={() => {
+                          handlePaste(pasteText);
+                          setPasteText("");
+                          setPasteOpen(false);
+                        }}
+                      >
+                        Apply pasted override
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={ACTION_BTN}
+                  onClick={handleDiscard}
+                  disabled={publishing || !publishedAt}
+                  title={!publishedAt ? "Nothing published to discard" : undefined}
+                >
+                  Discard
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={ACTION_BTN}
+                  onClick={handleReset}
+                >
+                  Reset to brand
+                </Button>
+              </div>
+            )}
           </div>
+          {selectedCompany && companyId && (
+            <p className="mt-1 text-right text-[11px] text-muted-foreground">
+              {statusText}
+            </p>
+          )}
         </div>
 
         {!selectedCompany || !companyId ? (
@@ -435,8 +574,8 @@ export default function WidgetStudioPage() {
             </EmptyContent>
           </Empty>
         ) : (
-          <div className="mt-6 grid min-w-0 items-start gap-4 lg:grid-cols-12">
-            <div className="min-w-0 lg:col-span-7">
+          <div className="mt-6 grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(400px,560px)]">
+            <div className="min-w-0">
               {baseLoading || !draft ? (
                 <Card className="min-w-0">
                   <CardContent className="space-y-2 pt-5">
@@ -449,30 +588,73 @@ export default function WidgetStudioPage() {
                   draft={draft}
                   override={edits}
                   contrast={contrast}
-                  canPublish={contrast != null && contrast >= 4.5}
-                  panelW={panelW}
-                  panelH={panelH}
-                  savedAt={savedAt}
-                  isDirty={Object.keys(edits).length > 0}
-                  publishedAt={publishedAt}
-                  isPublishedDirty={isPublishedDirty}
-                  publishing={publishing}
+                  canPublish={canPublish}
                   onPatch={handlePatch}
-                  onReset={handleReset}
                   onResetGroup={handleResetGroup}
-                  onDims={handleDims}
                   onAvatarFile={handleAvatarFile}
-                  onCopy={handleCopy}
-                  onPaste={handlePaste}
-                  onSave={handleSave}
-                  onPublish={handlePublish}
-                  onDiscard={handleDiscard}
                 />
               )}
             </div>
-            <div className="min-w-0 space-y-4 lg:col-span-5 lg:sticky lg:top-20 lg:self-start">
+            <div className="min-w-0 space-y-4 xl:sticky xl:top-36 xl:self-start">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div
+                  className="flex gap-1.5"
+                  role="radiogroup"
+                  aria-label="Preview mode"
+                >
+                  {(["auto", "light", "dark"] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      role="radio"
+                      aria-checked={previewMode === m}
+                      onClick={() => setPreviewMode(m)}
+                      title={
+                        m === "auto"
+                          ? "Follow the studio's light/dark mode"
+                          : `Force the preview ${m}`
+                      }
+                      className={`rounded-md border px-2.5 py-1 font-mono text-[11px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${
+                        previewMode === m
+                          ? "border-foreground bg-foreground text-background"
+                          : "border-border bg-muted/40 text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      {m === "auto" ? "Auto" : m === "light" ? "Light" : "Dark"}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    W
+                    <input
+                      type="number"
+                      value={panelW}
+                      min={200}
+                      step={10}
+                      onChange={(e) =>
+                        handleDims(Number(e.target.value) || panelW, panelH)
+                      }
+                      className="w-16 rounded-md border border-border bg-muted/40 px-1.5 py-1 font-mono text-[11px] text-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    />
+                  </label>
+                  <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    H
+                    <input
+                      type="number"
+                      value={panelH}
+                      min={200}
+                      step={10}
+                      onChange={(e) =>
+                        handleDims(panelW, Number(e.target.value) || panelH)
+                      }
+                      className="w-16 rounded-md border border-border bg-muted/40 px-1.5 py-1 font-mono text-[11px] text-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    />
+                  </label>
+                </div>
+              </div>
               {draft && (
-                <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center gap-3">
                   <StudioOrbPreview theme={draft} />
                   <p className="text-xs text-muted-foreground">
                     Launcher preview at 56px, same styling as the loader.
@@ -480,22 +662,24 @@ export default function WidgetStudioPage() {
                 </div>
               )}
               {frameSrc && (
-                <iframe
-                  ref={iframeRef}
-                  key={companyId}
-                  src={frameSrc}
-                  title={`Widget preview for ${selectedCompany.name}`}
-                  onLoad={resendToFrame}
-                  sandbox={PANEL_SANDBOX}
-                  allow={PANEL_ALLOW}
-                  className="border border-border"
-                  style={{
-                    width: `min(${panelW}px, 100vw - 32px)`,
-                    height: `min(${panelH}px, 100dvh - 140px)`,
-                    borderRadius: draft?.panelRadius ?? 16,
-                    background: draft?.surface ?? "#09090b",
-                  }}
-                />
+                <div className="flex justify-center">
+                  <iframe
+                    ref={iframeRef}
+                    key={companyId}
+                    src={frameSrc}
+                    title={`Widget preview for ${selectedCompany.name}`}
+                    onLoad={resendToFrame}
+                    sandbox={PANEL_SANDBOX}
+                    allow={PANEL_ALLOW}
+                    className="border border-border"
+                    style={{
+                      width: `min(${panelW}px, 100vw - 32px)`,
+                      height: `min(${panelH}px, 100dvh - 140px)`,
+                      borderRadius: draft?.panelRadius ?? 16,
+                      background: draft?.surface ?? "#09090b",
+                    }}
+                  />
+                </div>
               )}
               {!baseLoading && !draft && (
                 <p className="flex items-center gap-2 text-[13px] text-muted-foreground">

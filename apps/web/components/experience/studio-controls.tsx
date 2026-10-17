@@ -35,25 +35,9 @@ interface StudioControlsProps {
   override: WidgetThemeOverride;
   contrast: number | null;
   canPublish: boolean;
-  panelW: number;
-  panelH: number;
-  savedAt: string | null;
-  isDirty: boolean;
-  /** When the override was last published (null = nothing published). */
-  publishedAt: string | null;
-  /** Current edits differ from the published override. */
-  isPublishedDirty: boolean;
-  publishing: boolean;
   onPatch: (patch: WidgetThemeOverride) => void;
-  onReset: () => void;
   onResetGroup: (fields: (keyof WidgetThemeOverride)[]) => void;
-  onDims: (w: number, h: number) => void;
   onAvatarFile: (file: File) => void;
-  onCopy: () => void;
-  onPaste: (text: string) => void;
-  onSave: () => void;
-  onPublish: () => void;
-  onDiscard: () => void;
 }
 
 const RADIUS_PRESETS = ["0px", "4px", "8px", "12px", "9999px"];
@@ -82,7 +66,7 @@ function Section({
             <CollapsibleTrigger asChild>
               <button
                 type="button"
-                className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md text-left transition-transform active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring motion-reduce:transition-none motion-reduce:active:scale-100"
               >
                 {open ? (
                   <CaretDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -95,18 +79,20 @@ function Section({
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 shrink-0 px-2 text-xs font-normal text-muted-foreground"
+              className="h-7 shrink-0 px-2 text-xs font-normal text-muted-foreground transition-[color,background-color,transform] active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100"
               onClick={() => onResetGroup(fields)}
             >
               Reset
             </Button>
           </div>
-          {hint && (
-            <CardDescription className="text-[12px]">{hint}</CardDescription>
-          )}
         </CardHeader>
-        <CollapsibleContent>
-          <CardContent className="space-y-3 pt-0">{children}</CardContent>
+        <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+          <CardContent className="space-y-3 pt-0">
+            {hint && (
+              <CardDescription className="text-[12px]">{hint}</CardDescription>
+            )}
+            {children}
+          </CardContent>
         </CollapsibleContent>
       </Collapsible>
     </Card>
@@ -377,150 +363,12 @@ export function StudioControls({
   override,
   contrast,
   canPublish,
-  panelW,
-  panelH,
-  savedAt,
-  isDirty,
-  publishedAt,
-  isPublishedDirty,
-  publishing,
   onPatch,
-  onReset,
   onResetGroup,
-  onDims,
   onAvatarFile,
-  onCopy,
-  onPaste,
-  onSave,
-  onPublish,
-  onDiscard,
 }: StudioControlsProps) {
-  const [pasteOpen, setPasteOpen] = useState(false);
-  const [pasteText, setPasteText] = useState("");
-  const dirtyCount = Object.keys(override).length;
-
   return (
-    <div className="grid min-w-0 items-start gap-4 xl:grid-cols-2">
-      <Card className="min-w-0 xl:col-span-2 lg:sticky lg:top-20 z-10">
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <CardTitle className="text-[15px] font-semibold">Theme</CardTitle>
-              <CardDescription className="text-[13px]">
-                Edits apply to the preview instantly.
-                {isDirty
-                  ? ` ${dirtyCount} override field${dirtyCount === 1 ? "" : "s"}.`
-                  : " Matches brand extraction."}
-                {savedAt ? ` Draft saved ${savedAt}.` : ""}
-                {publishedAt ? " Published." : ""}
-              </CardDescription>
-            </div>
-            <Button variant="outline" size="sm" onClick={onReset}>
-              Reset to brand
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-1.5 pt-0">
-          <Button
-            variant="default"
-            size="sm"
-            onClick={onPublish}
-            disabled={!canPublish || !isPublishedDirty || publishing}
-            title={
-              !canPublish
-                ? "Raise text/surface contrast to 4.5 before publishing"
-                : !isPublishedDirty
-                  ? "No changes to publish"
-                  : undefined
-            }
-          >
-            {publishing ? "Publishing…" : "Publish"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onDiscard}
-            disabled={publishing || !publishedAt}
-            title={!publishedAt ? "Nothing published to discard" : undefined}
-          >
-            Discard
-          </Button>
-          <Button variant="outline" size="sm" onClick={onCopy}>
-            Copy override
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPasteOpen((v) => !v)}
-          >
-            {pasteOpen ? "Close paste" : "Paste override"}
-          </Button>
-          <Button variant="outline" size="sm" onClick={onSave}>
-            Save draft
-          </Button>
-        </CardContent>
-        {pasteOpen && (
-          <CardContent className="space-y-2 pt-0">
-            <textarea
-              value={pasteText}
-              onChange={(e) => setPasteText(e.target.value)}
-              placeholder='{"primary":"#9b6a45"}'
-              spellCheck={false}
-              rows={3}
-              className="w-full rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px]"
-            />
-            <Button
-              size="sm"
-              onClick={() => {
-                onPaste(pasteText);
-                setPasteText("");
-                setPasteOpen(false);
-              }}
-            >
-              Apply pasted override
-            </Button>
-          </CardContent>
-        )}
-      </Card>
-
-      <Section
-        title="Panel"
-        hint="Preview frame size (uncapped) plus panel corners."
-        fields={["panelRadius"]}
-        onResetGroup={onResetGroup}
-        defaultOpen
-      >
-        <div className="grid grid-cols-2 gap-2">
-          <label className="block space-y-1 text-[12px] text-muted-foreground">
-            <span>Width px</span>
-            <input
-              type="number"
-              value={panelW}
-              min={200}
-              step={10}
-              onChange={(e) => onDims(Number(e.target.value) || panelW, panelH)}
-              className="w-full rounded-md border border-border bg-muted/40 px-2 py-1.5 font-mono text-[12px] text-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-            />
-          </label>
-          <label className="block space-y-1 text-[12px] text-muted-foreground">
-            <span>Height px</span>
-            <input
-              type="number"
-              value={panelH}
-              min={200}
-              step={10}
-              onChange={(e) => onDims(panelW, Number(e.target.value) || panelH)}
-              className="w-full rounded-md border border-border bg-muted/40 px-2 py-1.5 font-mono text-[12px] text-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-            />
-          </label>
-        </div>
-        <RadiusField
-          label="Panel corners"
-          value={draft.panelRadius}
-          onPick={(radius) => onPatch({ panelRadius: radius })}
-        />
-      </Section>
-
+    <div className="flex min-w-0 flex-col gap-3">
       <Section
         title="Accents"
         fields={["primary", "secondary"]}
@@ -545,6 +393,7 @@ export function StudioControls({
         title="Shell"
         fields={["surface", "text"]}
         onResetGroup={onResetGroup}
+        defaultOpen
       >
         <ColorField
           label="Surface"
@@ -567,9 +416,14 @@ export function StudioControls({
       <Section
         title="Corners"
         hint="Global radius follows Accents-era behavior; per-element values win."
-        fields={["radius", "userRadius", "aiRadius", "inputRadius", "launcherRadius"]}
+        fields={["panelRadius", "radius", "userRadius", "aiRadius", "inputRadius", "launcherRadius"]}
         onResetGroup={onResetGroup}
       >
+        <RadiusField
+          label="Panel"
+          value={draft.panelRadius}
+          onPick={(radius) => onPatch({ panelRadius: radius })}
+        />
         <RadiusField
           label="Global"
           value={draft.radius}
