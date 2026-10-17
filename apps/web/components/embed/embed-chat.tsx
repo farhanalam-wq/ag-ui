@@ -134,7 +134,7 @@ export function EmbedChat({
     <Suspense
       fallback={
         <div className="flex flex-col h-[100dvh] w-full items-center justify-center bg-background text-foreground antialiased">
-          <div className="flex items-center gap-2 text-xs text-zinc-500 font-mono animate-pulse">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono animate-pulse">
             <CircleNotch className="size-4 animate-spin" />
             <span>Loading assistant…</span>
           </div>
@@ -180,6 +180,15 @@ function EmbedChatInner({
   // below. Null in production; a full sanitized theme while previewing.
   const [liveTheme, setLiveTheme] = useState<WidgetTheme | null>(null);
   const [liveVersion, setLiveVersion] = useState<string | null>(null);
+  // Host light/dark context (from the studio preview channel). null = no host
+  // tooling, i.e. the standalone widget, which defaults to dark chrome.
+  const [contextDark, setContextDark] = useState<boolean | null>(null);
+  // Explicit preview mode from host tooling: "auto" follows the brand surface
+  // then the context; "light"/"dark" force the neutral chrome (brand colours
+  // still win inline, so an override is an inspection mode).
+  const [modeOverride, setModeOverride] = useState<"auto" | "light" | "dark">(
+    "auto"
+  );
 
   const {
     messages,
@@ -258,6 +267,30 @@ function EmbedChatInner({
   const brandColor = theme.primary;
   // Light brand shell: dark-designed pills/badges need readable text treatment.
   const lightShell = theme.bodySurface && isLightSurface(theme.surface);
+
+  // Render mode for the neutral chrome + `.dark`. An explicit host override
+  // wins (inspection); otherwise a readable brand surface decides its own mode;
+  // otherwise the host context wins, defaulting to dark (the standalone
+  // widget's designed look).
+  const renderMode: "light" | "dark" =
+    modeOverride === "light" || modeOverride === "dark"
+      ? modeOverride
+      : theme.bodySurface
+        ? isLightSurface(theme.surface)
+          ? "light"
+          : "dark"
+        : contextDark === null
+          ? "dark"
+          : contextDark
+            ? "dark"
+            : "light";
+  useEffect(() => {
+    try {
+      document.documentElement.classList.toggle("dark", renderMode === "dark");
+    } catch {
+      // non-DOM environment — no-op
+    }
+  }, [renderMode]);
 
   const SendGlyph =
     theme.sendGlyph === "paper-plane"
@@ -349,15 +382,25 @@ function EmbedChatInner({
     const onMessage = (e: MessageEvent) => {
       try {
         const data = e.data as any;
-        if (!data || data.type !== "ag-ui/theme" || !data.theme) return;
+        if (!data) return;
+        // Mode-only message from the studio: sync light/dark without a repaint.
+        if (data.type === "ag-ui/mode") {
+          if (typeof data.dark === "boolean") setContextDark(data.dark);
+          if (data.mode === "auto" || data.mode === "light" || data.mode === "dark") {
+            setModeOverride(data.mode);
+          }
+          return;
+        }
+        if (data.type !== "ag-ui/theme" || !data.theme) return;
         const next = sanitizeIncomingTheme(data.theme);
         if (!next) return;
         setLiveTheme(next);
         setLiveVersion(
           typeof data.themeVersion === "string" ? data.themeVersion : "live"
         );
-        if (typeof data.dark === "boolean") {
-          document.documentElement.classList.toggle("dark", data.dark);
+        if (typeof data.dark === "boolean") setContextDark(data.dark);
+        if (data.mode === "auto" || data.mode === "light" || data.mode === "dark") {
+          setModeOverride(data.mode);
         }
       } catch {
         // malformed preview message — ignore
@@ -365,6 +408,22 @@ function EmbedChatInner({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
+  }, []);
+
+  // Announce readiness so preview tooling (the studio) can (re)send the theme +
+  // mode without racing this listener's mount. A no-op in production: no parent
+  // tooling listens, and only same-origin parents receive it.
+  useEffect(() => {
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage(
+          { type: "ag-ui/ready" },
+          window.location.origin
+        );
+      }
+    } catch {
+      // non-frame context — nothing to signal
+    }
   }, []);
 
   useEffect(() => {
@@ -429,7 +488,7 @@ function EmbedChatInner({
     >
       {/* Header */}
       <header
-        className="flex h-12 shrink-0 items-center gap-2 border-b border-zinc-800 bg-zinc-950/90 px-3"
+        className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-card/90 px-3"
         style={{
           ...(theme.bodySurface
             ? { backgroundColor: theme.surface, borderColor: theme.secondary, color: theme.text }
@@ -445,7 +504,7 @@ function EmbedChatInner({
             <img
               src={theme.logoUrl}
               alt={`${displayName} logo`}
-              className="w-7 h-7 rounded-lg object-contain shrink-0 border border-zinc-800 bg-white"
+              className="w-7 h-7 rounded-lg object-contain shrink-0 border border-border bg-white"
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = "none";
               }}
@@ -465,13 +524,13 @@ function EmbedChatInner({
           ))}
         <div className="min-w-0 flex-1">
           <div
-            className="text-xs font-semibold text-zinc-100 truncate"
+            className="text-xs font-semibold text-foreground truncate"
             style={{ color: theme.headerText ?? (theme.bodySurface ? theme.text : undefined) }}
           >
             {headerTitle}
           </div>
           <div
-            className="text-[10px] font-mono text-zinc-500 truncate"
+            className="text-[10px] font-mono text-muted-foreground truncate"
             style={{
               color: theme.headerText ?? (theme.bodySurface ? theme.text : undefined),
               opacity: theme.headerText ? 0.75 : theme.bodySurface ? 0.65 : undefined,
@@ -501,7 +560,7 @@ function EmbedChatInner({
       {phase === "loading" && (
         <div className="flex-1 flex items-center justify-center">
           <div
-            className="flex items-center gap-2 text-xs text-zinc-500 font-mono animate-pulse"
+            className="flex items-center gap-2 text-xs text-muted-foreground font-mono animate-pulse"
             style={lightShell ? { color: theme.text } : undefined}
           >
             <CircleNotch className="size-4 animate-spin" />
@@ -513,7 +572,7 @@ function EmbedChatInner({
       {phase === "error" && (
         <div className="flex-1 flex items-center justify-center p-4">
           <div
-            className="flex items-start gap-2 p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-xs text-red-300 max-w-sm"
+            className="flex items-start gap-2 p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-xs text-red-600 dark:text-red-400 max-w-sm"
             style={lightShell ? { color: theme.text } : undefined}
           >
             <WarningCircle
@@ -543,14 +602,14 @@ function EmbedChatInner({
         <div className="flex-1 flex items-center justify-center p-4">
           <div className="text-center space-y-2 max-w-xs">
             <div
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-300 animate-pulse font-mono"
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-600 dark:text-amber-400 animate-pulse font-mono"
               style={lightShell ? { color: theme.text } : undefined}
             >
               <CircleNotch className="size-3.5 animate-spin" />
               <span>Indexing {config?.domain || "company"}…</span>
             </div>
             <p
-              className="text-[11px] text-zinc-500"
+              className="text-[11px] text-muted-foreground"
               style={lightShell ? { color: theme.text, opacity: 0.75 } : undefined}
             >
               The knowledge base is being built. Chat opens automatically when ready.
@@ -565,7 +624,7 @@ function EmbedChatInner({
             {messages.length === 0 && config && (
               <div className="space-y-2 pt-2">
                 <p
-                  className="text-xs text-zinc-400"
+                  className="text-xs text-muted-foreground"
                   style={theme.bodySurface ? { color: theme.text, opacity: 0.75 } : undefined}
                 >
                   Ask anything about {config.name}:
@@ -578,7 +637,7 @@ function EmbedChatInner({
                       setInput(q);
                       handleSubmit(q);
                     }}
-                    className="block w-full text-left text-xs rounded-lg border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800 px-3 py-2 text-zinc-300 transition-colors hover:border-[var(--brand-secondary)]"
+                    className="block w-full text-left text-xs rounded-lg border border-border bg-muted/40 hover:bg-muted px-3 py-2 text-foreground/80 transition-colors hover:border-[var(--brand-secondary)]"
                     style={{
                       borderRadius: theme.panelRadius,
                       ...(theme.chipBorder ? { borderColor: theme.chipBorder } : null),
@@ -621,7 +680,7 @@ function EmbedChatInner({
           </main>
 
           <div
-            className="shrink-0 p-2 border-t border-zinc-800 bg-zinc-950/90"
+            className="shrink-0 p-2 border-t border-border bg-card/90"
             style={{
               ...(theme.bodySurface
                 ? { backgroundColor: theme.surface, borderColor: theme.secondary }
@@ -643,7 +702,7 @@ function EmbedChatInner({
               onValueChange={setInput}
               onSubmit={handleSubmit}
               isSubmitting={isStreaming}
-              className="w-full border-zinc-800 bg-zinc-900/90 focus-within:border-[var(--brand-primary)]"
+              className="w-full border-border bg-card focus-within:border-[var(--brand-primary)]"
               style={{
                 ...(theme.inputBg ? { backgroundColor: theme.inputBg } : null),
                 ...(theme.inputBorder ? { borderColor: theme.inputBorder } : null),
@@ -654,7 +713,7 @@ function EmbedChatInner({
               <PromptInputBody>
                 <PromptInputTextarea
                   placeholder={theme.placeholderText ?? `Ask about ${config?.name || "this company"}…`}
-                  className="text-[13px] text-zinc-100 placeholder-zinc-500 py-1"
+                  className="text-[13px] text-foreground placeholder:text-muted-foreground py-1"
                   style={theme.inputText ? { color: theme.inputText } : undefined}
                   minHeight={40}
                 />
@@ -664,7 +723,7 @@ function EmbedChatInner({
                   <PromptInputBadge
                     icon={Buildings}
                     label={config?.domain || "assistant"}
-                    className="bg-zinc-800/80 border-zinc-700/60 text-zinc-300"
+                    className="bg-muted/60 border-border text-muted-foreground"
                   />
                   <VoiceErrorChip />
                 </PromptInputTools>
@@ -680,7 +739,7 @@ function EmbedChatInner({
                     idleIcon={<MicGlyph className="h-4 w-4" weight="bold" />}
                   />
                 <PromptInputSubmit
-                  className="bg-zinc-100 hover:bg-white text-zinc-950 cursor-pointer"
+                  className="bg-foreground hover:bg-foreground/90 text-background cursor-pointer"
                   style={{
                     ...(theme.sendBg ? { backgroundColor: theme.sendBg } : null),
                     ...(theme.sendText ? { color: theme.sendText } : null),
