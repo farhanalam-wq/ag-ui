@@ -43,5 +43,5 @@ function StudioPreviewResolver() {
       </div>
     );
   }
-  return <EmbedChat identity={{ kind: "company", companyId }} />;
+  return <EmbedChat identity={{ kind: "company", companyId }} noCitations />;
 }

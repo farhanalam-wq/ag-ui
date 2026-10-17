@@ -123,9 +123,12 @@ function sanitizeIncomingTheme(t: unknown): WidgetTheme | null {
 export function EmbedChat({
   identity,
   apiBase: apiBaseProp,
+  noCitations = false,
 }: {
   identity: ChatIdentity;
   apiBase?: string;
+  /** Answer-only: suppress all citation/evidence UI. Streaming is unchanged. */
+  noCitations?: boolean;
 }) {
   return (
     <Suspense
@@ -138,7 +141,7 @@ export function EmbedChat({
         </div>
       }
     >
-      <EmbedChatInner identity={identity} apiBase={apiBaseProp} />
+      <EmbedChatInner identity={identity} apiBase={apiBaseProp} noCitations={noCitations} />
     </Suspense>
   );
 }
@@ -149,9 +152,11 @@ export function EmbedChat({
 function EmbedChatInner({
   identity,
   apiBase: apiBaseProp,
+  noCitations = false,
 }: {
   identity: ChatIdentity;
   apiBase?: string;
+  noCitations?: boolean;
 }) {
   const searchParams = useSearchParams();
   const sessionKey =
@@ -396,10 +401,13 @@ function EmbedChatInner({
 
   const handleOpenEvidence = useCallback(
     (item?: { url?: string }) => {
+      // Answer-only surfaces never surface evidence: no drawer, no external
+      // jump. The evidence callbacks still fire upstream (unused for UI).
+      if (noCitations) return;
       if (item?.url) window.open(item.url, "_blank", "noopener,noreferrer");
       else openDrawerWithEvidence();
     },
-    [openDrawerWithEvidence]
+    [openDrawerWithEvidence, noCitations]
   );
 
   return (
@@ -600,6 +608,7 @@ function EmbedChatInner({
                   linkColor: theme.linkColor,
                 }}
                 onInspectEvidence={handleOpenEvidence}
+                hideEvidence={noCitations}
               />
             ))}
             <div ref={messagesEndRef} />

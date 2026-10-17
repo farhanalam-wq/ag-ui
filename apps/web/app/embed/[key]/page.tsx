@@ -32,6 +32,15 @@ function EmbedRouteResolver() {
   const rawKey = params?.key;
   const widgetKey = Array.isArray(rawKey) ? rawKey[0] : rawKey;
   const apiBase = searchParams.get("api") || undefined;
-  // Empty key preserves the in-component "Missing widget key" error card.
-  return <EmbedChat identity={{ kind: "key", widgetKey: widgetKey ?? "" }} apiBase={apiBase} />;
+  // Answer-only mode: strip all citation/evidence affordances from the chat
+  // (used by placements that want a cleaner answer surface). Streaming and
+  // message sending are unchanged; only the evidence UI is suppressed.
+  const noCitations = searchParams.get("noCitations") === "1";
+  return (
+    <EmbedChat
+      identity={{ kind: "key", widgetKey: widgetKey ?? "" }}
+      apiBase={apiBase}
+      noCitations={noCitations}
+    />
+  );
 }

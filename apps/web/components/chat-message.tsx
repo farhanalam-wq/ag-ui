@@ -52,6 +52,8 @@ interface ChatMessageProps {
   theme?: ChatThemeSlice;
   /** Open the evidence sheet, preselecting the given citation. */
   onInspectEvidence: (item?: EvidenceItem) => void;
+  /** Answer-only surfaces: hide the citation affordance, keep the copy action. */
+  hideEvidence?: boolean;
 }
 
 function extractTextWithoutOpenUI(content: string): string {
@@ -124,6 +126,7 @@ export function ChatMessageItem({
   compact = false,
   theme,
   onInspectEvidence,
+  hideEvidence = false,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
@@ -298,21 +301,28 @@ export function ChatMessageItem({
             </div>
           )}
 
-          {/* Citations Footer */}
+          {/* Footer: citations + copy. Answer-only surfaces (hideEvidence)
+              keep the copy action but render no citation affordance. */}
           {message.evidence && message.evidence.length > 0 && (
-            <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => onInspectEvidence(message.evidence?.[0])}
-                className="gap-1.5 text-xs text-muted-foreground"
-              >
-                <Stack data-icon="inline-start" />
-                <span className="tabular-nums">
-                  Sources ({message.evidence.length})
-                </span>
-              </Button>
+            <div
+              className={`flex items-center gap-2 border-t border-border pt-3 ${
+                hideEvidence ? "justify-end" : "justify-between"
+              }`}
+            >
+              {!hideEvidence && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onInspectEvidence(message.evidence?.[0])}
+                  className="gap-1.5 text-xs text-muted-foreground"
+                >
+                  <Stack data-icon="inline-start" />
+                  <span className="tabular-nums">
+                    Sources ({message.evidence.length})
+                  </span>
+                </Button>
+              )}
               <MessageAction
                 tooltip="Copy response"
                 label="Copy response"
