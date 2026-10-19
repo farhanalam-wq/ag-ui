@@ -6,7 +6,8 @@
   "types": "./src/index.ts",
   "scripts": {
     "build": "tsc --noEmit",
-    "lint": "echo 'analytics: lint ok'"
+    "lint": "echo 'analytics: lint ok'",
+    "test": "bun test"
   },
   "dependencies": {
     "@ag-ui/database": "workspace:*",
