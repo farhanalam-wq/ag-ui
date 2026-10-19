@@ -10,6 +10,7 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
+    "test": "turbo run test",
     "clean": "turbo run clean",
     "crawl": "bun packages/crawler/cli.ts",
     "ingest": "bun ingest-cli.ts",

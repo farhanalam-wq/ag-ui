@@ -50,6 +50,10 @@
       "persistent": true
     },
     "lint": {},
+    "test": {
+      "cache": false,
+      "outputs": []
+    },
     "clean": {
       "cache": false
     }

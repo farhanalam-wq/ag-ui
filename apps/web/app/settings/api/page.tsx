@@ -1,6 +1,3 @@
-"use client";
-
-import { Key } from "@phosphor-icons/react";
 import { StudioShell } from "@/components/studio-shell";
 import { ComingSoon } from "@/components/coming-soon";
 
@@ -10,7 +7,7 @@ export default function ApiSettingsPage() {
       <ComingSoon
         title="API & Webhooks"
         description="API keys, telemetry event webhooks (lead.captured, intent.blindspot_detected), and public SDK tokens will live here."
-        icon={Key}
+        icon="key"
       />
     </StudioShell>
   );

@@ -21,8 +21,6 @@ import {
 } from "@/lib/api-client";
 import { useSelectedCompany } from "@/stores/use-company-store";
 import { copyToClipboard } from "@/lib/copy";
-import { mapBrandToWidgetTheme } from "@ag-ui/shared/client";
-import { WidgetPreview } from "@/components/experience/widget-preview";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -599,12 +597,6 @@ export default function AppearancePage() {
   const dtcgText = stringifyForCopy(activeSheet?.dtcg);
   const designMdText = stringifyForCopy(activeSheet?.designMd);
 
-  const extractedTheme = useMemo(
-    () =>
-      mapBrandToWidgetTheme(latest?.brand?.tokens, latest?.brand?.logoUrl),
-    [latest]
-  );
-
   const showEmpty = !activeSheet && !latest?.brand;
 
   return (
@@ -773,7 +765,7 @@ export default function AppearancePage() {
                 )}
 
                 <div className="grid min-w-0 items-start gap-4 lg:grid-cols-12">
-                  <div className="min-w-0 space-y-4 lg:col-span-7">
+                  <div className="min-w-0 space-y-4 lg:col-span-12">
                 {/* Brand mark */}
                 {(latest?.brand?.logoUrl || activeSheet?.screenshotUrl) && (
                   <Card className="min-w-0">
@@ -1297,31 +1289,6 @@ export default function AppearancePage() {
                     </CardContent>
                   </Card>
                 )}
-                  </div>
-                  <div className="min-w-0 space-y-4 lg:col-span-5 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)] lg:self-start lg:overflow-y-auto">
-                      {/* Widget preview */}
-                      <Card className="min-w-0">
-                        <CardHeader className="pb-3">
-                          <CardTitle className="text-[15px] font-semibold">
-                            Widget preview
-                          </CardTitle>
-                          <CardDescription className="text-[13px]">
-                            First draft from extracted tokens. Sample thread,
-                            nothing sends.
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent className="pt-0">
-                          <WidgetPreview
-                            theme={extractedTheme}
-                            displayName={
-                              selectedCompany.name || "Assistant"
-                            }
-                            domain={
-                              selectedCompany.domain || "Company assistant"
-                            }
-                          />
-                        </CardContent>
-                      </Card>
                   </div>
                 </div>
               </>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowCounterClockwise,
   ArrowSquareOut,
@@ -32,8 +32,6 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiClient } from "@/lib/api-client";
 import { copyToClipboard } from "@/lib/copy";
-import { WidgetPreview } from "@/components/experience/widget-preview";
-import { mapBrandToWidgetTheme } from "@ag-ui/shared/client";
 import { useWidgetKeys } from "./use-widget-keys";
 import {
   FRAMEWORK_IDS,
@@ -69,19 +67,9 @@ export function EmbedSnippetStudio({ companyId, companyName, brandColor }: Embed
   const [checkError, setCheckError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [previewLoaded, setPreviewLoaded] = useState(false);
-  const [previewTab, setPreviewTab] = useState<"static" | "live">("static");
   const [mounted, setMounted] = useState(false);
   const [rotateOpen, setRotateOpen] = useState(false);
   const rotateToastArmed = useRef(false);
-
-  const previewTheme = useMemo(
-    () =>
-      mapBrandToWidgetTheme(
-        { colors: { primary: brandColor, secondary: brandColor } },
-        null
-      ),
-    [brandColor]
-  );
 
   useEffect(() => setMounted(true), []);
 
@@ -334,44 +322,17 @@ export function EmbedSnippetStudio({ companyId, companyName, brandColor }: Embed
 
         <Card className="min-w-0 overflow-hidden">
           <CardHeader className="space-y-2 border-b border-border px-3 py-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-mono text-[11px] text-muted-foreground">
-                Preview
-              </span>
-              <div className="flex gap-1.5" aria-label="Preview mode">
-                {(["static", "live"] as const).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setPreviewTab(t)}
-                    aria-pressed={previewTab === t}
-                    className={`rounded-md border px-2.5 py-1 font-mono text-[11px] transition-colors ${
-                      previewTab === t
-                        ? "border-foreground bg-foreground text-background"
-                        : "border-border bg-muted/40 text-muted-foreground hover:bg-muted"
-                    }`}
-                  >
-                    {t === "static" ? "Static" : "Live"}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <span className="font-mono text-[11px] text-muted-foreground">
+              Preview
+            </span>
             <p className="text-[11px] text-muted-foreground">
-              {previewTab === "static"
-                ? "Sample thread in brand color. Position applies to the launcher on your site, not this thread."
-                : previewLoaded
-                  ? "Live frame loaded. This shows the real route, not a handshake."
-                  : "Live frame for the real route. Loading it is not a handshake, use Verify above."}
+              {previewLoaded
+                ? "Live frame loaded. This shows the real route, not a handshake."
+                : "Live frame for the real route. Loading it is not a handshake, use Verify above."}
             </p>
           </CardHeader>
           <CardContent className="bg-muted/40 p-3">
-            {previewTab === "static" ? (
-              <WidgetPreview
-                theme={previewTheme}
-                displayName={companyName || "Assistant"}
-                domain="Company assistant"
-              />
-            ) : raw ? (
+            {raw ? (
               <div className="flex justify-center">
                 <iframe
                   title={`${companyName} chatbot preview`}

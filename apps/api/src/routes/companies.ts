@@ -9,6 +9,7 @@ import {
   chunks,
   facts,
   enrichmentBatches,
+  widgetThemeOverrides,
   eq,
   desc,
   and,
@@ -19,7 +20,12 @@ import {
 } from "@ag-ui/database";
 import { crawlQueue } from "@ag-ui/queues";
 import { validateSafeUrl, SSRFError } from "@ag-ui/crawler";
-import { logger } from "@ag-ui/shared";
+import { logger, mapBrandToWidgetTheme, isValidOverride } from "@ag-ui/shared";
+import {
+  resolveThemeStylesheetId,
+  resolveCompanyWidgetTheme,
+  invalidateCompanyContextCache,
+} from "@ag-ui/database";
 
 export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
   // 1. Submit a company URL for ingestion
@@ -271,11 +277,48 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
         .where(eq(brands.companyId, company.id))
         .limit(1);
 
+      const snapshotId = snapshots[0]?.id ?? null;
+
+      // Pristine extraction theme (published override NOT applied). It is the
+      // studio's base and its "Reset to brand" reference, so it must stay
+      // override-free — the merged `theme` below never feeds a reset.
+      const stylesheetId = await resolveThemeStylesheetId(company.id, snapshotId);
+      let stylesheetWcag: unknown;
+      try {
+        if (stylesheetId) {
+          const [sheet] = await db
+            .select({ wcag: brandStylesheets.wcag })
+            .from(brandStylesheets)
+            .where(eq(brandStylesheets.id, stylesheetId))
+            .limit(1);
+          stylesheetWcag = sheet?.wcag ?? undefined;
+        }
+      } catch {
+        stylesheetWcag = undefined;
+      }
+      const baseTheme = mapBrandToWidgetTheme(
+        brand?.tokens,
+        brand?.logoUrl,
+        stylesheetWcag
+      );
+
+      // Effective theme + version via the single shared resolver — the exact
+      // derivation the public widget config and retrieval use, so the studio
+      // and the embed's company-scoped path agree with prod by construction
+      // (merged override, `stylesheetId:hash8` version).
+      const { theme, themeVersion } = await resolveCompanyWidgetTheme(
+        company.id,
+        snapshotId
+      );
+
       return {
         company,
         latestSnapshot: snapshots[0] || null,
         snapshots,
         brand: brand || null,
+        theme,
+        baseTheme,
+        themeVersion,
       };
     },
     {
@@ -551,6 +594,126 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
       detail: {
         summary: "Get extracted facts for company",
         description: "Returns all structured facts extracted from the company's latest snapshot.",
+      },
+    }
+  )
+
+  // 7. Published widget theme override (Widget Studio Publish / Discard).
+  // No auth yet — the studio runs against a single local tenant; ownership
+  // and RBAC arrive with the multi-tenant phase.
+  .get(
+    "/:id/widget-theme",
+    async ({ params, set }) => {
+      const [company] = await db
+        .select({ id: companies.id })
+        .from(companies)
+        .where(eq(companies.id, params.id))
+        .limit(1);
+      if (!company) {
+        set.status = 404;
+        return { error: "Company not found" };
+      }
+      const [row] = await db
+        .select()
+        .from(widgetThemeOverrides)
+        .where(eq(widgetThemeOverrides.companyId, company.id))
+        .limit(1);
+      return {
+        override: row && isValidOverride(row.override) ? row.override : null,
+        updatedAt: row?.updatedAt ? row.updatedAt.toISOString() : null,
+      };
+    },
+    {
+      params: t.Object({ id: t.String() }),
+      detail: {
+        summary: "Get published widget theme override",
+        description: "Returns the studio-published theme override for a company, if any.",
+      },
+    }
+  )
+
+  .put(
+    "/:id/widget-theme",
+    async ({ params, body, set }) => {
+      const [company] = await db
+        .select({ id: companies.id })
+        .from(companies)
+        .where(eq(companies.id, params.id))
+        .limit(1);
+      if (!company) {
+        set.status = 404;
+        return { error: "Company not found" };
+      }
+      if (!isValidOverride(body.override)) {
+        set.status = 422;
+        return { error: "Invalid theme override" };
+      }
+      const [row] = await db
+        .insert(widgetThemeOverrides)
+        .values({
+          companyId: company.id,
+          override: body.override,
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: widgetThemeOverrides.companyId,
+          set: { override: body.override, updatedAt: new Date() },
+        })
+        .returning();
+      // Bust the retrieval context cache so open embeds re-theme over the
+      // chat SSE brand event on their next turn.
+      await invalidateCompanyContextCache(company.id);
+      const [latest] = await db
+        .select({ id: companySnapshots.id })
+        .from(companySnapshots)
+        .where(eq(companySnapshots.companyId, company.id))
+        .orderBy(desc(companySnapshots.version))
+        .limit(1);
+      const { themeVersion } = await resolveCompanyWidgetTheme(
+        company.id,
+        latest?.id ?? null
+      );
+      return {
+        override: row.override,
+        updatedAt: row.updatedAt.toISOString(),
+        themeVersion,
+      };
+    },
+    {
+      params: t.Object({ id: t.String() }),
+      body: t.Object({ override: t.Any() }),
+      detail: {
+        summary: "Publish widget theme override",
+        description:
+          "Upserts a company's widget theme override and invalidates cached retrieval context.",
+      },
+    }
+  )
+
+  .delete(
+    "/:id/widget-theme",
+    async ({ params, set }) => {
+      const [company] = await db
+        .select({ id: companies.id })
+        .from(companies)
+        .where(eq(companies.id, params.id))
+        .limit(1);
+      if (!company) {
+        set.status = 404;
+        return { error: "Company not found" };
+      }
+      await db
+        .delete(widgetThemeOverrides)
+        .where(eq(widgetThemeOverrides.companyId, company.id));
+      await invalidateCompanyContextCache(company.id);
+      return { deleted: true };
+    },
+    {
+      params: t.Object({ id: t.String() }),
+      detail: {
+        summary: "Discard widget theme override",
+        description:
+          "Removes a company's published widget theme override (reverts to brand extraction).",
       },
     }
   );
