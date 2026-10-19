@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { ChartLine } from "@phosphor-icons/react";
 import { StudioShell } from "@/components/studio-shell";
@@ -23,7 +23,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useSelectedCompany } from "@/stores/use-company-store";
-import { apiClient, type AcquisitionAnalytics } from "@/lib/api-client";
+import { apiClient } from "@/lib/api-client";
+import { useCompanyReport, type Range } from "@/lib/analytics";
 
 const TrafficTrendChart = dynamic(
   () => import("../../overview-charts").then((m) => m.MonitoringTrendChart),
@@ -33,7 +34,6 @@ const TrafficTrendChart = dynamic(
   }
 );
 
-type Range = "7d" | "30d" | "90d";
 const ALL_CHANNELS = ["Direct", "Organic Social", "Campaign", "Email", "Referral"];
 
 function delta(cur: number, prev?: number): string | null {
@@ -48,40 +48,15 @@ export default function AcquisitionAnalyticsPage() {
   const [range, setRange] = useState<Range>("30d");
   const [compare, setCompare] = useState(false);
   const [channels, setChannels] = useState<string[]>([]);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [data, setData] = useState<AcquisitionAnalytics | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!company) {
-      setData(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setLoadError(null);
-    apiClient.analytics
-      .acquisition(company.id, range, {
+  const { data, loading, loadError, refreshKey, setRefreshKey } = useCompanyReport(
+    company,
+    (companyId) =>
+      apiClient.analytics.acquisition(companyId, range, {
         compare,
         channels: channels.length > 0 ? channels : undefined,
-      })
-      .then((a) => {
-        if (!cancelled) {
-          setData(a);
-          setLoading(false);
-        }
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) {
-          setLoadError(e instanceof Error ? e.message : String(e));
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [company?.id, range, compare, channels.join(","), refreshKey]);
+      }),
+    [range, compare, channels.join(",")]
+  );
 
   const demand = useMemo(
     () =>

@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/table";
 import { useSelectedCompany } from "@/stores/use-company-store";
 import { apiClient, type WebsiteAnalytics, type RealtimeSnapshot } from "@/lib/api-client";
+import { type Range } from "@/lib/analytics";
 
 const TrafficTrendChart = dynamic(
   () => import("../../overview-charts").then((m) => m.MonitoringTrendChart),
@@ -32,8 +33,6 @@ const TrafficTrendChart = dynamic(
     loading: () => <Skeleton className="h-[280px] w-full" />,
   }
 );
-
-type Range = "7d" | "30d" | "90d";
 
 export default function WebsiteAnalyticsPage() {
   const company = useSelectedCompany();

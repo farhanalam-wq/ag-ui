@@ -89,28 +89,45 @@ corpus (see §2.6).
 ### 2.4 Database schema — from scratch
 
 ```bash
-bun --filter @ag-ui/database run db:push
+bun run db:migrate
 ```
 
-This applies `packages/database/drizzle/*` to the Postgres from §2.3.
-Expected: drizzle-kit reports tables created, no errors. Verify:
+`db:migrate` applies the versioned SQL in `packages/database/drizzle/` in order
+(`0000..000N`) and records what it applied in `drizzle.__drizzle_migrations`.
+This is the **only** supported way to build a database — every environment, every
+machine. Expected: `[✓] migrations applied successfully!`. Verify:
 
 ```bash
 docker exec ag-ui-postgres psql -U postgres -d ag_ui -c "\dt"
 # expect: companies, company_snapshots, brands, documents, chunks, facts,
-#         conversations, messages, crawl_jobs, widget_keys, ...
+#         conversations, messages, crawl_jobs, widget_keys, page_views, ...
+```
+
+> **Do not use `db:push`.** It is a local diff tool: it compares the live database
+> against `schema.ts` and issues DDL itself — it does **not** read `drizzle/*.sql`.
+> It cannot express `page_views`' monthly RANGE partitioning, so pushing here would
+> create an unpartitioned table and silently break retention. `0007` refuses that
+> state with a loud error, but the correct move is simply never to run it.
+
+**Already have a database built with `db:push`?** Baseline it once, then migrate:
+
+```bash
+bun run db:baseline --through=0006_woozy_talos   # marks 0000..0006 applied, runs nothing
+bun run db:migrate                               # applies 0007 onward
 ```
 
 **After a schema change** (you edited `packages/database/src/schema.ts`):
 
 ```bash
-bun --filter @ag-ui/database run db:generate   # writes a new drizzle/ migration
+bun run db:generate                            # writes a new drizzle/ migration
 git add packages/database/drizzle              # migrations ARE committed
-bun --filter @ag-ui/database run db:push       # apply locally
+bun run db:migrate                             # apply locally
 ```
 
-Every other machine gets the migration via `git pull` + `db:push`. Never edit
-applied migration SQL in place — add a new one.
+Every other machine gets it via `git pull` + `db:migrate`. Never edit an applied
+migration in place — add a new one. If drizzle-kit cannot express something
+(partitioning, `DO $$` blocks), hand-write the SQL **inside a migration**; do not
+fall back to a standalone script.
 
 ### 2.5 Vector collection
 
@@ -164,7 +181,7 @@ ingests by design.
 ```bash
 git pull
 bun install                                   # package.json changed? always safe to re-run
-bun --filter @ag-ui/database run db:push      # drizzle/ changed? applies new migrations
+bun run db:migrate                            # drizzle/ changed? applies new migrations
 # restart dev processes (web/api pick up code; env changes need a restart too)
 ```
 
@@ -184,7 +201,7 @@ everything else; do not hand-delete entries, use `npx skills remove`.
 | Symptom | Cause → fix |
 |---|---|
 | `@ag-ui/*` import fails after pull | Stale workspace links → `bun install` |
-| API 500s on DB calls | Postgres down or schema behind → `docker compose up -d` + `db:push` |
+| API 500s on DB calls | Postgres down or schema behind → `docker compose up -d` + `bun run db:migrate` |
 | Web shows API errors / empty data | `NEXT_PUBLIC_API_URL` pointing elsewhere → set to `http://localhost:3001`, restart web |
 | Ingest refuses: exit 3, lists a live job | Stuck non-terminal row → mark job + snapshot `FAILED`, re-run |
 | Ingest refuses: exit 2, names a job | Identical selection already crawling → wait for it or cancel it |
@@ -199,7 +216,7 @@ everything else; do not hand-delete entries, use `npx skills remove`.
 ```bash
 bun install                                   # link workspaces (after any package.json change)
 docker compose up -d                          # infra
-bun --filter @ag-ui/database run db:push      # apply schema
+bun run db:migrate                            # apply schema (0000..000N)
 bun scripts/qdrant-init.ts                    # ensure vector collection
 bun dev                                       # all three runtimes
 bun ingest-cli.ts <url> --limit 20 --yes      # ingest

@@ -1,5 +1,12 @@
 import { Elysia, t } from "elysia";
-import { db, companies, eq, getRedisClient, checkAnalyticsReadLimit } from "@ag-ui/database";
+import {
+  db,
+  companies,
+  eq,
+  getRedisClient,
+  checkAnalyticsReadLimit,
+  type RedisClient,
+} from "@ag-ui/database";
 import { getClientIp } from "./embed";
 import {
   getCompanyOverview,
@@ -44,13 +51,82 @@ async function requireCompany(companyId: string) {
   return company ?? null;
 }
 
+type Company = NonNullable<Awaited<ReturnType<typeof requireCompany>>>;
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const RANGE_ERROR = "range must be Nd with 1 <= N <= 90 (e.g. 7d, 30d, 90d)";
+
+/**
+ * The slice of Elysia's `set` we touch. Elysia allows a numeric code or a named
+ * status string, so the helper signatures accept both instead of narrowing to
+ * `number` (which rejects the real context type).
+ */
+type StatusSetter = { status?: number | string };
+
+/**
+ * Tenant resolution for every analytics route. Returns null and sets 404 when
+ * the id resolves to nothing — a missing id and a foreign id look identical, so
+ * tenancy never leaks existence. This is the single seam the auth/tenancy guard
+ * (`packages/database/src/tenancy.ts`, see docs/auth-tenancy.md) will repoint to
+ * `requireCompany`-with-ownership; route bodies stay untouched.
+ */
+async function tenant(companyId: string, set: StatusSetter): Promise<Company | null> {
+  const company = await requireCompany(companyId);
+  if (!company) set.status = 404;
+  return company;
+}
+
+/**
+ * Shared read path for report endpoints: cache (60s fresh / 240s SWR unless
+ * overridden) around a compute fn, with one fail-500 logger and a re-throw path
+ * for deliberate 4xx (e.g. widget-spec's invalid-config 400). Keeps every
+ * handler a handful of lines instead of ~20 of copy-paste.
+ */
+async function report<T>(
+  set: StatusSetter,
+  company: Company,
+  spec: {
+    label: string;
+    errorMessage: string;
+    cacheKey: string;
+    compute: (redis: RedisClient | null) => Promise<T>;
+    fresh?: number;
+    swr?: number;
+  }
+): Promise<T | { error: string; details?: unknown }> {
+  const { label, errorMessage, cacheKey, compute, fresh = 60, swr = 240 } = spec;
+  try {
+    const redis = await getRedisClient();
+    const { data } = await withAnalyticsCache(redis, cacheKey, fresh, swr, () => compute(redis));
+    return data;
+  } catch (err: any) {
+    // Deliberate client errors (thrown with a 4xx status) pass through.
+    if (typeof err?.status === "number" && err.status >= 400 && err.status < 500) {
+      set.status = err.status;
+      return { error: err.message, details: err.details };
+    }
+    logger.error(`[ANALYTICS] ${label} failed for ${company.id}: ${err?.message ?? err}`);
+    set.status = 500;
+    return { error: errorMessage };
+  }
+}
+
+/**
+ * Elysia's global (untyped) hook scope. Narrowed locally instead of casting the
+ * whole context to `any`, so `query.companyId` and `set.headers` stay checked.
+ */
+interface GuardContext {
+  query: Record<string, string | undefined>;
+  set: { status?: number | string; headers: Record<string, string> };
+  request: Request;
+}
 
 export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
   // Instance-wide guard: malformed tenant ids fail fast (400, never a
   // uuid-syntax 500 from Postgres), then a generous per-IP read budget
   // (429 + Retry-After, fail-open when Redis is down).
-  .onBeforeHandle(async ({ query, set, request }: any) => {
+  .onBeforeHandle(async (ctx) => {
+    const { query, set, request } = ctx as unknown as GuardContext;
     const companyId = query?.companyId;
     if (typeof companyId === "string" && !UUID_RE.test(companyId)) {
       set.status = 400;
@@ -66,26 +142,14 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
   .get(
     "/overview",
     async ({ query, set }) => {
-      const company = await requireCompany(query.companyId);
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
-      try {
-        const redis = await getRedisClient();
-        const { data } = await withAnalyticsCache(
-          redis as any,
-          `ana:v1:overview:${company.id}:${query.range ?? "14d"}`,
-          60,
-          240,
-          () => getCompanyOverview(company.id, company.name, parseRange(query.range))
-        );
-        return data;
-      } catch (err: any) {
-        logger.error(`[ANALYTICS] Overview failed for ${company.id}: ${err?.message ?? err}`);
-        set.status = 500;
-        return { error: "Overview unavailable - try again shortly" };
-      }
+      const company = await tenant(query.companyId, set);
+      if (!company) return { error: "Company not found" };
+      return report(set, company, {
+        label: "Overview",
+        errorMessage: "Overview unavailable - try again shortly",
+        cacheKey: `ana:v1:overview:${company.id}:${query.range ?? "14d"}`,
+        compute: () => getCompanyOverview(company.id, company.name, parseRange(query.range)),
+      });
     },
     {
       query: t.Object({
@@ -101,31 +165,19 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
   .get(
     "/website",
     async ({ query, set }) => {
-      const company = await requireCompany(query.companyId);
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
+      const company = await tenant(query.companyId, set);
+      if (!company) return { error: "Company not found" };
       const days = parseWindowDays(query.range);
       if (days === null) {
         set.status = 400;
-        return { error: "range must be Nd with 1 <= N <= 90 (e.g. 7d, 30d, 90d)" };
+        return { error: RANGE_ERROR };
       }
-      try {
-        const redis = await getRedisClient();
-        const { data } = await withAnalyticsCache(
-          redis as any,
-          `ana:v1:website:${company.id}:${days}d`,
-          60,
-          240,
-          () => getWebsiteAnalytics(redis as any, company.id, days)
-        );
-        return data;
-      } catch (err: any) {
-        logger.error(`[ANALYTICS] Website failed for ${company.id}: ${err?.message ?? err}`);
-        set.status = 500;
-        return { error: "Website analytics unavailable - try again shortly" };
-      }
+      return report(set, company, {
+        label: "Website",
+        errorMessage: "Website analytics unavailable - try again shortly",
+        cacheKey: `ana:v1:website:${company.id}:${days}d`,
+        compute: (redis) => getWebsiteAnalytics(redis, company.id, days),
+      });
     },
     {
       query: t.Object({
@@ -141,31 +193,19 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
   .get(
     "/conversions",
     async ({ query, set }) => {
-      const company = await requireCompany(query.companyId);
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
+      const company = await tenant(query.companyId, set);
+      if (!company) return { error: "Company not found" };
       const days = parseWindowDays(query.range);
       if (days === null) {
         set.status = 400;
-        return { error: "range must be Nd with 1 <= N <= 90 (e.g. 7d, 30d, 90d)" };
+        return { error: RANGE_ERROR };
       }
-      try {
-        const redis = await getRedisClient();
-        const { data } = await withAnalyticsCache(
-          redis as any,
-          `ana:v1:conversions:${company.id}:${days}d`,
-          60,
-          240,
-          () => getConversionAnalytics(company.id, days)
-        );
-        return data;
-      } catch (err: any) {
-        logger.error(`[ANALYTICS] Conversions failed for ${company.id}: ${err?.message ?? err}`);
-        set.status = 500;
-        return { error: "Conversion analytics unavailable - try again shortly" };
-      }
+      return report(set, company, {
+        label: "Conversions",
+        errorMessage: "Conversion analytics unavailable - try again shortly",
+        cacheKey: `ana:v1:conversions:${company.id}:${days}d`,
+        compute: () => getConversionAnalytics(company.id, days),
+      });
     },
     {
       query: t.Object({
@@ -181,27 +221,17 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
   .get(
     "/realtime",
     async ({ query, set }) => {
-      const company = await requireCompany(query.companyId);
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
-      try {
-        // Short cache: thundering-herd protection for owners watching live.
-        const redis = await getRedisClient();
-        const { data } = await withAnalyticsCache(
-          redis as any,
-          `ana:v1:realtime:${company.id}`,
-          15,
-          15,
-          () => getRealtimeSnapshot(company.id)
-        );
-        return data;
-      } catch (err: any) {
-        logger.error(`[ANALYTICS] Realtime failed for ${company.id}: ${err?.message ?? err}`);
-        set.status = 500;
-        return { error: "Realtime snapshot unavailable - try again shortly" };
-      }
+      const company = await tenant(query.companyId, set);
+      if (!company) return { error: "Company not found" };
+      // Short cache: thundering-herd protection for owners watching live.
+      return report(set, company, {
+        label: "Realtime",
+        errorMessage: "Realtime snapshot unavailable - try again shortly",
+        cacheKey: `ana:v1:realtime:${company.id}`,
+        fresh: 15,
+        swr: 15,
+        compute: () => getRealtimeSnapshot(company.id),
+      });
     },
     {
       query: t.Object({ companyId: t.String() }),
@@ -214,31 +244,19 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
   .get(
     "/insights",
     async ({ query, set }) => {
-      const company = await requireCompany(query.companyId);
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
+      const company = await tenant(query.companyId, set);
+      if (!company) return { error: "Company not found" };
       const days = parseWindowDays(query.range);
       if (days === null) {
         set.status = 400;
-        return { error: "range must be Nd with 1 <= N <= 90 (e.g. 7d, 30d, 90d)" };
+        return { error: RANGE_ERROR };
       }
-      try {
-        const redis = await getRedisClient();
-        const { data } = await withAnalyticsCache(
-          redis as any,
-          `ana:v1:insights:${company.id}:${days}d`,
-          60,
-          240,
-          () => getInsightsReport(company.id, days)
-        );
-        return data;
-      } catch (err: any) {
-        logger.error(`[ANALYTICS] Insights failed for ${company.id}: ${err?.message ?? err}`);
-        set.status = 500;
-        return { error: "Insights unavailable - try again shortly" };
-      }
+      return report(set, company, {
+        label: "Insights",
+        errorMessage: "Insights unavailable - try again shortly",
+        cacheKey: `ana:v1:insights:${company.id}:${days}d`,
+        compute: () => getInsightsReport(company.id, days),
+      });
     },
     {
       query: t.Object({ companyId: t.String(), range: t.Optional(t.String()) }),
@@ -251,31 +269,24 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
   .get(
     "/copilot",
     async ({ query, set }) => {
-      const company = await requireCompany(query.companyId);
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
+      const company = await tenant(query.companyId, set);
+      if (!company) return { error: "Company not found" };
       if (!query.question || !query.question.trim()) {
         set.status = 400;
         return { error: "question is required" };
       }
-      try {
-        const redis = await getRedisClient();
-        const cacheKey = `ana:v1:copilot:${company.id}:${query.question.trim().slice(0, 200)}`;
-        const { data } = await withAnalyticsCache(redis as any, cacheKey, 60, 240, async () => {
-          const out = await answerQuestion(redis as any, company.id, query.question.trim().slice(0, 500));
+      return report(set, company, {
+        label: "Copilot",
+        errorMessage: "Copilot unavailable - try again shortly",
+        cacheKey: `ana:v1:copilot:${company.id}:${query.question.trim().slice(0, 200)}`,
+        compute: async (redis) => {
+          const out = await answerQuestion(redis, company.id, query.question.trim().slice(0, 500));
           // Rejections are expected outcomes (unsupported question), not
           // failures: 200 envelope so the UI renders limitations, not errors.
           if (!out.ok && "error" in out) throw new Error(out.error);
           return out;
-        });
-        return data;
-      } catch (err: any) {
-        logger.error(`[ANALYTICS] Copilot failed for ${company.id}: ${err?.message ?? err}`);
-        set.status = 500;
-        return { error: "Copilot unavailable - try again shortly" };
-      }
+        },
+      });
     },
     {
       query: t.Object({ companyId: t.String(), question: t.String() }),
@@ -286,16 +297,14 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
     }
   )
   .get(
-    "/widget-spec",    async ({ query, set }) => {
-      const company = await requireCompany(query.companyId);
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
+    "/widget-spec",
+    async ({ query, set }) => {
+      const company = await tenant(query.companyId, set);
+      if (!company) return { error: "Company not found" };
       const days = parseWindowDays(query.range);
       if (days === null) {
         set.status = 400;
-        return { error: "range must be Nd with 1 <= N <= 90 (e.g. 7d, 30d, 90d)" };
+        return { error: RANGE_ERROR };
       }
       const channels = (query.channels ?? "").split(",").map((c) => c.trim()).filter(Boolean);
       const config = {
@@ -308,11 +317,12 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
         channels,
         compare: query.compare === "previous",
       };
-      try {
-        const redis = await getRedisClient();
-        const cacheKey = `ana:v1:widget:${company.id}:${JSON.stringify(config)}`;
-        const { data } = await withAnalyticsCache(redis as any, cacheKey, 60, 240, async () => {
-          const built = await buildWidgetSpec(redis as any, company.id, config);
+      return report(set, company, {
+        label: "Widget-spec",
+        errorMessage: "Widget spec unavailable - try again shortly",
+        cacheKey: `ana:v1:widget:${company.id}:${JSON.stringify(config)}`,
+        compute: async (redis) => {
+          const built = await buildWidgetSpec(redis, company.id, config);
           if (!built.ok) {
             const err = new Error("Invalid widget config") as Error & { status?: number; details?: unknown };
             err.status = 400;
@@ -320,17 +330,8 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
             throw err;
           }
           return built.spec;
-        });
-        return data;
-      } catch (err: any) {
-        if (err?.status === 400) {
-          set.status = 400;
-          return { error: err.message, details: err.details };
-        }
-        logger.error(`[ANALYTICS] Widget-spec failed for ${company.id}: ${err?.message ?? err}`);
-        set.status = 500;
-        return { error: "Widget spec unavailable - try again shortly" };
-      }
+        },
+      });
     },
     {
       query: t.Object({
@@ -353,20 +354,17 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
   // Ops: cache hit/miss counters (proves the cache actually absorbs load).
   .get("/cache-stats", async () => {
     const redis = await getRedisClient();
-    return cacheCounters(redis as any);
+    return cacheCounters(redis);
   })
   .get(
     "/acquisition",
     async ({ query, set }) => {
-      const company = await requireCompany(query.companyId);
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
+      const company = await tenant(query.companyId, set);
+      if (!company) return { error: "Company not found" };
       const days = parseWindowDays(query.range);
       if (days === null) {
         set.status = 400;
-        return { error: "range must be Nd with 1 <= N <= 90 (e.g. 7d, 30d, 90d)" };
+        return { error: RANGE_ERROR };
       }
       const channels = (query.channels ?? "").split(",").map((c) => c.trim()).filter(Boolean);
       // uniques is totals-only (HLL keys are per company-day); validate it
@@ -384,21 +382,12 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
         return { error: "Invalid acquisition query", details: errors };
       }
       const compare = query.compare === "previous";
-      try {
-        const redis = await getRedisClient();
-        const { data } = await withAnalyticsCache(
-          redis as any,
-          `ana:v1:acquisition:${company.id}:${days}d:${compare ? "prev" : "off"}:${[...channels].sort().join("+") || "all"}`,
-          60,
-          240,
-          () => getAcquisitionReport(redis as any, company.id, days, compare, channels as Channel[])
-        );
-        return data;
-      } catch (err: any) {
-        logger.error(`[ANALYTICS] Acquisition failed for ${company.id}: ${err?.message ?? err}`);
-        set.status = 500;
-        return { error: "Acquisition analytics unavailable - try again shortly" };
-      }
+      return report(set, company, {
+        label: "Acquisition",
+        errorMessage: "Acquisition analytics unavailable - try again shortly",
+        cacheKey: `ana:v1:acquisition:${company.id}:${days}d:${compare ? "prev" : "off"}:${[...channels].sort().join("+") || "all"}`,
+        compute: (redis) => getAcquisitionReport(redis, company.id, days, compare, channels as Channel[]),
+      });
     },
     {
       query: t.Object({
@@ -416,15 +405,12 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
   .get(
     "/engagement",
     async ({ query, set }) => {
-      const company = await requireCompany(query.companyId);
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
+      const company = await tenant(query.companyId, set);
+      if (!company) return { error: "Company not found" };
       const days = parseWindowDays(query.range);
       if (days === null) {
         set.status = 400;
-        return { error: "range must be Nd with 1 <= N <= 90 (e.g. 7d, 30d, 90d)" };
+        return { error: RANGE_ERROR };
       }
       const v1 = validateReportQuery({
         metrics: ["sessions", "pageviews", "engagedSessions", "scrolls", "downloads", "clicks"],
@@ -437,21 +423,12 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
         set.status = 400;
         return { error: "Invalid engagement query", details: errors };
       }
-      try {
-        const redis = await getRedisClient();
-        const { data } = await withAnalyticsCache(
-          redis as any,
-          `ana:v1:engagement:${company.id}:${days}d`,
-          60,
-          240,
-          () => getEngagementReport(company.id, days)
-        );
-        return data;
-      } catch (err: any) {
-        logger.error(`[ANALYTICS] Engagement failed for ${company.id}: ${err?.message ?? err}`);
-        set.status = 500;
-        return { error: "Engagement analytics unavailable - try again shortly" };
-      }
+      return report(set, company, {
+        label: "Engagement",
+        errorMessage: "Engagement analytics unavailable - try again shortly",
+        cacheKey: `ana:v1:engagement:${company.id}:${days}d`,
+        compute: () => getEngagementReport(company.id, days),
+      });
     },
     {
       query: t.Object({ companyId: t.String(), range: t.Optional(t.String()) }),
@@ -464,15 +441,12 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
   .get(
     "/content",
     async ({ query, set }) => {
-      const company = await requireCompany(query.companyId);
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
+      const company = await tenant(query.companyId, set);
+      if (!company) return { error: "Company not found" };
       const days = parseWindowDays(query.range);
       if (days === null) {
         set.status = 400;
-        return { error: "range must be Nd with 1 <= N <= 90 (e.g. 7d, 30d, 90d)" };
+        return { error: RANGE_ERROR };
       }
       const v1 = validateReportQuery({
         metrics: ["sessions", "pageviews"],
@@ -485,21 +459,12 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
         set.status = 400;
         return { error: "Invalid content query", details: errors };
       }
-      try {
-        const redis = await getRedisClient();
-        const { data } = await withAnalyticsCache(
-          redis as any,
-          `ana:v1:content:${company.id}:${days}d`,
-          60,
-          240,
-          () => getContentReport(company.id, days)
-        );
-        return data;
-      } catch (err: any) {
-        logger.error(`[ANALYTICS] Content failed for ${company.id}: ${err?.message ?? err}`);
-        set.status = 500;
-        return { error: "Content analytics unavailable - try again shortly" };
-      }
+      return report(set, company, {
+        label: "Content",
+        errorMessage: "Content analytics unavailable - try again shortly",
+        cacheKey: `ana:v1:content:${company.id}:${days}d`,
+        compute: () => getContentReport(company.id, days),
+      });
     },
     {
       query: t.Object({ companyId: t.String(), range: t.Optional(t.String()) }),
