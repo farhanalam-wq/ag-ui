@@ -2,6 +2,7 @@
 
 import type { Icon } from "@phosphor-icons/react";
 import {
+  AppWindow,
   SquaresFour,
   TrayArrowDown,
   Database,
@@ -64,6 +65,7 @@ export const SIDEBAR_NAV: SidebarNavSection[] = [
     icon: Palette,
     items: [
       { id: "appearance", label: "Appearance", icon: Palette, href: "/experience/appearance" },
+      { id: "widget-studio", label: "Widget Studio", icon: AppWindow, href: "/experience/widget-studio" },
       { id: "personality", label: "Personality", icon: Smiley, href: "/experience/personality" },
       { id: "behavior", label: "Behavior", icon: SlidersHorizontal, href: "/experience/behavior" },
     ],

@@ -26,14 +26,34 @@ import {
 import { toast } from "sonner";
 import type { ChatMessage as ChatMessageType, EvidenceItem } from "@/hooks/use-company-chat";
 import { repairListBreaks } from "@/lib/markdown-format";
+import type { WidgetTheme } from "@ag-ui/shared/client";
+
+export interface ChatThemeSlice {
+  userBg: WidgetTheme["userBg"];
+  userText: WidgetTheme["userText"];
+  userRadius: WidgetTheme["userRadius"];
+  aiBg: WidgetTheme["aiBg"];
+  aiText: WidgetTheme["aiText"];
+  aiBorder: WidgetTheme["aiBorder"];
+  aiRadius: WidgetTheme["aiRadius"];
+  avatarMode: WidgetTheme["avatarMode"];
+  avatarBg: WidgetTheme["avatarBg"];
+  avatarText: WidgetTheme["avatarText"];
+  customAvatarUrl: WidgetTheme["customAvatarUrl"];
+  logoUrl: WidgetTheme["logoUrl"];
+  linkColor: WidgetTheme["linkColor"];
+}
 
 interface ChatMessageProps {
   message: ChatMessageType;
   companyName: string;
   brandColor?: string;
   compact?: boolean;
+  theme?: ChatThemeSlice;
   /** Open the evidence sheet, preselecting the given citation. */
   onInspectEvidence: (item?: EvidenceItem) => void;
+  /** Answer-only surfaces: hide the citation affordance, keep the copy action. */
+  hideEvidence?: boolean;
 }
 
 function extractTextWithoutOpenUI(content: string): string {
@@ -104,11 +124,50 @@ export function ChatMessageItem({
   companyName,
   brandColor = "#3b82f6",
   compact = false,
+  theme,
   onInspectEvidence,
+  hideEvidence = false,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
 
+  const linkStyle = theme?.linkColor ? { color: theme.linkColor } : undefined;
+
+  // Themed links ride on a per-message component map so the shared static
+  // map stays untouched for unthemed surfaces.
+  const components = linkStyle
+    ? {
+        ...markdownComponents,
+        a: ({ children, href }: { children?: React.ReactNode; href?: string }) => (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-2"
+            style={linkStyle}
+          >
+            {children}
+          </a>
+        ),
+      }
+    : markdownComponents;
+
+  if (isUser) {
+    const bubbleStyle: React.CSSProperties | undefined = theme
+      ? {
+          ...(theme.userBg ? { backgroundColor: theme.userBg } : null),
+          ...(theme.userText ? { color: theme.userText } : null),
+          borderRadius: theme.userRadius,
+        }
+      : undefined;
+    return (
+      <Message from="user" className={compact ? "max-w-full" : undefined}>
+        <MessageContent style={bubbleStyle}>
+          <p className="whitespace-pre-wrap">{message.content}</p>
+        </MessageContent>
+      </Message>
+    );
+  }
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(message.content);
@@ -120,41 +179,70 @@ export function ChatMessageItem({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  if (isUser) {
-    return (
-      <Message from="user" className={compact ? "max-w-full" : undefined}>
-        <MessageContent>
-          <p className="whitespace-pre-wrap">{message.content}</p>
-        </MessageContent>
-      </Message>
-    );
-  }
-
   const isRetrieving = message.stage === "retrieving";
   const isSynthesizing = message.stage === "synthesizing";
   const isError = message.stage === "error";
 
   const textContentWithoutOpenUI = repairListBreaks(extractTextWithoutOpenUI(message.content));
 
+  // Avatar resolution: auto = company logo, else initials; explicit modes
+  // override; none hides the tile entirely.
+  const avatarMode = theme?.avatarMode ?? "auto";
+  const avatarSrc =
+    avatarMode === "custom"
+      ? theme?.customAvatarUrl ?? null
+      : avatarMode === "logo"
+        ? (theme?.logoUrl ?? null)
+        : avatarMode === "initials"
+          ? null
+          : (theme?.logoUrl ?? null);
+  const showAvatar = avatarMode !== "none";
+  const showAvatarImg = showAvatar && !!avatarSrc;
+
+  const aiBubbleStyle: React.CSSProperties | undefined = theme
+    ? {
+        ...(theme.aiBg ? { backgroundColor: theme.aiBg } : null),
+        ...(theme.aiText ? { color: theme.aiText } : null),
+        ...(theme.aiBorder ? { borderColor: theme.aiBorder } : null),
+        borderRadius: theme.aiRadius,
+      }
+    : undefined;
+
   return (
     <Message from="assistant" className={compact ? "max-w-full" : undefined}>
       <div className="flex items-start gap-2.5">
         {/* Company Avatar */}
-        <div
-          className={`flex shrink-0 items-center justify-center rounded-lg border border-border text-xs font-bold ${
-            compact ? "size-6 text-[10px]" : "size-8"
-          }`}
-          style={{
-            backgroundColor: `${brandColor}20`,
-            color: brandColor,
-          }}
-          aria-hidden="true"
-        >
-          {companyName.slice(0, 2).toUpperCase()}
-        </div>
+        {showAvatar &&
+          (showAvatarImg ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={avatarSrc as string}
+              alt=""
+              aria-hidden="true"
+              className={`shrink-0 rounded-lg border border-border object-contain bg-white ${
+                compact ? "size-6" : "size-8"
+              }`}
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = "none";
+              }}
+            />
+          ) : (
+            <div
+              className={`flex shrink-0 items-center justify-center rounded-lg border border-border text-xs font-bold ${
+                compact ? "size-6 text-[10px]" : "size-8"
+              }`}
+              style={{
+                backgroundColor: theme?.avatarBg ?? `${brandColor}20`,
+                color: theme?.avatarText ?? brandColor,
+              }}
+              aria-hidden="true"
+            >
+              {companyName.slice(0, 2).toUpperCase()}
+            </div>
+          ))}
 
         {/* Message Container */}
-        <MessageContent className="min-w-0 flex-1">
+        <MessageContent className="min-w-0 flex-1" style={aiBubbleStyle}>
           {/* Reasoning stages (transient — unmounts when done) */}
           {(isRetrieving || (isSynthesizing && !message.content)) && (
             <ChainOfThought defaultOpen>
@@ -195,10 +283,13 @@ export function ChatMessageItem({
 
           {/* Assistant Answer Body */}
           {message.content && (
-            <div className={compact ? "text-[13px]" : undefined}>
+            <div
+              className={compact ? "text-[13px]" : undefined}
+              style={theme?.aiText ? { color: theme.aiText } : undefined}
+            >
               <MessageResponse
                 isAnimating={isSynthesizing}
-                components={markdownComponents}
+                components={components}
               >
                 {textContentWithoutOpenUI || message.content}
               </MessageResponse>
@@ -210,21 +301,28 @@ export function ChatMessageItem({
             </div>
           )}
 
-          {/* Citations Footer */}
+          {/* Footer: citations + copy. Answer-only surfaces (hideEvidence)
+              keep the copy action but render no citation affordance. */}
           {message.evidence && message.evidence.length > 0 && (
-            <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => onInspectEvidence(message.evidence?.[0])}
-                className="gap-1.5 text-xs text-muted-foreground"
-              >
-                <Stack data-icon="inline-start" />
-                <span className="tabular-nums">
-                  Sources ({message.evidence.length})
-                </span>
-              </Button>
+            <div
+              className={`flex items-center gap-2 border-t border-border pt-3 ${
+                hideEvidence ? "justify-end" : "justify-between"
+              }`}
+            >
+              {!hideEvidence && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onInspectEvidence(message.evidence?.[0])}
+                  className="gap-1.5 text-xs text-muted-foreground"
+                >
+                  <Stack data-icon="inline-start" />
+                  <span className="tabular-nums">
+                    Sources ({message.evidence.length})
+                  </span>
+                </Button>
+              )}
               <MessageAction
                 tooltip="Copy response"
                 label="Copy response"

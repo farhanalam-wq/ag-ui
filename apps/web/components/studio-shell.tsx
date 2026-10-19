@@ -124,7 +124,7 @@ export function StudioShell({
           <div
             id="studio-main"
             tabIndex={-1}
-            className="mx-auto w-full min-w-0 max-w-[1400px] px-4 py-6 outline-none md:px-6"
+            className="mx-auto w-full min-w-0 max-w-[1600px] px-4 py-6 outline-none md:px-6"
           >
             {children}
           </div>

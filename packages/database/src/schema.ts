@@ -257,3 +257,17 @@ export const brandStylesheets = pgTable(
   },
   (t) => [index("brand_stylesheets_company_idx").on(t.companyId)]
 );
+
+/**
+ * Published widget theme override — one row per company, written ONLY by the
+ * Widget Studio "Publish" action (Discard deletes it). Draft edits stay
+ * client-side until publish. Read-time merged on top of the extracted brand
+ * theme (see resolveCompanyWidgetTheme), so it survives re-extraction.
+ */
+export const widgetThemeOverrides = pgTable("widget_theme_overrides", {
+  companyId: uuid("company_id")
+    .references(() => companies.id, { onDelete: "cascade" })
+    .primaryKey(),
+  override: jsonb("override").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});

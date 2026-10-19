@@ -5,11 +5,13 @@ import {
   companies,
   companySnapshots,
   brands,
+  brandStylesheets,
   documents,
   chunks,
   facts,
   crawlJobs,
   eq,
+  and,
   desc,
   upsertChunkPoints,
   invalidateCompanyContextCache,
@@ -84,26 +86,42 @@ export async function populateDb(
     return { companyId, snapshotId: snapId, version, insertedDocs: 0, chunkCount: 0, factCount: 0, ms: Date.now() - t0 };
   }
 
-  // Brand upsert from root HTML.
+  // Brand fallback: the extractor worker is the sole writer. The lightweight
+  // scrape below only runs as emergency fallback when no READY stylesheet
+  // row exists. Never overwrite extractor-derived tokens.
   try {
-    const brandData = rootHtml
-      ? extractBrandIntelligence(rootHtml, baseUrl)
-      : {
-          logoUrl: undefined as any,
-          tokens: {
-            colors: { primary: "#2563eb", background: "#09090b", foreground: "#fafafa" },
-            typography: {},
-            radius: "0.5rem",
-            style: "corporate",
-          } as any,
-        };
-    const [eb] = await db.select().from(brands).where(eq(brands.companyId, companyId)).limit(1);
-    if (eb) {
-      await db.update(brands).set({ logoUrl: (brandData as any).logoUrl, tokens: (brandData as any).tokens }).where(eq(brands.id, eb.id));
+    const [readySheet] = await db
+      .select({ id: brandStylesheets.id })
+      .from(brandStylesheets)
+      .where(
+        and(
+          eq(brandStylesheets.companyId, companyId),
+          eq(brandStylesheets.status, "READY")
+        )
+      )
+      .limit(1);
+    if (readySheet) {
+      console.log(`[DB] brand skipped (READY stylesheet ${readySheet.id} exists, worker owns tokens)`);
     } else {
-      await db.insert(brands).values({ companyId, logoUrl: (brandData as any).logoUrl, tokens: (brandData as any).tokens });
+      const brandData = rootHtml
+        ? extractBrandIntelligence(rootHtml, baseUrl)
+        : {
+            logoUrl: undefined as any,
+            tokens: {
+              colors: { primary: "#2563eb", background: "#09090b", foreground: "#fafafa" },
+              typography: {},
+              radius: "0.5rem",
+              style: "corporate",
+            } as any,
+          };
+      const [eb] = await db.select().from(brands).where(eq(brands.companyId, companyId)).limit(1);
+      if (eb) {
+        await db.update(brands).set({ logoUrl: (brandData as any).logoUrl, tokens: (brandData as any).tokens }).where(eq(brands.id, eb.id));
+      } else {
+        await db.insert(brands).values({ companyId, logoUrl: (brandData as any).logoUrl, tokens: (brandData as any).tokens });
+      }
+      console.log(`[DB] brand fallback upserted (primary=${(brandData as any).tokens?.colors?.primary})`);
     }
-    console.log(`[DB] brand upserted (primary=${(brandData as any).tokens?.colors?.primary})`);
   } catch (err: any) {
     console.log(`[DB] brand extraction skipped: ${err.message}`);
   }

@@ -4,7 +4,6 @@ import {
   companies,
   companySnapshots,
   brands,
-  brandStylesheets,
   documents,
   chunks,
   facts,
@@ -17,7 +16,7 @@ import {
   listKeysByCompany,
   deleteWidgetKey,
   checkEmbedRateLimit,
-  resolveThemeStylesheetId,
+  resolveCompanyWidgetTheme,
   listDomainsByKey,
   getKeyCompanyId,
   addDomain,
@@ -32,7 +31,7 @@ import {
   inArray,
   count,
 } from "@ag-ui/database";
-import { generateWidgetKey, hashWidgetKey, logger, buildAnswerSystemPrompt, streamChatCompletionGenerator, mapBrandToWidgetTheme } from "@ag-ui/shared";
+import { generateWidgetKey, hashWidgetKey, logger, buildAnswerSystemPrompt, streamChatCompletionGenerator } from "@ag-ui/shared";
 
 function getClientIp(request: Request): string {
   const forwarded = request.headers.get("x-forwarded-for");
@@ -293,24 +292,13 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
         .limit(1);
 
       // Server-sanitized theme + version, scoped to the ACTIVE snapshot so
-      // theme follows knowledge rollbacks. The observed WCAG pairs come
-      // from the SAME stylesheet row (best measured pair wins the shell);
-      // missing/empty pairs fall back to brand tokens, then neutral shell.
-      const themeVersion = await resolveThemeStylesheetId(company.id, snapshot?.id ?? null);
-      let stylesheetWcag: unknown;
-      try {
-        if (themeVersion) {
-          const [sheet] = await db
-            .select({ wcag: brandStylesheets.wcag })
-            .from(brandStylesheets)
-            .where(eq(brandStylesheets.id, themeVersion))
-            .limit(1);
-          stylesheetWcag = sheet?.wcag ?? undefined;
-        }
-      } catch {
-        stylesheetWcag = undefined;
-      }
-      const theme = mapBrandToWidgetTheme(brand?.tokens, brand?.logoUrl, stylesheetWcag);
+      // theme follows knowledge rollbacks and the published studio override
+      // is merged on top. Single resolver shared with retrieval, so config
+      // and the chat SSE brand event always agree.
+      const { theme, themeVersion } = await resolveCompanyWidgetTheme(
+        company.id,
+        snapshot?.id ?? null
+      );
 
       let docCount = 0;
       let chunkCount = 0;

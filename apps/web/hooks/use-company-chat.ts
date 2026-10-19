@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from "react";
 
 import { apiClient } from "@/lib/api-client";
-import { applyWidgetTheme, mapBrandToWidgetTheme } from "@ag-ui/shared/client";
+import { applyWidgetTheme, mapBrandToWidgetTheme, type WidgetTheme } from "@ag-ui/shared/client";
 import { coalesceVoiceLines } from "@/lib/voice-transcript";
 import type { VoiceLine } from "@/components/voice/voice-session";
 
@@ -31,6 +31,12 @@ export interface BrandTokens {
   logoUrl?: string;
   style?: string;
   radius?: string;
+  /** Raw extraction tokens (brands.tokens shape). */
+  tokens?: any;
+  /** Server-merged widget theme (extraction + published override), when sent. */
+  theme?: WidgetTheme | null;
+  /** Effective theme version — changes iff the theme does. */
+  themeVersion?: string | null;
 }
 
 export function useCompanyChat() {
@@ -136,9 +142,15 @@ export function useCompanyChat() {
                     : `tokens:${JSON.stringify((data as any)?.tokens ?? null)}`;
                 if (appliedBrandVersionRef.current === version) return;
                 appliedBrandVersionRef.current = version;
+                // The server sends the merged theme (extraction + published
+                // override); prefer it. Fall back to mapping raw tokens for
+                // older payloads.
+                const serverTheme = (data as any)?.theme as WidgetTheme | undefined;
                 applyWidgetTheme(
                   document.documentElement,
-                  mapBrandToWidgetTheme(data?.tokens, (data as any)?.logoUrl)
+                  serverTheme && typeof serverTheme.primary === "string"
+                    ? serverTheme
+                    : mapBrandToWidgetTheme(data?.tokens, (data as any)?.logoUrl)
                 );
               } catch {
                 // non-DOM environment — no-op

@@ -5,6 +5,15 @@
 // Fonts are deliberately excluded (licensing + availability): the embed
 // keeps its system stack permanently.
 
+export type AvatarMode = "auto" | "logo" | "initials" | "custom" | "none";
+export type LauncherMode = "auto" | "glyph" | "brand" | "logo";
+
+export const AVATAR_MODES: AvatarMode[] = ["auto", "logo", "initials", "custom", "none"];
+export const LAUNCHER_MODES: LauncherMode[] = ["auto", "glyph", "brand", "logo"];
+export const LAUNCHER_GLYPHS = ["✦", "◆", "●", "▲", "✎", "➤"];
+export const SEND_GLYPHS = ["arrow-up", "paper-plane", "arrow-right", "check"] as const;
+export const MIC_GLYPHS = ["mic", "mic-slash", "wave"] as const;
+
 export interface WidgetTheme {
   primary: string;
   secondary: string;
@@ -28,6 +37,47 @@ export interface WidgetTheme {
   accentOnSurface: boolean;
   /** Where surface/text came from: observed pairs, raw tokens, or defaults. */
   surfaceSource: "wcag-best" | "tokens" | "default" | "embed-query";
+  // --- M2 per-slot fields (all resolved with defaults; null = follow base) ---
+  panelRadius: string;
+  userRadius: string;
+  aiRadius: string;
+  inputRadius: string;
+  launcherRadius: string;
+  headerBg: string | null;
+  headerText: string | null;
+  headerBorder: string | null;
+  showLogo: boolean;
+  headerTitle: string | null;
+  headerDomain: string | null;
+  showReady: boolean;
+  userBg: string | null;
+  userText: string | null;
+  aiBg: string | null;
+  aiText: string | null;
+  aiBorder: string | null;
+  avatarMode: AvatarMode;
+  avatarBg: string | null;
+  avatarText: string | null;
+  customAvatarUrl: string | null;
+  inputBg: string | null;
+  inputBorder: string | null;
+  inputText: string | null;
+  placeholderText: string | null;
+  focusRing: string | null;
+  launcherMode: LauncherMode;
+  launcherGlyph: string;
+  launcherBg: string | null;
+  launcherHover: string | null;
+  launcherBorder: string | null;
+  sendGlyph: string;
+  sendBg: string | null;
+  sendText: string | null;
+  micGlyph: string;
+  micBg: string | null;
+  micText: string | null;
+  linkColor: string | null;
+  chipBorder: string | null;
+  chipBg: string | null;
 }
 
 const DEFAULTS: WidgetTheme = {
@@ -41,10 +91,403 @@ const DEFAULTS: WidgetTheme = {
   bodySurface: false,
   accentOnSurface: false,
   surfaceSource: "default",
+  panelRadius: "0.5rem",
+  userRadius: "0.5rem",
+  aiRadius: "0.5rem",
+  inputRadius: "0.5rem",
+  launcherRadius: "9999px",
+  headerBg: null,
+  headerText: null,
+  headerBorder: null,
+  showLogo: true,
+  headerTitle: null,
+  headerDomain: null,
+  showReady: true,
+  userBg: null,
+  userText: null,
+  aiBg: null,
+  aiText: null,
+  aiBorder: null,
+  avatarMode: "auto",
+  avatarBg: null,
+  avatarText: null,
+  customAvatarUrl: null,
+  inputBg: null,
+  inputBorder: null,
+  inputText: null,
+  placeholderText: null,
+  focusRing: null,
+  launcherMode: "auto",
+  launcherGlyph: "✦",
+  launcherBg: null,
+  launcherHover: null,
+  launcherBorder: null,
+  sendGlyph: "arrow-up",
+  sendBg: null,
+  sendText: null,
+  micGlyph: "mic",
+  micBg: null,
+  micText: null,
+  linkColor: null,
+  chipBorder: null,
+  chipBg: null,
 };
 
 const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
-const RADIUS_RE = /^(0|(?:\d+(?:\.\d+)?)(px|rem|%))$/;
+export const RADIUS_RE = /^(0|(?:\d+(?:\.\d+)?)(px|rem|%))$/;
+
+/** Flat JSON-safe override: every control writes fields of this object. */
+export interface WidgetThemeOverride {
+  primary?: string;
+  secondary?: string;
+  radius?: string;
+  surface?: string;
+  text?: string;
+  logoUrl?: string | null;
+  panelRadius?: string;
+  userRadius?: string;
+  aiRadius?: string;
+  inputRadius?: string;
+  launcherRadius?: string;
+  headerBg?: string | null;
+  headerText?: string | null;
+  headerBorder?: string | null;
+  showLogo?: boolean;
+  headerTitle?: string | null;
+  headerDomain?: string | null;
+  showReady?: boolean;
+  userBg?: string | null;
+  userText?: string | null;
+  aiBg?: string | null;
+  aiText?: string | null;
+  aiBorder?: string | null;
+  avatarMode?: AvatarMode;
+  avatarBg?: string | null;
+  avatarText?: string | null;
+  customAvatarUrl?: string | null;
+  inputBg?: string | null;
+  inputBorder?: string | null;
+  inputText?: string | null;
+  placeholderText?: string | null;
+  focusRing?: string | null;
+  launcherMode?: LauncherMode;
+  launcherGlyph?: string;
+  launcherBg?: string | null;
+  launcherHover?: string | null;
+  launcherBorder?: string | null;
+  sendGlyph?: string;
+  sendBg?: string | null;
+  sendText?: string | null;
+  micGlyph?: string;
+  micBg?: string | null;
+  micText?: string | null;
+  linkColor?: string | null;
+  chipBorder?: string | null;
+  chipBg?: string | null;
+}
+
+/** Canonical lowercase hex, or null when unusable. */
+export function cleanHexValue(v: unknown): string | null {
+  if (typeof v === "string" && HEX_RE.test(v.trim())) return v.trim().toLowerCase();
+  return null;
+}
+
+/** Nullable hex: null clears the field, otherwise must be valid hex. */
+function cleanNullableHex(v: unknown): string | null | undefined {
+  if (v === null) return null;
+  if (v === undefined) return undefined;
+  const h = cleanHexValue(v);
+  return h ?? undefined;
+}
+
+/** Nullable radius: null clears, otherwise must match the shared pattern. */
+function cleanNullableRadius(v: unknown): string | null | undefined {
+  if (v === null) return null;
+  if (v === undefined) return undefined;
+  return cleanRadiusValue(v) ?? undefined;
+}
+
+/** Header/body text: trimmed, max 80 chars, no angle brackets. */
+export function cleanTextValue(v: unknown): string | null | undefined {
+  if (v === null) return null;
+  if (v === undefined) return undefined;
+  if (typeof v !== "string") return undefined;
+  const t = v.trim().slice(0, 80);
+  if (t.length === 0) return null;
+  if (/[<>]/.test(t)) return undefined;
+  return t;
+}
+
+export function cleanRadiusValue(v: unknown): string | null {
+  if (typeof v === "string" && RADIUS_RE.test(v.trim())) return v.trim();
+  return null;
+}
+
+export function cleanLogoUrlValue(v: unknown): string | null {
+  return cleanLogoUrl(v);
+}
+
+/** Avatar artwork: https URL or inline data:image (uploads), capped. */
+export function cleanAvatarUrlValue(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  if (t.startsWith("data:image/")) return t.length <= 700_000 ? t : null;
+  return cleanLogoUrl(v);
+}
+
+function clampByte(n: number): number {
+  return Math.max(0, Math.min(255, Math.round(n)));
+}
+
+function bytesToHex(r: number, g: number, b: number): string {
+  const h = (n: number) => clampByte(n).toString(16).padStart(2, "0");
+  return `#${h(r)}${h(g)}${h(b)}`;
+}
+
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  const hh = ((h % 360) + 360) % 360;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((hh / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r = 0, g = 0, b = 0;
+  if (hh < 60) [r, g, b] = [c, x, 0];
+  else if (hh < 120) [r, g, b] = [x, c, 0];
+  else if (hh < 180) [r, g, b] = [0, c, x];
+  else if (hh < 240) [r, g, b] = [0, x, c];
+  else if (hh < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
+}
+
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  const rn = r / 255, gn = g / 255, bn = b / 255;
+  const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h = 0;
+  if (max === rn) h = ((gn - bn) / d + (gn < bn ? 6 : 0)) * 60;
+  else if (max === gn) h = ((bn - rn) / d + 2) * 60;
+  else h = ((rn - gn) / d + 4) * 60;
+  return [h, s, l];
+}
+
+function parseRgbArgs(args: string): [number, number, number] | null {
+  const parts = args
+    .replace(/\//g, " ")
+    .split(/[\s,]+/)
+    .filter((p) => p.length > 0);
+  if (parts.length !== 3 && parts.length !== 4) return null;
+  const nums = parts.slice(0, 3).map((p) => {
+    if (p.endsWith("%")) {
+      const n = Number(p.slice(0, -1));
+      if (!Number.isFinite(n) || n < 0 || n > 100) return NaN;
+      return (n / 100) * 255;
+    }
+    const n = Number(p);
+    return n;
+  });
+  if (nums.some((n) => !Number.isFinite(n) || n < 0 || n > 255)) return null;
+  if (parts.length === 4) {
+    const aRaw = parts[3];
+    const a = aRaw.endsWith("%") ? Number(aRaw.slice(0, -1)) / 100 : Number(aRaw);
+    if (!Number.isFinite(a) || a < 0.99) return null;
+  }
+  return [nums[0], nums[1], nums[2]];
+}
+
+function parseHslArgs(args: string): [number, number, number] | null {
+  const parts = args
+    .replace(/\//g, " ")
+    .split(/[\s,]+/)
+    .filter((p) => p.length > 0);
+  if (parts.length !== 3 && parts.length !== 4) return null;
+  const h = Number(parts[0].replace(/(deg|turn|rad)$/, ""));
+  if (!Number.isFinite(h)) return null;
+  const pct = (p: string): number | null => {
+    if (!p.endsWith("%")) return null;
+    const n = Number(p.slice(0, -1));
+    return Number.isFinite(n) && n >= 0 && n <= 100 ? n / 100 : null;
+  };
+  const s = pct(parts[1]);
+  const l = pct(parts[2]);
+  if (s === null || l === null) return null;
+  if (parts.length === 4) {
+    const aRaw = parts[3];
+    const a = aRaw.endsWith("%") ? Number(aRaw.slice(0, -1)) / 100 : Number(aRaw);
+    if (!Number.isFinite(a) || a < 0.99) return null;
+  }
+  return hslToRgb(h, s, l);
+}
+
+export type ColorFormat = "hex" | "rgb" | "hsl";
+
+/**
+ * Parses hex, rgb()/rgba(), hsl()/hsla() into canonical lowercase hex.
+ * Anything else (named colors, oklch, alpha < 1) returns null.
+ */
+export function parseColorToHex(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim().toLowerCase();
+  if (HEX_RE.test(t)) {
+    const c = t.slice(1);
+    const full = c.length === 3 ? c.split("").map((x) => x + x).join("") : c;
+    return `#${full}`;
+  }
+  let m = t.match(/^rgba?\((.+)\)$/);
+  if (m) {
+    const rgb = parseRgbArgs(m[1]);
+    return rgb ? bytesToHex(...rgb) : null;
+  }
+  m = t.match(/^hsla?\((.+)\)$/);
+  if (m) {
+    const rgb = parseHslArgs(m[1]);
+    return rgb ? bytesToHex(...rgb) : null;
+  }
+  return null;
+}
+
+/** Renders a canonical hex in the requested display format. */
+export function formatHexAs(hex: string, format: ColorFormat): string {
+  const h = cleanHexValue(hex) ?? "#000000";
+  const c = h.slice(1);
+  const full = c.length === 3 ? c.split("").map((x) => x + x).join("") : c;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  if (format === "rgb") return `rgb(${r}, ${g}, ${b})`;
+  if (format === "hsl") {
+    const [hh, s, l] = rgbToHsl(r, g, b);
+    return `hsl(${Math.round(hh)}, ${Math.round(s * 100)}%, ${Math.round(l * 100)}%)`;
+  }
+  return h;
+}
+
+/** True when every present override field is well-formed. */
+export function isValidOverride(o: unknown): o is WidgetThemeOverride {
+  if (!o || typeof o !== "object") return false;
+  const r = o as Record<string, unknown>;
+  for (const k of [
+    "primary", "secondary", "surface", "text",
+    "headerBg", "headerText", "headerBorder",
+    "userBg", "userText", "aiBg", "aiText", "aiBorder",
+    "avatarBg", "avatarText",
+    "inputBg", "inputBorder", "inputText", "placeholderText", "focusRing",
+    "launcherBg", "launcherHover", "launcherBorder",
+    "sendBg", "sendText", "micBg", "micText",
+    "linkColor", "chipBorder", "chipBg",
+  ] as const) {
+    const v = r[k];
+    if (v !== undefined && v !== null && cleanHexValue(v) === null) return false;
+  }
+  for (const k of ["radius", "panelRadius", "userRadius", "aiRadius", "inputRadius", "launcherRadius"] as const) {
+    if (r[k] !== undefined && cleanRadiusValue(r[k]) === null) return false;
+  }
+  if (r.logoUrl !== undefined && r.logoUrl !== null) {
+    if (cleanLogoUrlValue(r.logoUrl) === null) return false;
+  }
+  if (r.customAvatarUrl !== undefined && r.customAvatarUrl !== null) {
+    if (cleanAvatarUrlValue(r.customAvatarUrl) === null) return false;
+  }
+  if (r.avatarMode !== undefined && !(AVATAR_MODES as string[]).includes(r.avatarMode as string)) return false;
+  if (r.launcherMode !== undefined && !(LAUNCHER_MODES as string[]).includes(r.launcherMode as string)) return false;
+  if (r.launcherGlyph !== undefined && !LAUNCHER_GLYPHS.includes(r.launcherGlyph as string)) return false;
+  if (r.sendGlyph !== undefined && !(SEND_GLYPHS as readonly string[]).includes(r.sendGlyph as string)) return false;
+  if (r.micGlyph !== undefined && !(MIC_GLYPHS as readonly string[]).includes(r.micGlyph as string)) return false;
+  for (const k of ["showLogo", "showReady"] as const) {
+    if (r[k] !== undefined && typeof r[k] !== "boolean") return false;
+  }
+  for (const k of ["headerTitle", "headerDomain"] as const) {
+    if (r[k] !== undefined && r[k] !== null && cleanTextValue(r[k]) === undefined) return false;
+  }
+  return true;
+}
+
+/** Merges extraction base with a draft override, recomputing contrast gates. */
+export function mergeThemeOverride(
+  base: WidgetTheme,
+  override: WidgetThemeOverride
+): WidgetTheme {
+  const merged: WidgetTheme = { ...base };
+  const primary = override.primary !== undefined ? cleanHexValue(override.primary) : undefined;
+  const secondary = override.secondary !== undefined ? cleanHexValue(override.secondary) : undefined;
+  const surface = override.surface !== undefined ? cleanHexValue(override.surface) : undefined;
+  const text = override.text !== undefined ? cleanHexValue(override.text) : undefined;
+  const radius = override.radius !== undefined ? cleanRadiusValue(override.radius) : undefined;
+  if (primary) merged.primary = primary;
+  if (secondary) merged.secondary = secondary;
+  if (surface) merged.surface = surface;
+  if (text) merged.text = text;
+  if (radius) {
+    merged.radius = radius;
+    if (override.panelRadius === undefined) merged.panelRadius = radius;
+    if (override.userRadius === undefined) merged.userRadius = radius;
+    if (override.aiRadius === undefined) merged.aiRadius = radius;
+    if (override.inputRadius === undefined) merged.inputRadius = radius;
+  }
+  if (override.logoUrl !== undefined) {
+    merged.logoUrl = override.logoUrl === null ? null : cleanLogoUrlValue(override.logoUrl);
+  }
+  for (const k of ["panelRadius", "userRadius", "aiRadius", "inputRadius", "launcherRadius"] as const) {
+    const v = override[k];
+    if (v !== undefined) {
+      const c = cleanRadiusValue(v);
+      if (c) merged[k] = c;
+    }
+  }
+  for (const k of [
+    "headerBg", "headerText", "headerBorder",
+    "userBg", "userText", "aiBg", "aiText", "aiBorder",
+    "avatarBg", "avatarText",
+    "inputBg", "inputBorder", "inputText", "placeholderText", "focusRing",
+    "launcherBg", "launcherHover", "launcherBorder",
+    "sendBg", "sendText", "micBg", "micText",
+    "linkColor", "chipBorder", "chipBg",
+  ] as const) {
+    const v = override[k];
+    if (v !== undefined) {
+      const c = cleanNullableHex(v);
+      if (c !== undefined) (merged as unknown as Record<string, unknown>)[k] = c;
+    }
+  }
+  if (override.avatarMode !== undefined && (AVATAR_MODES as string[]).includes(override.avatarMode)) {
+    merged.avatarMode = override.avatarMode;
+  }
+  if (override.launcherMode !== undefined && (LAUNCHER_MODES as string[]).includes(override.launcherMode)) {
+    merged.launcherMode = override.launcherMode;
+  }
+  if (override.launcherGlyph !== undefined && LAUNCHER_GLYPHS.includes(override.launcherGlyph)) {
+    merged.launcherGlyph = override.launcherGlyph;
+  }
+  if (override.sendGlyph !== undefined && (SEND_GLYPHS as readonly string[]).includes(override.sendGlyph)) {
+    merged.sendGlyph = override.sendGlyph;
+  }
+  if (override.micGlyph !== undefined && (MIC_GLYPHS as readonly string[]).includes(override.micGlyph)) {
+    merged.micGlyph = override.micGlyph;
+  }
+  if (override.showLogo !== undefined) merged.showLogo = override.showLogo;
+  if (override.showReady !== undefined) merged.showReady = override.showReady;
+  for (const k of ["headerTitle", "headerDomain"] as const) {
+    const v = override[k];
+    if (v !== undefined) {
+      const c = cleanTextValue(v);
+      if (c !== undefined) (merged as unknown as Record<string, unknown>)[k] = c;
+    }
+  }
+  if (override.customAvatarUrl !== undefined) {
+    merged.customAvatarUrl =
+      override.customAvatarUrl === null ? null : cleanAvatarUrlValue(override.customAvatarUrl);
+  }
+  const bodySurface = contrastRatio(merged.text, merged.surface) >= 4.5;
+  const accentOnSurface = contrastRatio(merged.primary, merged.surface) >= 3;
+  return {
+    ...merged,
+    bodySurface,
+    accentOnSurface,
+    fullSurface: bodySurface && accentOnSurface,
+  };
+}
 
 function cleanHex(v: unknown, fallback: string): string {
   if (typeof v === "string" && HEX_RE.test(v.trim())) return v.trim().toLowerCase();
@@ -221,10 +664,11 @@ export function mapBrandToWidgetTheme(
 
     const bodySurface = contrastRatio(text, surface) >= 4.5;
     const accentOnSurface = contrastRatio(primary, surface) >= 3;
+    const radius = cleanRadius(t.radius);
     return {
       primary,
       secondary,
-      radius: cleanRadius(t.radius),
+      radius,
       surface,
       text,
       logoUrl: cleanLogoUrl(logoUrl ?? t.logoUrl),
@@ -232,6 +676,46 @@ export function mapBrandToWidgetTheme(
       bodySurface,
       accentOnSurface,
       surfaceSource,
+      panelRadius: radius,
+      userRadius: radius,
+      aiRadius: radius,
+      inputRadius: radius,
+      launcherRadius: DEFAULTS.launcherRadius,
+      headerBg: null,
+      headerText: null,
+      headerBorder: null,
+      showLogo: true,
+      headerTitle: null,
+      headerDomain: null,
+      showReady: true,
+      userBg: null,
+      userText: null,
+      aiBg: null,
+      aiText: null,
+      aiBorder: null,
+      avatarMode: "auto",
+      avatarBg: null,
+      avatarText: null,
+      customAvatarUrl: null,
+      inputBg: null,
+      inputBorder: null,
+      inputText: null,
+      placeholderText: null,
+      focusRing: null,
+      launcherMode: "auto",
+      launcherGlyph: DEFAULTS.launcherGlyph,
+      launcherBg: null,
+      launcherHover: null,
+      launcherBorder: null,
+      sendGlyph: DEFAULTS.sendGlyph,
+      sendBg: null,
+      sendText: null,
+      micGlyph: DEFAULTS.micGlyph,
+      micBg: null,
+      micText: null,
+      linkColor: null,
+      chipBorder: null,
+      chipBg: null,
     };
   } catch {
     return { ...DEFAULTS };
@@ -244,11 +728,43 @@ export function widgetThemeVars(theme: WidgetTheme): Record<string, string> {
     "--brand-primary": theme.primary,
     "--brand-secondary": theme.secondary,
     "--brand-radius": theme.radius,
+    "--brand-panel-radius": theme.panelRadius,
+    "--brand-user-radius": theme.userRadius,
+    "--brand-ai-radius": theme.aiRadius,
+    "--brand-input-radius": theme.inputRadius,
+    "--brand-launcher-radius": theme.launcherRadius,
   };
   if (theme.bodySurface) {
     vars["--brand-surface"] = theme.surface;
     vars["--brand-text"] = theme.text;
   }
+  const put = (k: string, v: string | null) => {
+    if (v) vars[k] = v;
+  };
+  put("--brand-header-bg", theme.headerBg);
+  put("--brand-header-text", theme.headerText);
+  put("--brand-header-border", theme.headerBorder);
+  put("--brand-user-bg", theme.userBg);
+  put("--brand-user-text", theme.userText);
+  put("--brand-ai-bg", theme.aiBg);
+  put("--brand-ai-text", theme.aiText);
+  put("--brand-ai-border", theme.aiBorder);
+  put("--brand-avatar-bg", theme.avatarBg);
+  put("--brand-avatar-text", theme.avatarText);
+  put("--brand-input-bg", theme.inputBg);
+  put("--brand-input-border", theme.inputBorder);
+  put("--brand-input-text", theme.inputText);
+  put("--brand-focus-ring", theme.focusRing);
+  put("--brand-launcher-bg", theme.launcherBg);
+  put("--brand-launcher-hover", theme.launcherHover);
+  put("--brand-launcher-border", theme.launcherBorder);
+  put("--brand-send-bg", theme.sendBg);
+  put("--brand-send-text", theme.sendText);
+  put("--brand-mic-bg", theme.micBg);
+  put("--brand-mic-text", theme.micText);
+  put("--brand-link", theme.linkColor);
+  put("--brand-chip-border", theme.chipBorder);
+  put("--brand-chip-bg", theme.chipBg);
   return vars;
 }
 
