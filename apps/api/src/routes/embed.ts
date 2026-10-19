@@ -16,6 +16,8 @@ import {
   listKeysByCompany,
   deleteWidgetKey,
   checkEmbedRateLimit,
+  checkTrackRateLimit,
+  checkTrackQuota,
   resolveCompanyWidgetTheme,
   listDomainsByKey,
   getKeyCompanyId,
@@ -32,8 +34,11 @@ import {
   count,
 } from "@ag-ui/database";
 import { generateWidgetKey, hashWidgetKey, logger, buildAnswerSystemPrompt, streamChatCompletionGenerator } from "@ag-ui/shared";
+import { analyticsQueue } from "@ag-ui/queues";
+import { validateTrackEvent, hashVisitor, dailySalt, newSessionHash } from "@ag-ui/analytics";
+import { randomUUID } from "node:crypto";
 
-function getClientIp(request: Request): string {
+export function getClientIp(request: Request): string {
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) return forwarded.split(",")[0].trim();
   const realIp = request.headers.get("x-real-ip");
@@ -357,6 +362,134 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
     {
       params: t.Object({ key: t.String() }),
       detail: { summary: "Get widget config", description: "Resolves an opaque widget key to public company config and readiness." },
+    }
+  )
+  // 5. Public anonymous chat by opaque key (READY-gated + rate-limited SSE).
+  // 5b. Fire-and-forget tracking collector (pageviews/conversions/chat events).
+  // Flow: key auth -> origin gate -> DNT respect -> track rate limit ->
+  // edge-hash identity (raw IP never stored) -> validate -> enqueue -> 202.
+  // Always 202 on intake (even when dropped) so pages never stall on us.
+  .post(
+    "/:key/track",
+    async ({ params, body, set, request }) => {
+      // Anonymous endpoint (the only credential is the widget key in the URL;
+      // no cookies or sessions exist), so echoing the caller origin is safe
+      // and works for credentialed and plain requests alike. A hardcoded "*"
+      // breaks browsers that send credentials (track POSTs were stored
+      // server-side while the page logged ERR_FAILED).
+      const origin = request.headers.get("origin");
+      if (origin) {
+        set.headers["access-control-allow-origin"] = origin;
+        set.headers["vary"] = "Origin";
+      } else {
+        set.headers["access-control-allow-origin"] = "*";
+      }
+
+      const resolved = await resolveActiveKey(params.key);
+      if (resolved.error === "not_found") {
+        set.status = 404;
+        return { error: "Widget key not found" };
+      }
+      if (resolved.error === "revoked" || !resolved.row || !resolved.keyHash) {
+        set.status = 410;
+        return { error: "Widget key revoked" };
+      }
+
+      let gate;
+      try {
+        gate = await assertOriginAllowed(resolved.row.id, request);
+      } catch (err) {
+        logger.error(`[EMBED TRACK] Gate unavailable: ${(err as Error)?.message ?? err}`);
+        set.status = 503;
+        return { error: "Assistant unavailable - try again shortly" };
+      }
+      if (!gate.allowed) {
+        set.status = 403;
+        return { error: "This key is not allowed on this site", reason: gate.reason };
+      }
+
+      // Do-Not-Track: acknowledge but never store.
+      if (request.headers.get("dnt") === "1") {
+        set.status = 202;
+        return { tracked: false, reason: "dnt" };
+      }
+
+      const ip = getClientIp(request);
+      const limit = await checkTrackRateLimit(resolved.keyHash, ip);
+      if (!limit.allowed) {
+        set.status = 429;
+        set.headers["retry-after"] = String(limit.retryAfterSec);
+        return { tracked: false, reason: "rate-limited", retryAfterSec: limit.retryAfterSec };
+      }
+
+      // Per-key daily quota: one tenant's flood burns only its own budget.
+      const quota = await checkTrackQuota(resolved.row.id);
+      if (!quota.allowed) {
+        set.status = 202;
+        return { tracked: false, reason: "quota" };
+      }
+
+      const ua = (request.headers.get("user-agent") || "").slice(0, 300);
+      const raw = {
+        event_id:
+          typeof body.event_id === "string" && body.event_id.length > 0
+            ? body.event_id
+            : randomUUID(),
+        type: body.type,
+        company_id: resolved.row.companyId, // server-resolved, never client-trusted
+        widget_key_id: resolved.row.id,
+        url: body.url,
+        path: body.path,
+        referrer: body.referrer,
+        viewport: body.viewport,
+        user_agent: typeof body.user_agent === "string" && body.user_agent.length > 0 ? body.user_agent : ua,
+        session_hash:
+          typeof body.session_hash === "string" && body.session_hash.length > 0
+            ? body.session_hash
+            : newSessionHash(),
+        // Cookieless identity, hashed at the edge. Raw IP goes no further.
+        visitor_hash: hashVisitor(ip, ua, dailySalt()),
+        value: body.value,
+        meta: body.meta,
+        created_at: body.created_at,
+      };
+      const checked = validateTrackEvent(raw);
+      if (!checked.ok) {
+        set.status = 400;
+        return { error: `Invalid track event: ${checked.reason}` };
+      }
+
+      try {
+        await analyticsQueue.add("ingest", { event: checked.event });
+      } catch (err: any) {
+        // Shed, don't stall: beacon traffic is expendable, pages are not.
+        logger.warn(`[EMBED TRACK] enqueue shed: ${err?.message ?? err}`);
+        set.status = 202;
+        return { tracked: false, reason: "shed" };
+      }
+
+      set.status = 202;
+      return { tracked: true };
+    },
+    {
+      params: t.Object({ key: t.String() }),
+      body: t.Object({
+        event_id: t.Optional(t.String()),
+        type: t.Optional(t.String()),
+        url: t.Optional(t.String()),
+        path: t.Optional(t.String()),
+        referrer: t.Optional(t.String()),
+        viewport: t.Optional(t.String()),
+        user_agent: t.Optional(t.String()),
+        session_hash: t.Optional(t.String()),
+        value: t.Optional(t.Union([t.Number(), t.String()])),
+        meta: t.Optional(t.Any()),
+        created_at: t.Optional(t.String()),
+      }),
+      detail: {
+        summary: "Track pageview/conversion event",
+        description: "Validates a cookieless track event and enqueues it for batch ingestion. Always 202 on intake.",
+      },
     }
   )
   // 5. Public anonymous chat by opaque key (READY-gated + rate-limited SSE).

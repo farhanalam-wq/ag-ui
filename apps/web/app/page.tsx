@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
@@ -43,7 +43,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useSelectedCompany } from "@/stores/use-company-store";
-import { getOverviewMock } from "@/mocks/overview";
+import type { OverviewMock } from "@/mocks/overview";
+import { apiClient } from "@/lib/api-client";
 
 const INTENT_COLORS = [
   "hsl(var(--chart-1))",
@@ -110,10 +111,38 @@ export default function OverviewPage() {
   const [range, setRange] = useState<"7" | "14">("14");
   const [refreshKey, setRefreshKey] = useState(0);
   const [pendingHref, setPendingHref] = useState<string | null>(null);
-  const data = useMemo(
-    () => (company ? getOverviewMock(company.id, company.name) : null),
-    [company?.id, company?.name]
-  );
+  // Live measured overview (Phase 4). No mock fallback: a failed fetch is an
+  // honest error card, never silently fake numbers.
+  const [data, setData] = useState<OverviewMock | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!company) {
+      setData(null);
+      setLoadError(null);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
+    apiClient.analytics
+      .overview(company.id, range === "7" ? "7d" : "14d")
+      .then((d) => {
+        if (!cancelled) {
+          setData(d);
+          setLoading(false);
+        }
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setLoadError(e instanceof Error ? e.message : String(e));
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [company?.id, range, refreshKey]);
 
   const rangeLabel = range === "7" ? "last 7 days" : "last 14 days";
 
@@ -168,6 +197,12 @@ export default function OverviewPage() {
             </div>
             {data && (
               <div className="flex flex-wrap items-center gap-2">
+                <Badge
+                  variant="outline"
+                  className="rounded-full border-emerald-500/30 bg-emerald-500/10 font-normal text-emerald-700 dark:text-emerald-300"
+                >
+                  Live
+                </Badge>
                 <Badge
                   variant="outline"
                   className="rounded-full font-normal"
@@ -235,7 +270,33 @@ export default function OverviewPage() {
             )}
           </div>
 
-          {!data ? (
+          {!data && loading && (
+            <div className="mt-6 space-y-4">
+              <Skeleton className="h-[120px] w-full" />
+              <Skeleton className="h-[280px] w-full" />
+            </div>
+          )}
+          {!data && !loading && loadError && (
+            <div
+              role="alert"
+              className="mx-auto mt-6 max-w-[60ch] rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-center"
+            >
+              <p className="text-sm font-medium">Overview unavailable</p>
+              <p className="mt-1 font-mono text-xs text-muted-foreground">
+                {loadError}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => setRefreshKey((k) => k + 1)}
+              >
+                Retry
+              </Button>
+            </div>
+          )}
+          {!data && !loading && !loadError && (
             <div className="flex flex-col items-center justify-center py-24 text-center">
               <ChartLineUp
                 className="size-8 text-muted-foreground"
@@ -259,7 +320,8 @@ export default function OverviewPage() {
                 Ingest a site
               </Button>
             </div>
-          ) : (
+          )}
+          {data && (
             <div className="mt-6 min-w-0 space-y-4">
               {/* Starter: 4 action boxes, no outer card */}
               <div>

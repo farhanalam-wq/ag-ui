@@ -363,6 +363,61 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
     }
   )
 
+  // 3b. Cancel a live crawl job — frees the concurrency cap immediately.
+  .post(
+    "/jobs/:id/cancel",
+    async ({ params, set }) => {
+      const [job] = await db
+        .select()
+        .from(crawlJobs)
+        .where(eq(crawlJobs.id, params.id))
+        .limit(1);
+
+      if (!job) {
+        set.status = 404;
+        return { error: "Job not found" };
+      }
+
+      const terminal = ["READY", "FAILED", "CANCELLED"];
+      if (terminal.includes(job.status)) {
+        return { job, cancelled: false, message: `Job already ${job.status}` };
+      }
+
+      const [updated] = await db
+        .update(crawlJobs)
+        .set({
+          status: "CANCELLED",
+          errorSample: { operator: "cancelled via POST /api/crawler/jobs/:id/cancel" } as any,
+          updatedAt: new Date(),
+        })
+        .where(eq(crawlJobs.id, job.id))
+        .returning();
+
+      if (job.snapshotId) {
+        try {
+          await db
+            .update(companySnapshots)
+            .set({ status: "CANCELLED" })
+            .where(eq(companySnapshots.id, job.snapshotId));
+        } catch {
+          // Non-blocking
+        }
+      }
+
+      logger.info(`[API:CANCEL] Crawl job ${job.id} (${job.status} -> CANCELLED)`);
+      return { job: updated, cancelled: true };
+    },
+    {
+      params: t.Object({
+        id: t.String(),
+      }),
+      detail: {
+        summary: "Cancel a crawl job",
+        description: "Marks a live crawl job and its snapshot CANCELLED, freeing the concurrency cap.",
+      },
+    }
+  )
+
   // 3. Query status of the latest crawl job for a domain
   .get(
     "/status/:domain",

@@ -142,6 +142,84 @@ export function MonitoringTrendChart({
   );
 }
 
+const conversionConfig = {
+  conversions: { label: "Conversions", color: "hsl(var(--chart-2))" },
+} satisfies ChartConfig;
+
+/** Single-series daily conversions (revenue shown in cards, never dual-axed). */
+export function ConversionsChart({
+  daily,
+  refreshKey,
+}: {
+  daily: { d: string; conversions: number; revenue: number }[];
+  refreshKey: number;
+}) {
+  return (
+    <ChartContainer
+      key={refreshKey}
+      config={conversionConfig}
+      className="h-[280px] w-full"
+    >
+      <AreaChart
+        data={daily}
+        margin={{ top: 4, right: 8, bottom: 0, left: -12 }}
+      >
+        <defs>
+          <linearGradient
+            id="conv-fill"
+            x1="0"
+            y1="0"
+            x2="0"
+            y2="1"
+          >
+            <stop
+              offset="0%"
+              stopColor="hsl(var(--chart-2))"
+              stopOpacity={0.22}
+            />
+            <stop
+              offset="100%"
+              stopColor="hsl(var(--chart-2))"
+              stopOpacity={0.03}
+            />
+          </linearGradient>
+        </defs>
+        <CartesianGrid
+          stroke="hsl(var(--border))"
+          vertical={false}
+        />
+        <XAxis
+          dataKey="d"
+          tickLine={false}
+          axisLine={false}
+          tick={{
+            fill: "hsl(var(--muted-foreground))",
+            fontSize: 12,
+          }}
+          minTickGap={32}
+        />
+        <YAxis
+          tickLine={false}
+          axisLine={false}
+          tick={{
+            fill: "hsl(var(--muted-foreground))",
+            fontSize: 12,
+          }}
+          width={40}
+        />
+        <ChartTooltip content={<ChartTooltipContent />} />
+        <Area
+          dataKey="conversions"
+          strokeWidth={2}
+          dot={false}
+          stroke="var(--color-conversions)"
+          fill="url(#conv-fill)"
+        />
+      </AreaChart>
+    </ChartContainer>
+  );
+}
+
 export function IntentRadarChart({
   radarData,
 }: {

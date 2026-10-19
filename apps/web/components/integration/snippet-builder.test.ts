@@ -14,8 +14,7 @@ describe("buildSnippet", () => {
     expect(s).toContain("data-api-base=\"http://localhost:3001\"");
   });
 
-  test("adds position only when bottom-left", () => {
-    const def = buildSnippet({
+  test("adds position only when bottom-left", () => {    const def = buildSnippet({
       webOrigin: "https://x.com",
       raw: "agw_a",
       apiBase: "https://api.x.com",
@@ -31,5 +30,24 @@ describe("buildSnippet", () => {
     });
     expect(left).toContain('data-position="bottom-left"');
     expect(left.endsWith(" defer></script>")).toBe(true);
+  });
+
+  test("adds data-track only when opted in", () => {
+    const off = buildSnippet({
+      webOrigin: "https://x.com",
+      raw: "agw_a",
+      apiBase: "https://api.x.com",
+      companyName: "X",
+    });
+    expect(off).not.toContain("data-track");
+    const on = buildSnippet({
+      webOrigin: "https://x.com",
+      raw: "agw_a",
+      apiBase: "https://api.x.com",
+      companyName: "X",
+      track: true,
+    });
+    expect(on).toContain('data-track="on"');
+    expect(on.endsWith(" defer></script>")).toBe(true);
   });
 });

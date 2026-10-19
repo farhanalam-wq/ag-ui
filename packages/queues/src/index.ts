@@ -14,6 +14,7 @@ export const QUEUE_NAMES = {
   VOICE: "voice-queue",
   ENRICH: "enrich-queue",
   BRAND: "brand-queue",
+  ANALYTICS: "analytics-queue",
 } as const;
 
 export const crawlQueue = new Queue(QUEUE_NAMES.CRAWL, {
@@ -34,6 +35,37 @@ export const enrichQueue = new Queue(QUEUE_NAMES.ENRICH, {
 
 export const brandQueue = new Queue(QUEUE_NAMES.BRAND, {
   connection: redisConnection,
+});
+
+export interface AnalyticsTrackJobData {
+  /** Single validated track event; the worker buffers + batch-inserts. */
+  event: {
+    event_id: string;
+    type: "pageview" | "chat_open" | "chat_message" | "conversion";
+    company_id: string;
+    widget_key_id: string | null;
+    url: string;
+    path: string;
+    referrer: string;
+    viewport: string;
+    user_agent: string;
+    session_hash: string;
+    visitor_hash: string;
+    value: number | null;
+    meta: Record<string, unknown> | null;
+    created_at: string;
+  };
+}
+
+export const analyticsQueue = new Queue(QUEUE_NAMES.ANALYTICS, {
+  connection: redisConnection,
+  defaultJobOptions: {
+    // Tracking is fire-and-forget: no retries on poison jobs, and completed
+    // records are trimmed so one tenant's burst cannot grow Redis forever.
+    attempts: 1,
+    removeOnComplete: 1000,
+    removeOnFail: 2000,
+  },
 });
 
 export interface EnrichJobData {

@@ -211,8 +211,250 @@
   document.body.appendChild(orb);
   document.body.appendChild(frame);
 
-  // --- Readiness / brand pre-check (best-effort, never blocks render) -------
-  if (!widgetKey) return;
+  // --- Cookieless traffic tracking (opt-in via data-track="on") -------------
+  // ~1KB, zero dependencies. Pageviews (incl. SPA route changes) and
+  // data-ag-convert clicks beacon to POST /api/embed/:key/track.
+  // Identity stays server-side: the snippet sends only a random per-tab
+  // session id; visitor hashing happens at the collector edge.
+  // Respects DNT both ways (skips here, collector drops regardless).
+  try {
+    if (trackEnabled() && widgetKey) initTracking();
+  } catch (e) {
+    /* tracking must never break the widget */
+  }
+
+  function trackEnabled() {
+    if (dataset.track !== "on") return false;
+    try {
+      if (navigator.doNotTrack === "1") return false;
+    } catch (e) {
+      /* fall through */
+    }
+    return true;
+  }
+
+  function initTracking() {
+    var sessKey = "ag_sess";
+    var sessionId = null;
+    try {
+      sessionId = window.sessionStorage.getItem(sessKey);
+      if (!sessionId) {
+        sessionId = newEventId();
+        window.sessionStorage.setItem(sessKey, sessionId);
+      }
+    } catch (e) {
+      sessionId = newEventId();
+    }
+
+    function newEventId() {
+      try {
+        if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+      } catch (e) {
+        /* fall through */
+      }
+      return "ag-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 12);
+    }
+
+    function viewport() {
+      try {
+        return window.innerWidth + "x" + window.innerHeight;
+      } catch (e) {
+        return "";
+      }
+    }
+
+    function send(type, extra) {
+      var payload = {
+        event_id: newEventId(),
+        type: type,
+        url: String(window.location.href).slice(0, 2048),
+        referrer: String(document.referrer || "").slice(0, 2048),
+        viewport: viewport(),
+        user_agent: String(navigator.userAgent || "").slice(0, 300),
+        session_hash: sessionId,
+      };
+      if (extra) {
+        for (var k in extra) {
+          if (Object.prototype.hasOwnProperty.call(extra, k)) payload[k] = extra[k];
+        }
+      }
+      var body;
+      try {
+        body = JSON.stringify(payload);
+      } catch (e) {
+        return;
+      }
+      var endpoint = apiBase + "/api/embed/" + encodeURIComponent(widgetKey) + "/track";
+      try {
+        if (navigator.sendBeacon) {
+          var blob = new Blob([body], { type: "application/json" });
+          if (navigator.sendBeacon(endpoint, blob)) return;
+        }
+      } catch (e) {
+        /* fall through to fetch */
+      }
+      try {
+        fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: body,
+          keepalive: true,
+          // Tracking is anonymous (key in URL, no cookies): never send
+          // credentials, so a wildcard ACAO can never block us either.
+          credentials: "omit",
+        }).catch(function () {});
+      } catch (e) {
+        /* fire-and-forget */
+      }
+    }
+
+    var lastTrackedUrl = null;
+    var pageviewSent = false;
+    var scrollFired = {};
+    function trackPageview() {
+      var href = String(window.location.href);
+      if (href === lastTrackedUrl) return;
+      lastTrackedUrl = href;
+      pageviewSent = true;
+      scrollFired = {};
+      var title = "";
+      try {
+        title = String(document.title || "").slice(0, 128);
+      } catch (e) {
+        /* fall through */
+      }
+      send("pageview", title ? { meta: { title: title } } : undefined);
+    }
+
+    function trackVisiblePageview() {
+      if (document.visibilityState === "visible") {
+        trackPageview();
+      } else {
+        var onVis = function () {
+          if (document.visibilityState === "visible") {
+            document.removeEventListener("visibilitychange", onVis);
+            trackPageview();
+          }
+        };
+        document.addEventListener("visibilitychange", onVis);
+      }
+    }
+
+    trackVisiblePageview();
+
+    // SPA route changes (history API + back/forward).
+    function wrapHistory(fnName) {
+      try {
+        var orig = window.history[fnName];
+        if (!orig) return;
+        window.history[fnName] = function () {
+          var r = orig.apply(this, arguments);
+          window.setTimeout(trackPageview, 0);
+          return r;
+        };
+      } catch (e) {
+        /* fall through */
+      }
+    }
+    wrapHistory("pushState");
+    wrapHistory("replaceState");
+    window.addEventListener("popstate", function () {
+      window.setTimeout(trackPageview, 0);
+    });
+
+    // Unload flush: only if nothing was sent yet (avoids double count).
+    window.addEventListener("pagehide", function () {
+      if (!pageviewSent) trackPageview();
+    });
+
+    // B2C conversions: <button data-ag-convert data-value="49.99">Buy</button>.
+    // Configured clicks: any [data-ag-click="name"]. File downloads (anchor
+    // download attr or file extension) beacon as download with the href.
+    var FILE_EXT = /\.(pdf|zip|csv|xlsx?|pptx?|docx?|txt|mp3|mp4|dmg|exe)$/i;
+    document.addEventListener("click", function (ev) {
+      var el = ev.target && ev.target.closest ? ev.target.closest("[data-ag-convert]") : null;
+      if (el) {
+        var extra = {};
+        var v = el.getAttribute("data-value");
+        if (v !== null && v !== "") extra.value = v;
+        var name = el.getAttribute("data-convert-name");
+        if (name) extra.meta = { name: name.slice(0, 64) };
+        send("conversion", extra);
+        return;
+      }
+      var t = ev.target && ev.target.closest ? ev.target.closest("[data-ag-click],a,button") : null;
+      if (!t) return;
+      var cn = t.getAttribute ? t.getAttribute("data-ag-click") : null;
+      if (cn) {
+        send("click", { meta: { name: String(cn).slice(0, 64) } });
+        return;
+      }
+      if (t.tagName === "A") {
+        var href = t.getAttribute("href") || "";
+        if (t.hasAttribute("download") || FILE_EXT.test(href.split(/[?#]/)[0])) {
+          send("download", { meta: { href: href.slice(0, 512) } });
+        }
+      }
+    });
+
+    // Scroll depth: fire once per threshold per page (25/50/75/90).
+    var scrollTick = false;
+    function checkScroll() {
+      scrollTick = false;
+      var depth = 0;
+      try {
+        var h = document.documentElement.scrollHeight - window.innerHeight;
+        depth = h > 0 ? (window.scrollY + window.innerHeight) / (h + window.innerHeight) : 1;
+      } catch (e) {
+        return;
+      }
+      var marks = [0.25, 0.5, 0.75, 0.9];
+      for (var i = 0; i < marks.length; i++) {
+        if (depth >= marks[i] && !scrollFired[marks[i]]) {
+          scrollFired[marks[i]] = true;
+          send("scroll", { meta: { depth: Math.round(marks[i] * 100) } });
+        }
+      }
+    }
+    window.addEventListener(
+      "scroll",
+      function () {
+        lastActive = Date.now();
+        if (!scrollTick) {
+          scrollTick = true;
+          if (window.requestAnimationFrame) window.requestAnimationFrame(checkScroll);
+          else window.setTimeout(checkScroll, 200);
+        }
+      },
+      { passive: true }
+    );
+
+    // Heartbeat: every 15s while visible and recently active. Volume guard:
+    // beacon only (no fetch retry storm), and the worker batches writes.
+    var lastActive = Date.now();
+    function markActive() {
+      lastActive = Date.now();
+    }
+    window.addEventListener("mousemove", markActive, { passive: true });
+    window.addEventListener("keydown", markActive);
+    window.setInterval(function () {
+      try {
+        if (document.visibilityState === "visible" && Date.now() - lastActive < 30000) {
+          send("heartbeat");
+        }
+      } catch (e) {
+        /* fire-and-forget */
+      }
+    }, 15000);
+
+    // Custom events: __agUiTrack("conversion", { value: 49.99 }).
+    window.__agUiTrack = function (type, extra) {
+      if (type !== "pageview" && type !== "conversion" && type !== "scroll" && type !== "download" && type !== "click" && type !== "heartbeat") return;
+      send(type, extra || {});
+    };
+  }
+
+  // --- Readiness / brand pre-check (best-effort, never blocks render) -------  if (!widgetKey) return;
   fetch(apiBase + "/api/embed/" + encodeURIComponent(widgetKey) + "/config")
     .then(function (res) {
       if (res.status === 404) {

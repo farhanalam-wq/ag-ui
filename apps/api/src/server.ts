@@ -3,6 +3,7 @@ import { cors } from "@elysiajs/cors";
 import { swagger } from "@elysiajs/swagger";
 import { logger } from "@ag-ui/shared";
 import { companiesRoutes } from "./routes/companies";
+import { analyticsRoutes } from "./routes/analytics";
 import { chatRoutes } from "./routes/chat";
 import { crawlerRoutes } from "./routes/crawler";
 import { brandRoutes } from "./routes/brand";
@@ -37,6 +38,7 @@ export const app = new Elysia()
     documentation: "/swagger",
   }))
   .use(companiesRoutes)
+  .use(analyticsRoutes)
   .use(chatRoutes)
   .use(crawlerRoutes)
   .use(brandRoutes)

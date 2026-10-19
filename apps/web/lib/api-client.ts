@@ -39,8 +39,124 @@ export interface DiscoveredPageItem {
   depth: number;
 }
 
-export interface DiscoveryResponse {
-  success: boolean;
+export interface WebsiteAnalytics {
+  companyId: string;
+  rangeDays: number;
+  totals: { sessions: number; pageviews: number; uniques: number | null; conversions: number };
+  trend: { d: string; pageviews: number; sessions: number }[];
+  topPages: { label: string; views: number }[];
+  referrers: { label: string; views: number }[];
+  viewports: { label: string; views: number }[];
+  dataQuality: string[];
+}
+
+export interface ConversionAnalytics {
+  companyId: string;
+  rangeDays: number;
+  totals: {
+    conversions: number;
+    revenue: number;
+    assistedConversions: number;
+    assistedRevenue: number;
+    conversionRate: number;
+    revenuePerSession: number;
+  };
+  daily: { d: string; conversions: number; revenue: number }[];
+  funnel: { stage: string; count: number; pctOfTop: number }[];
+  dataQuality: string[];
+}
+
+export interface RealtimeSnapshot {
+  companyId: string;
+  windowMinutes: number;
+  views: number;
+  sessions: number;
+  topPaths: { path: string; views: number }[];
+}
+
+export interface BreakdownRow {
+  label: string;
+  pageviews: number;
+  sessions: number;
+}
+
+export interface AcquisitionAnalytics {
+  kind: "acquisition";
+  companyId: string;
+  rangeDays: number;
+  compare: "previous-period" | "off";
+  totals: Record<string, number>;
+  previousTotals?: Record<string, number>;
+  trend: { d: string; pageviews: number; sessions: number }[];
+  byChannel: BreakdownRow[];
+  bySourceMedium: BreakdownRow[];
+  byCampaign: BreakdownRow[];
+  byLandingPage: BreakdownRow[];
+  freshness: { computedAt: string; rollupLagMinutes: number; live: boolean; dataQuality: string[] };
+}
+
+export interface EngagementAnalytics {
+  kind: "engagement";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  trend: { d: string; sessions: number; pageviews: number; engagedSessions: number }[];
+  byPath: BreakdownRow[];
+  byDevice: BreakdownRow[];
+  freshness: { computedAt: string; rollupLagMinutes: number; live: boolean; dataQuality: string[] };
+}
+
+export interface ContentAnalytics {
+  kind: "content";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  byPath: BreakdownRow[];
+  byTitle: BreakdownRow[];
+  byChannel: BreakdownRow[];
+  byDevice: BreakdownRow[];
+  freshness: { computedAt: string; rollupLagMinutes: number; live: boolean; dataQuality: string[] };
+}
+
+export interface InsightsPayload {
+  kind: "insights";
+  companyId: string;
+  rangeDays: number;
+  qualityMatrix: {
+    channel: string;
+    sessions: number;
+    pageviews: number;
+    pagesPerSession: number;
+    interactionRate: number;
+    singleViewShare: number;
+    qualityScore: number;
+    confidence: "high" | "low";
+  }[];
+  opportunityMap: {
+    path: string;
+    sessions: number;
+    singleViewShare: number;
+    engagedRate: number;
+    opportunity: string;
+    reason: string;
+  }[];
+  journeys: { from: string; to: string; journeys: number; shareOfEntry: number }[];
+  anomalies: {
+    metric: string;
+    day: string;
+    observed: number;
+    expected: number;
+    z: number;
+    direction: "spike" | "dip";
+    baselineWindow: string;
+    context: { label: string; pageviews: number; sessions: number }[];
+    note: string;
+  }[];
+  thresholds: Record<string, number>;
+  freshness: { computedAt: string; rollupLagMinutes: number; live: boolean; dataQuality: string[] };
+}
+
+export interface DiscoveryResponse {  success: boolean;
   domain: string;
   origin: string;
   pages: DiscoveredPageItem[];
@@ -444,6 +560,124 @@ class ApiClient {
       if (res.status === 404) throw new Error("Company not found");
       if (!res.ok) {
         throw new Error(`Failed to discard theme: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+  };
+
+  /**
+   * Analytics endpoints (live measured metrics; same shapes as web mocks)
+   */
+  analytics = {
+    overview: async (
+      companyId: string,
+      range: "7d" | "14d" | "30d" = "14d"
+    ): Promise<import("@/mocks/overview").OverviewMock> => {
+      const res = await fetch(
+        `${this.baseUrl}/api/analytics/overview?companyId=${encodeURIComponent(companyId)}&range=${range}`
+      );
+      if (res.status === 404) throw new Error("Company not found");
+      if (!res.ok) {
+        throw new Error(`Overview unavailable: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+
+    website: async (companyId: string, range = "30d"): Promise<WebsiteAnalytics> => {
+      const res = await fetch(
+        `${this.baseUrl}/api/analytics/website?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      );
+      if (res.status === 404) throw new Error("Company not found");
+      if (!res.ok) {
+        throw new Error(`Website analytics unavailable: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+
+    conversions: async (companyId: string, range = "30d"): Promise<ConversionAnalytics> => {
+      const res = await fetch(
+        `${this.baseUrl}/api/analytics/conversions?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      );
+      if (res.status === 404) throw new Error("Company not found");
+      if (!res.ok) {
+        throw new Error(`Conversion analytics unavailable: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+
+    realtime: async (companyId: string): Promise<RealtimeSnapshot> => {
+      const res = await fetch(
+        `${this.baseUrl}/api/analytics/realtime?companyId=${encodeURIComponent(companyId)}`
+      );
+      if (res.status === 404) throw new Error("Company not found");
+      if (!res.ok) {
+        throw new Error(`Realtime snapshot unavailable: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+
+    acquisition: async (
+      companyId: string,
+      range = "30d",
+      opts?: { compare?: boolean; channels?: string[] }
+    ): Promise<AcquisitionAnalytics> => {
+      const q = new URLSearchParams({ companyId, range });
+      if (opts?.compare) q.set("compare", "previous");
+      if (opts?.channels?.length) q.set("channels", opts.channels.join(","));
+      const res = await fetch(`${this.baseUrl}/api/analytics/acquisition?${q.toString()}`);
+      if (res.status === 404) throw new Error("Company not found");
+      if (!res.ok) {
+        throw new Error(`Acquisition analytics unavailable: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+
+    engagement: async (companyId: string, range = "30d"): Promise<EngagementAnalytics> => {
+      const res = await fetch(
+        `${this.baseUrl}/api/analytics/engagement?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      );
+      if (res.status === 404) throw new Error("Company not found");
+      if (!res.ok) {
+        throw new Error(`Engagement analytics unavailable: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+
+    content: async (companyId: string, range = "30d"): Promise<ContentAnalytics> => {
+      const res = await fetch(
+        `${this.baseUrl}/api/analytics/content?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      );
+      if (res.status === 404) throw new Error("Company not found");
+      if (!res.ok) {
+        throw new Error(`Content analytics unavailable: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+
+    insights: async (companyId: string, range = "14d"): Promise<InsightsPayload> => {
+      const res = await fetch(
+        `${this.baseUrl}/api/analytics/insights?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      );
+      if (res.status === 404) throw new Error("Company not found");
+      if (!res.ok) {
+        throw new Error(`Insights unavailable: HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+
+    copilot: async (
+      companyId: string,
+      question: string
+    ): Promise<
+      | { ok: true; answer: { summary: string[]; supporting: { label: string; value: string }[]; widgetSpec?: { component: string } } }
+      | { ok: false; rejection: { code: string; message: string; examples: string[] } }
+    > => {
+      const res = await fetch(
+        `${this.baseUrl}/api/analytics/copilot?companyId=${encodeURIComponent(companyId)}&question=${encodeURIComponent(question)}`
+      );
+      if (res.status === 404) throw new Error("Company not found");
+      if (!res.ok) {
+        throw new Error(`Copilot unavailable: HTTP ${res.status}`);
       }
       return res.json();
     },

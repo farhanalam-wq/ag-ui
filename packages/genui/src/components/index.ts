@@ -11,3 +11,5 @@ export * from "./geo-card";
 export * from "./executive-brief";
 export * from "./global-network-map";
 export * from "./route-map";
+export * from "./analytics-trend";
+export * from "./analytics-table";

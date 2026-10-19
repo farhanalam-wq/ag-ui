@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, integer, index, boolean, unique } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, integer, index, boolean, unique, numeric, date, primaryKey } from "drizzle-orm/pg-core";
 
 export const companies = pgTable("companies", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -258,6 +258,98 @@ export const brandStylesheets = pgTable(
   (t) => [index("brand_stylesheets_company_idx").on(t.companyId)]
 );
 
+/**
+ * Analytics tables — ORM READ definitions over migrate-script-owned
+ * tables (packages/database/src/migrate-analytics*.ts, worker-managed
+ * monthly partitions). The ORM never migrates these: never add them to
+ * a drizzle-kit push scope; DDL stays in the migrate scripts so
+ * `CREATE TABLE IF NOT EXISTS` + partition logic is the single owner.
+ */
+export const pageViews = pgTable(
+  "page_views",
+  {
+    id: uuid("id").defaultRandom().notNull(),
+    eventId: text("event_id").notNull(),
+    type: text("type").default("pageview").notNull(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    widgetKeyId: uuid("widget_key_id"),
+    sessionHash: text("session_hash").notNull(),
+    visitorHash: text("visitor_hash").notNull(),
+    url: text("url").notNull(),
+    path: text("path").notNull(),
+    referrer: text("referrer").default("").notNull(),
+    viewport: text("viewport").default("").notNull(),
+    userAgent: text("user_agent").default("").notNull(),
+    isBot: boolean("is_bot").default(false).notNull(),
+    value: numeric("value"),
+    meta: jsonb("meta"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.id, t.createdAt] })]
+);
+
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    sessionHash: text("session_hash").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    pageviewCount: integer("pageview_count").default(0).notNull(),
+    activeSeconds: integer("active_seconds").default(0).notNull(),
+    converted: boolean("converted").default(false).notNull(),
+    revenue: numeric("revenue").default("0").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [unique("sessions_company_session_started_unique").on(t.companyId, t.sessionHash, t.startedAt)]
+);
+
+export const metricsDaily = pgTable(
+  "metrics_daily",
+  {
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    day: date("day").notNull(),
+    pageviews: integer("pageviews").default(0).notNull(),
+    sessions: integer("sessions").default(0).notNull(),
+    conversions: integer("conversions").default(0).notNull(),
+    revenue: numeric("revenue").default("0").notNull(),
+    chatOpens: integer("chat_opens").default(0).notNull(),
+    messages: integer("messages").default(0).notNull(),
+    scrolls: integer("scrolls").default(0).notNull(),
+    downloads: integer("downloads").default(0).notNull(),
+    clicks: integer("clicks").default(0).notNull(),
+    heartbeats: integer("heartbeats").default(0).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.companyId, t.day] })]
+);
+
+export const metricsHourly = pgTable(
+  "metrics_hourly",
+  {
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    hour: timestamp("hour", { withTimezone: true }).notNull(),
+    pageviews: integer("pageviews").default(0).notNull(),
+    sessions: integer("sessions").default(0).notNull(),
+    conversions: integer("conversions").default(0).notNull(),
+    revenue: numeric("revenue").default("0").notNull(),
+    chatOpens: integer("chat_opens").default(0).notNull(),
+    messages: integer("messages").default(0).notNull(),
+    scrolls: integer("scrolls").default(0).notNull(),
+    downloads: integer("downloads").default(0).notNull(),
+    clicks: integer("clicks").default(0).notNull(),
+    heartbeats: integer("heartbeats").default(0).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.companyId, t.hour] })]
+);
 /**
  * Published widget theme override — one row per company, written ONLY by the
  * Widget Studio "Publish" action (Discard deletes it). Draft edits stay

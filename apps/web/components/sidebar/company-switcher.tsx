@@ -39,7 +39,7 @@ export interface CompanyItem {
 
 interface CompanySwitcherProps {
   companies: CompanyItem[];
-  selectedCompany: CompanyItem;
+  selectedCompany: CompanyItem | null;
   onSelectCompany: (company: CompanyItem) => void;
   onOpenAddDialog: () => void;
 }
@@ -72,23 +72,41 @@ export function CompanySwitcher({
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
-              <div
-                className="flex aspect-square size-8 items-center justify-center rounded-lg font-bold text-xs shrink-0"
-                style={{
-                  backgroundColor: `${selectedCompany.brandColor}20`,
-                  color: selectedCompany.brandColor,
-                }}
-              >
-                {selectedCompany.name.slice(0, 2).toUpperCase()}
-              </div>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">
-                  {selectedCompany.name}
-                </span>
-                <span className="truncate text-xs">
-                  {selectedCompany.domain}
-                </span>
-              </div>
+              {selectedCompany ? (
+                <>
+                  <div
+                    className="flex aspect-square size-8 items-center justify-center rounded-lg font-bold text-xs shrink-0"
+                    style={{
+                      backgroundColor: `${selectedCompany.brandColor}20`,
+                      color: selectedCompany.brandColor,
+                    }}
+                  >
+                    {selectedCompany.name.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="grid flex-1 text-left text-sm leading-tight">
+                    <span className="truncate font-medium">
+                      {selectedCompany.name}
+                    </span>
+                    <span className="truncate text-xs">
+                      {selectedCompany.domain}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex aspect-square size-8 items-center justify-center rounded-lg border border-dashed border-sidebar-border shrink-0">
+                    <Plus className="size-4" />
+                  </div>
+                  <div className="grid flex-1 text-left text-sm leading-tight">
+                    <span className="truncate font-medium">
+                      No sites yet
+                    </span>
+                    <span className="truncate text-xs">
+                      Add your first site
+                    </span>
+                  </div>
+                </>
+              )}
               <CaretUpDown className="ml-auto" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
@@ -119,11 +137,13 @@ export function CompanySwitcher({
             <div className="max-h-64 overflow-y-auto pr-1">
               {filteredCompanies.length === 0 ? (
                 <div className="py-4 text-center text-xs text-muted-foreground">
-                  No matching companies found
+                  {companies.length === 0
+                    ? "No sites yet — add your first site below"
+                    : "No matching companies found"}
                 </div>
               ) : (
                 filteredCompanies.map((company, index) => {
-                  const isSelected = company.id === selectedCompany.id;
+                  const isSelected = company.id === selectedCompany?.id;
                   return (
                     <DropdownMenuItem
                       key={company.id}
