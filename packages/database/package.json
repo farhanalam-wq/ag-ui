@@ -7,6 +7,8 @@
   "scripts": {
     "build": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:baseline": "bun src/db-baseline.ts",
     "db:push": "drizzle-kit push",
     "lint": "echo 'database: lint ok'"
   },

@@ -259,11 +259,11 @@ export const brandStylesheets = pgTable(
 );
 
 /**
- * Analytics tables — ORM READ definitions over migrate-script-owned
- * tables (packages/database/src/migrate-analytics*.ts, worker-managed
- * monthly partitions). The ORM never migrates these: never add them to
- * a drizzle-kit push scope; DDL stays in the migrate scripts so
- * `CREATE TABLE IF NOT EXISTS` + partition logic is the single owner.
+ * Analytics tables — ORM READ definitions over migration-owned tables
+ * (drizzle/0007_analytics.sql, worker-managed monthly partitions). DDL is
+ * hand-maintained there because page_views is RANGE-partitioned, which
+ * drizzle-kit cannot express. These definitions exist for typed reads only;
+ * keep them in sync with that migration.
  */
 export const pageViews = pgTable(
   "page_views",

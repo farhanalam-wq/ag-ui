@@ -7,7 +7,7 @@
  *
  * - sessions: gap-and-island over bounded windows (30-min inactivity splits
  *   one tab-session into two sessions). Keyed (company, session_hash,
- *   started_at) — see migrate-analytics-phase3.ts.
+ *   started_at) — see drizzle/0007_analytics.sql.
  * - metrics_hourly / metrics_daily: dashboard read path. Dashboards never
  *   touch raw page_views.
  * - HLL uniques: rebuilt per company-day from raw (bounded scan), read via

@@ -2,10 +2,15 @@
 
 ## Deploy order
 1. Postgres + Redis up (`docker-compose.yml`); verify `DATABASE_URL`, `REDIS_HOST/PORT`.
-2. Run migrations in order (all idempotent, safe to rerun):
-   `migrate-analytics.ts` → `migrate-analytics-phase3.ts` → `migrate-analytics-phase3b.ts`
-   (`bun packages/database/src/<file>.ts`). Unrelated: `migrate-task1-task2.ts`,
-   `migrate-drop-pgvector.ts` (pre-existing, destructive-adjacent — see Rollback).
+2. Apply DDL — **`db:migrate` is the single path** (`bun run db:migrate`, root):
+   - Fresh database → `db:migrate` applies `0000..0007` in order.
+   - Existing database built with `drizzle-kit push` (no ledger) → baseline once,
+     then migrate:
+     `bun run db:baseline --through=0006_woozy_talos` → `bun run db:migrate`.
+   `drizzle/0007_analytics.sql` owns the analytics tables (hand-written: `page_views`
+   is RANGE-partitioned, which drizzle-kit cannot express). Unrelated:
+   `migrate-task1-task2.ts`, `migrate-drop-pgvector.ts` (pre-existing, destructive-adjacent
+   — see Rollback).
 3. Start API (`apps/api`), web (`apps/web`), and at least one worker
    (`workers/worker`; without it the analytics queue has no consumer and
    dashboards go flat — this is the #1 cause of "dead analytics").
@@ -24,7 +29,10 @@ All rate paths fail open when Redis is down (by design — availability over pre
   detail older than the retain window (current + previous month never dropped).
 - `migrate-drop-pgvector.ts` is NOT analytics scope: drops `chunks.embedding`
   (reversible via the ALTER documented in that file). Do not run blindly.
-- No drizzle-kit push scope covers analytics tables; DDL owner is the migrate scripts.
+- Analytics DDL owner is `drizzle/0007_analytics.sql`. Do **not** use `db:push`
+  on this database: it would create `page_views` unpartitioned and fight the
+  runtime partition children. `db:migrate` (or `db:baseline` → `db:migrate`)
+  is the only supported path.
 
 ## Health & monitoring (all built-in, no paid services)
 - `GET /health` (API liveness), `GET /api/analytics/cache-stats` (`hits/misses`).
