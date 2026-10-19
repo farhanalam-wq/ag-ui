@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ListBullets } from "@phosphor-icons/react";
 import { StudioShell } from "@/components/studio-shell";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,44 +22,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useSelectedCompany } from "@/stores/use-company-store";
-import { apiClient, type ContentAnalytics, type BreakdownRow } from "@/lib/api-client";
-
-type Range = "7d" | "30d" | "90d";
+import { apiClient, type BreakdownRow } from "@/lib/api-client";
+import { useCompanyReport, type Range } from "@/lib/analytics";
 
 export default function ContentAnalyticsPage() {
   const company = useSelectedCompany();
   const [range, setRange] = useState<Range>("30d");
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [data, setData] = useState<ContentAnalytics | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!company) {
-      setData(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setLoadError(null);
-    apiClient.analytics
-      .content(company.id, range)
-      .then((c) => {
-        if (!cancelled) {
-          setData(c);
-          setLoading(false);
-        }
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) {
-          setLoadError(e instanceof Error ? e.message : String(e));
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [company?.id, range, refreshKey]);
+  const { data, loading, loadError, refreshKey, setRefreshKey } = useCompanyReport(
+    company,
+    (companyId) => apiClient.analytics.content(companyId, range),
+    [range]
+  );
 
   const splitTable = (title: string, desc: string, rows: BreakdownRow[], mono: boolean) => (
     <Card>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Robot, ShieldCheck } from "@phosphor-icons/react";
 import { StudioShell } from "@/components/studio-shell";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,41 +15,16 @@ import {
 } from "@/components/ui/card";
 import { useSelectedCompany } from "@/stores/use-company-store";
 import { apiClient } from "@/lib/api-client";
-import type { OverviewMock } from "@/mocks/overview";
+import { useCompanyReport } from "@/lib/analytics";
 
 export default function AgentAnalyticsPage() {
   const company = useSelectedCompany();
   const [range, setRange] = useState<"7" | "14">("14");
-  const [data, setData] = useState<OverviewMock | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!company) {
-      setData(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setLoadError(null);
-    apiClient.analytics
-      .overview(company.id, range === "7" ? "7d" : "14d")
-      .then((d) => {
-        if (!cancelled) {
-          setData(d);
-          setLoading(false);
-        }
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) {
-          setLoadError(e instanceof Error ? e.message : String(e));
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [company?.id, range]);
+  const { data, loading, loadError } = useCompanyReport(
+    company,
+    (companyId) => apiClient.analytics.overview(companyId, range === "7" ? "7d" : "14d"),
+    [range]
+  );
 
   const trust = data?.trust;
 

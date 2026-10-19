@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Eye } from "@phosphor-icons/react";
 import { StudioShell } from "@/components/studio-shell";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,9 +22,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useSelectedCompany } from "@/stores/use-company-store";
-import { apiClient, type InsightsPayload } from "@/lib/api-client";
-
-type Range = "7d" | "14d" | "30d";
+import { apiClient } from "@/lib/api-client";
+import { useCompanyReport, type Range } from "@/lib/analytics";
 
 const OPP_STYLE: Record<string, string> = {
   high: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
@@ -36,10 +35,11 @@ const OPP_STYLE: Record<string, string> = {
 export default function InsightsPage() {
   const company = useSelectedCompany();
   const [range, setRange] = useState<Range>("14d");
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [data, setData] = useState<InsightsPayload | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const { data, loading, loadError, refreshKey, setRefreshKey } = useCompanyReport(
+    company,
+    (companyId) => apiClient.analytics.insights(companyId, range),
+    [range]
+  );
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
@@ -48,33 +48,6 @@ export default function InsightsPage() {
     { ok: true }
   >["answer"] | null>(null);
   const [copilotRejection, setCopilotRejection] = useState<{ message: string; examples: string[] } | null>(null);
-
-  useEffect(() => {
-    if (!company) {
-      setData(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setLoadError(null);
-    apiClient.analytics
-      .insights(company.id, range)
-      .then((j) => {
-        if (!cancelled) {
-          setData(j);
-          setLoading(false);
-        }
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) {
-          setLoadError(e instanceof Error ? e.message : String(e));
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [company?.id, range, refreshKey]);
 
   return (
     <StudioShell crumbs={[{ label: "Analytics" }, { label: "Insights" }]}>

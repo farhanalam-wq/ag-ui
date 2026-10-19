@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import dynamic from "next/dynamic";
 import { Target } from "@phosphor-icons/react";
 import { StudioShell } from "@/components/studio-shell";
@@ -15,7 +15,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useSelectedCompany } from "@/stores/use-company-store";
-import { apiClient, type ConversionAnalytics } from "@/lib/api-client";
+import { apiClient } from "@/lib/api-client";
+import { useCompanyReport, type Range } from "@/lib/analytics";
 
 const ConversionsTrendChart = dynamic(
   () => import("../../overview-charts").then((m) => m.ConversionsChart),
@@ -25,42 +26,14 @@ const ConversionsTrendChart = dynamic(
   }
 );
 
-type Range = "7d" | "30d" | "90d";
-
 export default function ConversionsPage() {
   const company = useSelectedCompany();
   const [range, setRange] = useState<Range>("30d");
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [data, setData] = useState<ConversionAnalytics | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!company) {
-      setData(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setLoadError(null);
-    apiClient.analytics
-      .conversions(company.id, range)
-      .then((d) => {
-        if (!cancelled) {
-          setData(d);
-          setLoading(false);
-        }
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) {
-          setLoadError(e instanceof Error ? e.message : String(e));
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [company?.id, range, refreshKey]);
+  const { data, loading, loadError, refreshKey, setRefreshKey } = useCompanyReport(
+    company,
+    (companyId) => apiClient.analytics.conversions(companyId, range),
+    [range]
+  );
 
   const t = data?.totals;
   const assistedShare =

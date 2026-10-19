@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { Smiley } from "@phosphor-icons/react";
 import { StudioShell } from "@/components/studio-shell";
@@ -23,7 +23,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useSelectedCompany } from "@/stores/use-company-store";
-import { apiClient, type EngagementAnalytics } from "@/lib/api-client";
+import { apiClient } from "@/lib/api-client";
+import { useCompanyReport, type Range } from "@/lib/analytics";
 
 const TrafficTrendChart = dynamic(
   () => import("../../overview-charts").then((m) => m.MonitoringTrendChart),
@@ -33,42 +34,14 @@ const TrafficTrendChart = dynamic(
   }
 );
 
-type Range = "7d" | "30d" | "90d";
-
 export default function EngagementAnalyticsPage() {
   const company = useSelectedCompany();
   const [range, setRange] = useState<Range>("30d");
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [data, setData] = useState<EngagementAnalytics | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!company) {
-      setData(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setLoadError(null);
-    apiClient.analytics
-      .engagement(company.id, range)
-      .then((e) => {
-        if (!cancelled) {
-          setData(e);
-          setLoading(false);
-        }
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) {
-          setLoadError(e instanceof Error ? e.message : String(e));
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [company?.id, range, refreshKey]);
+  const { data, loading, loadError, refreshKey, setRefreshKey } = useCompanyReport(
+    company,
+    (companyId) => apiClient.analytics.engagement(companyId, range),
+    [range]
+  );
 
   const demand = useMemo(
     () =>

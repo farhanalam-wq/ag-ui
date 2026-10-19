@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { Crosshair } from "@phosphor-icons/react";
 import { StudioShell } from "@/components/studio-shell";
@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/table";
 import { useSelectedCompany } from "@/stores/use-company-store";
 import { apiClient } from "@/lib/api-client";
-import type { OverviewMock } from "@/mocks/overview";
+import { useCompanyReport } from "@/lib/analytics";
 
 const IntentRadar = dynamic(
   () => import("../../overview-charts").then((m) => m.IntentRadarChart),
@@ -37,36 +37,11 @@ const IntentRadar = dynamic(
 export default function IntentAnalyticsPage() {
   const company = useSelectedCompany();
   const [range, setRange] = useState<"7" | "14">("14");
-  const [data, setData] = useState<OverviewMock | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!company) {
-      setData(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setLoadError(null);
-    apiClient.analytics
-      .overview(company.id, range === "7" ? "7d" : "14d")
-      .then((d) => {
-        if (!cancelled) {
-          setData(d);
-          setLoading(false);
-        }
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) {
-          setLoadError(e instanceof Error ? e.message : String(e));
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [company?.id, range]);
+  const { data, loading, loadError } = useCompanyReport(
+    company,
+    (companyId) => apiClient.analytics.overview(companyId, range === "7" ? "7d" : "14d"),
+    [range]
+  );
 
   const radarData = useMemo(
     () =>

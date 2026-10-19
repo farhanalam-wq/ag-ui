@@ -36,11 +36,20 @@ export function retrievalContextKey(
   return `qctx:v1:${companyId}:${snapshotId}:${hashQuery(query)}:${limit}`;
 }
 
-let redisClientPromise: Promise<any | null> | null = null;
+/**
+ * The concrete ioredis instance type. Resolved through a type-only import so
+ * this module keeps its lazy runtime `import("ioredis")` (cold start stays
+ * cheap, and Redis stays optional). Callers get a real type instead of `any`,
+ * so structural Redis surfaces (e.g. @ag-ui/analytics `CacheRedis`) are
+ * actually checked rather than silently bypassed by a stray cast.
+ */
+export type RedisClient = import("ioredis").Redis;
+
+let redisClientPromise: Promise<RedisClient | null> | null = null;
 let cooldownUntil = 0;
 let warned = false;
 
-export function getRedisClient(): Promise<any | null> {
+export function getRedisClient(): Promise<RedisClient | null> {
   if (process.env.REDIS_CACHE_OFF === "1") return Promise.resolve(null);
   if (Date.now() < cooldownUntil) return Promise.resolve(null);
 
