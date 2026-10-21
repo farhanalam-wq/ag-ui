@@ -12,6 +12,7 @@ import { embedRoutes } from "./routes/embed";
 import { voiceRoutes } from "./routes/voice";
 import { voiceToolRoutes } from "./routes/voice-tool";
 import { uploadsRoutes } from "./routes/uploads";
+import { operationsRoutes } from "./routes/operations";
 
 const PORT = parseInt(process.env.PORT || "3001", 10);
 
@@ -64,6 +65,7 @@ export const app = new Elysia()
   .use(voiceRoutes)
   .use(voiceToolRoutes)
   .use(uploadsRoutes)
+  .use(operationsRoutes)
   .listen(PORT);
 
 logger.info(`ag-ui Elysia API running at http://localhost:${PORT}`);

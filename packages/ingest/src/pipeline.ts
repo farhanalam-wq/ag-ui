@@ -14,6 +14,7 @@ import {
   eq,
   desc,
   inArray,
+  recordError,
 } from "@ag-ui/database";
 import { sha256 } from "./utils";
 
@@ -44,14 +45,17 @@ const TERMINAL_JOB_STATUSES = ["READY", "FAILED", "CANCELLED"];
 async function markJobFailed(
   crawlJobId: string,
   snapshotId: string | null,
-  errorSample: unknown
+  errorSample: unknown,
+  failure: { message: string; stack?: string }
 ): Promise<void> {
+  let jobCompanyId: string | null = null;
   try {
     const [current] = await db
-      .select({ status: crawlJobs.status })
+      .select({ status: crawlJobs.status, companyId: crawlJobs.companyId })
       .from(crawlJobs)
       .where(eq(crawlJobs.id, crawlJobId))
       .limit(1);
+    jobCompanyId = current?.companyId ?? null;
     if (current && !TERMINAL_JOB_STATUSES.includes(current.status)) {
       await db
         .update(crawlJobs)
@@ -78,6 +82,40 @@ async function markJobFailed(
       // Non-blocking
     }
   }
+
+  // Single pipeline sink. The crawler route's `.catch` turns the same throw into
+  // an SSE error, so instrumenting it as well would double-record. Record even
+  // when the job is already terminal: populateDb flips it to FAILED before
+  // throwing, and a terminal guard here would drop embedding/chunk failures.
+  const message =
+    failure.message.trim() || lastErrorSampleMessage(errorSample) || "Ingestion failed";
+  // Await so short-lived CLI failures flush before the process exits. `recordError`
+  // is total, so this cannot change the failure outcome.
+  await recordError({
+    source: "crawler",
+    message,
+    stack: failure.stack,
+    context: {
+      jobId: crawlJobId,
+      companyId: jobCompanyId,
+      snapshotId,
+      stage: "ingest",
+    },
+    companyId: jobCompanyId,
+  });
+}
+
+/** Last non-empty `error` string in an error_sample payload, if any. */
+function lastErrorSampleMessage(sample: unknown): string | null {
+  if (!Array.isArray(sample)) return null;
+  for (let i = sample.length - 1; i >= 0; i--) {
+    const entry = sample[i];
+    if (entry && typeof entry === "object" && typeof (entry as any).error === "string") {
+      const msg = (entry as any).error.trim();
+      if (msg) return msg;
+    }
+  }
+  return null;
 }
 
 /** One-line summary of the first few dead letters for error messages. */
@@ -407,10 +445,14 @@ export async function runIngestPipeline(
       }
     ));
   } catch (err: any) {
+    const message = String(err?.message ?? err);
     if (jobContext) {
-      await markJobFailed(jobContext.crawlJobId, jobContext.snapshotId, [
-        { stage: "crawl", error: String(err?.message ?? err) },
-      ]);
+      await markJobFailed(
+        jobContext.crawlJobId,
+        jobContext.snapshotId,
+        [{ stage: "crawl", error: message }],
+        { message, stack: err?.stack }
+      );
     }
     throw err;
   }
@@ -430,16 +472,17 @@ export async function runIngestPipeline(
       // with the real per-page causes instead of stranding a live row that
       // blocks the concurrency cap on the next attempt.
       const sample = summarizeDeadLetters(stats.deadLetters);
+      const failureMessage =
+        `[CRAWL] all ${selected.length} pages failed, 0 docs kept. ` +
+        `Top failures: ${sample || "unknown"}. ` +
+        `Full list in crawl_jobs.error_sample.`;
       await markJobFailed(
         jobContext.crawlJobId,
         jobContext.snapshotId,
-        (stats.deadLetters ?? []).slice(0, 200)
+        (stats.deadLetters ?? []).slice(0, 200),
+        { message: failureMessage }
       );
-      throw new Error(
-        `[CRAWL] all ${selected.length} pages failed, 0 docs kept. ` +
-        `Top failures: ${sample || "unknown"}. ` +
-        `Full list in crawl_jobs.error_sample.`
-      );
+      throw new Error(failureMessage);
     }
     console.log(`[DRY] ${opts.dryRun ? "--dry-run: skipping DB." : "no docs: skipping DB."} Top docs:`);
     docs.slice(0, 5).forEach((d, i) => console.log(`  ${i + 1}. [${d.category}] ${d.title} (${d.content.length} chars) ${d.url}`));
@@ -474,11 +517,17 @@ export async function runIngestPipeline(
   try {
     res = await populateDb(baseUrl as URL, domain, docs, rootHtml, opts, stats, jobContext);
   } catch (err: any) {
+    const message = String(err?.message ?? err);
     if (jobContext) {
-      await markJobFailed(jobContext.crawlJobId, jobContext.snapshotId, [
-        ...(stats.deadLetters ?? []).slice(0, 199),
-        { stage: "populate", error: String(err?.message ?? err) },
-      ]);
+      await markJobFailed(
+        jobContext.crawlJobId,
+        jobContext.snapshotId,
+        [
+          ...(stats.deadLetters ?? []).slice(0, 199),
+          { stage: "populate", error: message },
+        ],
+        { message, stack: err?.stack }
+      );
     }
     throw err;
   }
