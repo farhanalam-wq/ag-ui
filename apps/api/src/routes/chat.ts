@@ -7,6 +7,7 @@ import {
   retrieveCompanyContext,
   eq,
   desc,
+  recordError,
 } from "@ag-ui/database";
 import { streamChatCompletionGenerator, buildAnswerSystemPrompt, logger } from "@ag-ui/shared";
 
@@ -36,6 +37,7 @@ export const chatRoutes = new Elysia()
         return;
       }
 
+      let activeConvId = conversationId;
       try {
         // Stage 1: Retrieval
         yield {
@@ -57,7 +59,6 @@ export const chatRoutes = new Elysia()
         yield { event: "evidence", data: retrieved.evidence };
 
         // Provision or fetch conversation
-        let activeConvId = conversationId;
         if (!activeConvId) {
           const [newConv] = await db
             .insert(conversations)
@@ -146,6 +147,19 @@ export const chatRoutes = new Elysia()
         };
       } catch (err: any) {
         logger.error(`[CHAT API] Stream failed: ${err.message}`);
+        void recordError({
+          source: "chat",
+          message: err?.message ?? String(err),
+          stack: err?.stack,
+          // Runtime rule: ids + stage only — never the visitor's message,
+          // prompt, transcript, or retrieval excerpt.
+          context: {
+            conversationId: activeConvId ?? null,
+            companyId,
+            stage: "chat-stream",
+          },
+          companyId,
+        });
         yield { event: "error", data: { message: err.message } };
       }
     },

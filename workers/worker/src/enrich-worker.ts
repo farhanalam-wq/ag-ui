@@ -12,6 +12,7 @@ import {
   facts,
   upsertChunkPoints,
   invalidateCompanyContextCache,
+  recordError,
 } from "@ag-ui/database";
 import { validateSafeUrl } from "@ag-ui/crawler";
 import { extractUpload } from "@ag-ui/extract";
@@ -128,7 +129,21 @@ export const enrichWorker = new Worker<EnrichJobData>(
           }
         } catch (err: unknown) {
           failed += 1;
-          entry.error = err instanceof Error ? err.message : "Extraction failed";
+          const message = err instanceof Error ? err.message : "Extraction failed";
+          entry.error = message;
+          void recordError({
+            source: "worker",
+            message,
+            stack: err instanceof Error ? err.stack : undefined,
+            context: {
+              jobId: job.id,
+              batchId,
+              companyId: batch.companyId,
+              fileId: file.id,
+              stage: "enrich-file",
+            },
+            companyId: batch.companyId,
+          });
         }
         manifest.push(entry);
       }
@@ -240,6 +255,18 @@ export const enrichWorker = new Worker<EnrichJobData>(
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Enrichment failed";
       logger.error(`[ENRICH WORKER] Batch ${batchId} failed:`, message);
+      void recordError({
+        source: "worker",
+        message,
+        stack: err instanceof Error ? err.stack : undefined,
+        context: {
+          jobId: job.id,
+          batchId,
+          companyId: batch.companyId,
+          stage: "enrich-batch",
+        },
+        companyId: batch.companyId,
+      });
       await db
         .update(enrichmentBatches)
         .set({ status: "FAILED", errorSample: { message }, updatedAt: new Date() })

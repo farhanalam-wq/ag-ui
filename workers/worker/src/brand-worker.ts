@@ -1,6 +1,6 @@
 import { Worker } from "bullmq";
 import { QUEUE_NAMES, redisConnection, type BrandJobData } from "@ag-ui/queues";
-import { db, brands, brandStylesheets, eq, desc, invalidateCompanyContextCache } from "@ag-ui/database";
+import { db, brands, brandStylesheets, eq, desc, invalidateCompanyContextCache, recordError } from "@ag-ui/database";
 import { validateSafeUrl } from "@ag-ui/crawler";
 import { runDembrandt, mapDembrandtToTokens, buildDtcg, buildDesignMd } from "@ag-ui/brand";
 import { logger } from "@ag-ui/shared";
@@ -89,6 +89,13 @@ export const brandWorker = new Worker<BrandJobData>(
     } catch (err: any) {
       const message = String(err?.message ?? err).slice(0, 500);
       logger.error(`[BRAND WORKER] Job ${job.id} failed for company ${companyId}: ${message}`);
+      void recordError({
+        source: "worker",
+        message,
+        stack: err?.stack,
+        context: { jobId: job.id, companyId, stylesheetId, stage: "brand" },
+        companyId,
+      });
       await db
         .update(brandStylesheets)
         .set({ status: "FAILED", error: message, updatedAt: new Date() })

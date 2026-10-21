@@ -8,6 +8,7 @@ import {
   checkEmbedRateLimit,
   eq,
   desc,
+  recordError,
 } from "@ag-ui/database";
 import { logger } from "@ag-ui/shared";
 
@@ -153,6 +154,14 @@ export const voiceToolRoutes = new Elysia({ prefix: "/api/voice/tool" }).post(
       retrieved = await retrieveCompanyContext(company.id, trimmedQuery, { chunkLimit: 6 });
     } catch (err: any) {
       logger.error(`[VOICE-TOOL] Retrieval failed for ${company.id}: ${err?.message || "unknown"}`);
+      void recordError({
+        source: "retrieval",
+        message: err?.message ?? String(err),
+        stack: err?.stack,
+        // No query text: this is the voice-facing runtime surface.
+        context: { companyId: company.id, stage: "voice-retrieval" },
+        companyId: company.id,
+      });
       set.status = 502;
       return { error: "Knowledge lookup failed — try again" };
     }

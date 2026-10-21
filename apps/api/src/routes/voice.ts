@@ -8,6 +8,7 @@ import {
   getRedisClient,
   eq,
   desc,
+  recordError,
 } from "@ag-ui/database";
 import { hashWidgetKey, logger } from "@ag-ui/shared";
 
@@ -222,6 +223,13 @@ export const voiceRoutes = new Elysia({ prefix: "/api/voice" }).post(
       set.status = status;
       if (status === 503) logger.error("[VOICE] Token mint misconfigured: missing VOICEKIT env");
       else logger.error(`[VOICE] Token mint failed: ${err?.message || "unknown"}`);
+      void recordError({
+        source: "voice",
+        message: err?.message ?? String(err),
+        stack: err?.stack,
+        context: { companyId: company.id, stage: "token-mint", status },
+        companyId: company.id,
+      });
       return { error: status === 503 ? "Voice not configured" : "Voice provider unavailable" };
     }
   },

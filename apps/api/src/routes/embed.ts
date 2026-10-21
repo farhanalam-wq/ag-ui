@@ -32,6 +32,7 @@ import {
   isNull,
   inArray,
   count,
+  recordError,
 } from "@ag-ui/database";
 import { generateWidgetKey, hashWidgetKey, logger, buildAnswerSystemPrompt, streamChatCompletionGenerator } from "@ag-ui/shared";
 import { analyticsQueue } from "@ag-ui/queues";
@@ -266,7 +267,15 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
       try {
         gate = await assertOriginAllowed(resolved.row.id, request);
       } catch (err) {
-        logger.error(`[EMBED] Config gate unavailable: ${(err as Error)?.message ?? err}`);
+        const message = (err as Error)?.message ?? String(err);
+        logger.error(`[EMBED] Config gate unavailable: ${message}`);
+        void recordError({
+          source: "embed",
+          message,
+          stack: err instanceof Error ? err.stack : undefined,
+          context: { keyPrefix: resolved.row.keyPrefix, stage: "config-gate" },
+          companyId: null,
+        });
         set.status = 503;
         return { error: "Assistant unavailable - try again shortly", code: "CONFIG_UNAVAILABLE" };
       }
@@ -399,7 +408,15 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
       try {
         gate = await assertOriginAllowed(resolved.row.id, request);
       } catch (err) {
-        logger.error(`[EMBED TRACK] Gate unavailable: ${(err as Error)?.message ?? err}`);
+        const message = (err as Error)?.message ?? String(err);
+        logger.error(`[EMBED TRACK] Gate unavailable: ${message}`);
+        void recordError({
+          source: "embed",
+          message,
+          stack: err instanceof Error ? err.stack : undefined,
+          context: { keyPrefix: resolved.row.keyPrefix, stage: "track-gate" },
+          companyId: null,
+        });
         set.status = 503;
         return { error: "Assistant unavailable - try again shortly" };
       }
@@ -464,6 +481,14 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
       } catch (err: any) {
         // Shed, don't stall: beacon traffic is expendable, pages are not.
         logger.warn(`[EMBED TRACK] enqueue shed: ${err?.message ?? err}`);
+        void recordError({
+          level: "warn",
+          source: "embed",
+          message: err?.message ?? String(err),
+          stack: err?.stack,
+          context: { keyPrefix: resolved.row.keyPrefix, stage: "track-enqueue" },
+          companyId: null,
+        });
         set.status = 202;
         return { tracked: false, reason: "shed" };
       }
@@ -519,7 +544,15 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
       try {
         gate = await assertOriginAllowed(resolved.row.id, request);
       } catch (err) {
-        logger.error(`[EMBED CHAT] Gate unavailable: ${(err as Error)?.message ?? err}`);
+        const message = (err as Error)?.message ?? String(err);
+        logger.error(`[EMBED CHAT] Gate unavailable: ${message}`);
+        void recordError({
+          source: "embed",
+          message,
+          stack: err instanceof Error ? err.stack : undefined,
+          context: { keyPrefix: resolved.row.keyPrefix, stage: "chat-gate" },
+          companyId: null,
+        });
         set.status = 503;
         yield { event: "error", data: { message: "Assistant unavailable - try again shortly", code: "CONFIG_UNAVAILABLE" } };
         return;
@@ -568,6 +601,7 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
 
       const userQuery = body.message;
       const conversationId = body.conversationId;
+      let activeConvId = conversationId;
 
       try {
         yield {
@@ -579,7 +613,6 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
         if (retrieved.brand) yield { event: "brand", data: retrieved.brand };
         yield { event: "evidence", data: retrieved.evidence };
 
-        let activeConvId = conversationId;
         if (!activeConvId) {
           const [newConv] = await db
             .insert(conversations)
@@ -636,6 +669,20 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
         };
       } catch (err: any) {
         logger.error(`[EMBED CHAT] Stream failed: ${err.message}`);
+        void recordError({
+          source: "embed",
+          message: err?.message ?? String(err),
+          stack: err?.stack,
+          // Runtime rule: ids + stage only — never the visitor's message,
+          // prompt, transcript, or retrieval excerpt.
+          context: {
+            keyPrefix: resolved.row.keyPrefix,
+            conversationId: activeConvId ?? null,
+            companyId: company.id,
+            stage: "chat-stream",
+          },
+          companyId: company.id,
+        });
         yield { event: "error", data: { message: err.message } };
       }
     },

@@ -17,6 +17,7 @@ import {
   and,
   upsertChunkPoints,
   invalidateCompanyContextCache,
+  recordError,
 } from "@ag-ui/database";
 import { CompanyCrawler } from "@ag-ui/crawler";
 import {
@@ -292,7 +293,16 @@ export const crawlWorker = new Worker<CrawlJobData>(
         }
       } catch (err: unknown) {
         // Diff is display-only: never fail a good crawl over it.
-        logger.warn(`[CRAWL WORKER] Snapshot diff skipped: ${err instanceof Error ? err.message : err}`);
+        const message = err instanceof Error ? err.message : String(err);
+        logger.warn(`[CRAWL WORKER] Snapshot diff skipped: ${message}`);
+        void recordError({
+          level: "warn",
+          source: "crawler",
+          message,
+          stack: err instanceof Error ? err.stack : undefined,
+          context: { jobId: job.id, companyId, snapshotId, stage: "snapshot-diff" },
+          companyId,
+        });
       }
 
       // 9. Mark snapshot as READY & invalidate stale retrieval cache
@@ -317,6 +327,13 @@ export const crawlWorker = new Worker<CrawlJobData>(
       };
     } catch (err: any) {
       logger.error(`[CRAWL WORKER] Job ${job.id} failed for ${url}:`, err.message);
+      void recordError({
+        source: "crawler",
+        message: err?.message ?? String(err),
+        stack: err?.stack,
+        context: { jobId: job.id, companyId, snapshotId, stage: "crawl" },
+        companyId,
+      });
 
       // Mark snapshot as FAILED
       await db
