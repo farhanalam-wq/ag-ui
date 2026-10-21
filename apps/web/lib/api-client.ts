@@ -424,11 +424,114 @@ export interface MajorVersion {
   theme: { id: string; status: string } | null;
 }
 
+export type ErrorSource =
+  | "api"
+  | "crawler"
+  | "worker"
+  | "embed"
+  | "retrieval"
+  | "chat"
+  | "voice";
+
+export type ErrorLevel = "error" | "warn";
+
+export interface ErrorEventRow {
+  id: string;
+  level: ErrorLevel;
+  source: ErrorSource;
+  message: string;
+  stack: string | null;
+  context: Record<string, unknown> | null;
+  companyId: string | null;
+  /** ISO timestamp. */
+  createdAt: string;
+}
+
+export interface ErrorListResult {
+  events: ErrorEventRow[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ErrorFilters {
+  companyId?: string;
+  source?: ErrorSource;
+  level?: ErrorLevel;
+  /** ISO date/datetime. */
+  since?: string;
+  /** Message or route substring. */
+  q?: string;
+  /** Matches `context.jobId`. */
+  jobId?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export type ActivityKind = "crawl_job" | "snapshot";
+
+export interface ActivityEvent {
+  id: string;
+  kind: ActivityKind;
+  companyId: string;
+  companyName: string;
+  status: string;
+  /** ISO timestamp of the state transition. */
+  at: string;
+  detail: Record<string, unknown>;
+}
+
+export interface ActivityListResult {
+  events: ActivityEvent[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ActivityFilters {
+  companyId?: string;
+  status?: string;
+  kind?: ActivityKind;
+  /** ISO date/datetime. */
+  since?: string;
+  /** Company-name substring. */
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/** Build a query string, omitting empty values so the API sees no filter. */
+function toQuery(params: Record<string, string | number | undefined | null>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") continue;
+    search.set(key, String(value));
+  }
+  return search.toString();
+}
+
 class ApiClient {
   private baseUrl: string;
 
   constructor(baseUrl = API_BASE_URL) {
     this.baseUrl = baseUrl.replace(/\/$/, "");
+  }
+
+  /** Single fetch primitive for newer endpoints. Throws on non-2xx. */
+  private async request<T>(path: string, init?: RequestInit): Promise<T> {
+    const res = await fetch(`${this.baseUrl}${path}`, init);
+    if (!res.ok) {
+      let detail = "";
+      try {
+        detail = (await res.text()).slice(0, 200);
+      } catch {
+        /* ignore */
+      }
+      throw new Error(
+        `Request failed: HTTP ${res.status}${detail ? ` - ${detail}` : ""}`
+      );
+    }
+    return (await res.json()) as T;
   }
 
   /**
@@ -680,6 +783,21 @@ class ApiClient {
         throw new Error(`Copilot unavailable: HTTP ${res.status}`);
       }
       return res.json();
+    },
+  };
+
+  /**
+   * Operations reads: captured errors + the derived activity trail.
+   */
+  operations = {
+    errors: async (filters: ErrorFilters = {}): Promise<ErrorListResult> => {
+      const qs = toQuery({ ...filters });
+      return this.request(`/api/operations/errors${qs ? `?${qs}` : ""}`);
+    },
+
+    activity: async (filters: ActivityFilters = {}): Promise<ActivityListResult> => {
+      const qs = toQuery({ ...filters });
+      return this.request(`/api/operations/activity${qs ? `?${qs}` : ""}`);
     },
   };
 
