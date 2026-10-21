@@ -4,9 +4,10 @@ import {
   Suspense,
   useCallback,
   useEffect,
-  useMemo,
+  useRef,
   useState,
 } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowClockwise,
@@ -24,7 +25,10 @@ import {
   type Icon,
 } from "@phosphor-icons/react";
 import { StudioShell } from "@/components/studio-shell";
-import { useCompanyStore } from "@/stores/use-company-store";
+import {
+  useCompanyStore,
+  useSelectedCompany,
+} from "@/stores/use-company-store";
 import {
   apiClient,
   type ErrorEventRow,
@@ -209,7 +213,9 @@ function ErrorsFallback() {
 function ErrorsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const companies = useCompanyStore((s) => s.companies);
+  const selectedCompany = useSelectedCompany();
+  const companiesLoading = useCompanyStore((s) => s.isLoading);
+  const companyId = selectedCompany?.id ?? null;
 
   const urlJobId = searchParams.get("jobId") ?? undefined;
 
@@ -223,7 +229,6 @@ function ErrorsContent() {
   const [preset, setPreset] = useState<Preset>("7d");
   const [source, setSource] = useState<ErrorSource | "all">("all");
   const [level, setLevel] = useState<ErrorLevel | "all">("all");
-  const [companyId, setCompanyId] = useState("all");
   const [search, setSearch] = useState("");
   const [q, setQ] = useState("");
   const [jobId, setJobId] = useState<string | undefined>(urlJobId);
@@ -235,6 +240,24 @@ function ErrorsContent() {
     setJobId(urlJobId);
     setOffset(0);
   }, [urlJobId]);
+
+  // Switching companies starts a fresh, company-scoped view. An old job chip
+  // must never filter a newly selected company down to zero rows.
+  const previousCompanyId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!companyId) return;
+    const previous = previousCompanyId.current;
+    previousCompanyId.current = companyId;
+    if (!previous || previous === companyId) return;
+
+    setRows([]);
+    setTotal(0);
+    setOffset(0);
+    setSelected(null);
+    setLive(false);
+    setJobId(undefined);
+    if (urlJobId) router.replace("/operations/errors");
+  }, [companyId, urlJobId, router]);
 
   // 300 ms debounce on the search box.
   useEffect(() => {
@@ -264,6 +287,17 @@ function ErrorsContent() {
 
   useEffect(() => {
     let cancelled = false;
+
+    if (!companyId) {
+      setRows([]);
+      setTotal(0);
+      setLoading(false);
+      setError(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const since =
       preset === "all"
         ? undefined
@@ -274,7 +308,7 @@ function ErrorsContent() {
 
     apiClient.operations
       .errors({
-        companyId: companyId === "all" ? undefined : companyId,
+        companyId,
         source: source === "all" ? undefined : source,
         level: level === "all" ? undefined : level,
         since,
@@ -319,7 +353,6 @@ function ErrorsContent() {
     setPreset("7d");
     setSource("all");
     setLevel("all");
-    setCompanyId("all");
     setSearch("");
     setQ("");
     setOffset(0);
@@ -342,25 +375,26 @@ function ErrorsContent() {
     preset !== "7d" ||
     source !== "all" ||
     level !== "all" ||
-    companyId !== "all" ||
     search.trim() !== "" ||
     Boolean(jobId);
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // Never paint rows from the previous company while the new fetch is in
+  // flight. `total` is only trusted when every returned row belongs to the
+  // current company.
+  const scopedRows = companyId
+    ? rows.filter((row) => row.companyId === companyId)
+    : [];
+  const scopedTotal = rows.length === scopedRows.length ? total : 0;
+
+  const totalPages = Math.max(1, Math.ceil(scopedTotal / PAGE_SIZE));
   const page = Math.floor(offset / PAGE_SIZE) + 1;
   const canPrev = offset > 0;
-  const canNext = offset + PAGE_SIZE < total;
-  const showingFrom = total === 0 ? 0 : offset + 1;
-  const showingTo = Math.min(offset + PAGE_SIZE, total);
-  const initialLoading = loading && rows.length === 0;
-
-  const companyName = useMemo(() => {
-    if (!selected?.companyId) return "Anonymous";
-    return (
-      companies.find((c) => c.id === selected.companyId)?.name ??
-      selected.companyId
-    );
-  }, [companies, selected]);
+  const canNext = offset + PAGE_SIZE < scopedTotal;
+  const showingFrom = scopedTotal === 0 ? 0 : offset + 1;
+  const showingTo = Math.min(offset + PAGE_SIZE, scopedTotal);
+  const initialLoading =
+    (companiesLoading && !companyId) || (loading && scopedRows.length === 0);
+  const companyName = selectedCompany?.name ?? "—";
 
   return (
     <div className="min-w-0">
@@ -370,13 +404,16 @@ function ErrorsContent() {
             Errors
           </h1>
           <p className="mt-1 max-w-[65ch] text-sm text-muted-foreground">
-            Everything the API and workers failed on, newest first.
+            {selectedCompany
+              ? `Failures from the API, workers, and runtime for ${selectedCompany.name}, newest first.`
+              : "Failures from the API, workers, and runtime, newest first."}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {total > 0 && (
+          {scopedTotal > 0 && (
             <Badge variant="secondary" className="rounded-full font-normal">
-              {total.toLocaleString()} {total === 1 ? "event" : "events"}
+              {scopedTotal.toLocaleString()}{" "}
+              {scopedTotal === 1 ? "event" : "events"}
             </Badge>
           )}
           <Button
@@ -390,171 +427,148 @@ function ErrorsContent() {
         </div>
       </div>
 
-      <div className="mt-6 flex flex-wrap items-center gap-2 rounded-lg border bg-card p-2">
-        <Select
-          value={preset}
-          onValueChange={(value) => {
-            setPreset(value as Preset);
-            setOffset(0);
-          }}
-        >
-          <SelectTrigger
-            className="h-8 w-[148px] text-[13px]"
-            aria-label="Date range"
+      {selectedCompany && (
+        <div className="mt-6 flex flex-wrap items-center gap-2 rounded-lg border bg-card p-2">
+          <Select
+            value={preset}
+            onValueChange={(value) => {
+              setPreset(value as Preset);
+              setOffset(0);
+            }}
           >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {PRESETS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-
-        <Button
-          type="button"
-          variant={live ? "secondary" : "outline"}
-          size="sm"
-          className="h-8 text-xs"
-          aria-pressed={live}
-          title={
-            live
-              ? "Live updates on — paging turns this off"
-              : "Poll for new errors every 5 seconds"
-          }
-          onClick={toggleLive}
-        >
-          <span
-            className={cn(
-              "size-1.5 rounded-full",
-              live ? "animate-pulse bg-emerald-500" : "bg-muted-foreground/40"
-            )}
-            aria-hidden="true"
-          />
-          Live
-        </Button>
-
-        <div className="relative min-w-[200px] flex-1">
-          <MagnifyingGlass
-            className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <Input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search message or route…"
-            aria-label="Search errors"
-            className="h-8 pl-8 text-[13px]"
-          />
-        </div>
-
-        <Select
-          value={source}
-          onValueChange={(value) => {
-            setSource(value as ErrorSource | "all");
-            setOffset(0);
-          }}
-        >
-          <SelectTrigger
-            className="h-8 w-[132px] text-[13px]"
-            aria-label="Source"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectItem value="all">All sources</SelectItem>
-              {SOURCES.map((value) => (
-                <SelectItem key={value} value={value}>
-                  {value}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={level}
-          onValueChange={(value) => {
-            setLevel(value as ErrorLevel | "all");
-            setOffset(0);
-          }}
-        >
-          <SelectTrigger
-            className="h-8 w-[116px] text-[13px]"
-            aria-label="Level"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectItem value="all">All levels</SelectItem>
-              <SelectItem value="error">Error</SelectItem>
-              <SelectItem value="warn">Warn</SelectItem>
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={companyId}
-          onValueChange={(value) => {
-            setCompanyId(value);
-            setOffset(0);
-          }}
-        >
-          <SelectTrigger
-            className="h-8 w-[180px] text-[13px]"
-            aria-label="Company"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectItem value="all">All companies</SelectItem>
-              {companies.map((company) => (
-                <SelectItem key={company.id} value={company.id}>
-                  {company.name}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-
-        {jobId && (
-          <Badge
-            variant="outline"
-            className="h-8 gap-1.5 rounded-full px-2.5 font-normal"
-            title={jobId}
-          >
-            Job {jobId.slice(0, 8)}
-            <button
-              type="button"
-              aria-label="Clear job filter"
-              className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-              onClick={clearJob}
+            <SelectTrigger
+              className="h-8 w-[148px] text-[13px]"
+              aria-label="Date range"
             >
-              <X className="size-3" aria-hidden="true" />
-            </button>
-          </Badge>
-        )}
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {PRESETS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
 
-        {hasFilters && (
           <Button
             type="button"
-            variant="ghost"
+            variant={live ? "secondary" : "outline"}
             size="sm"
             className="h-8 text-xs"
-            onClick={resetFilters}
+            aria-pressed={live}
+            title={
+              live
+                ? "Live updates on — paging turns this off"
+                : "Poll for new errors every 5 seconds"
+            }
+            onClick={toggleLive}
           >
-            Clear filters
+            <span
+              className={cn(
+                "size-1.5 rounded-full",
+                live ? "animate-pulse bg-emerald-500" : "bg-muted-foreground/40"
+              )}
+              aria-hidden="true"
+            />
+            Live
           </Button>
-        )}
-      </div>
+
+          <div className="relative min-w-[200px] flex-1">
+            <MagnifyingGlass
+              className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search message or route…"
+              aria-label="Search errors"
+              className="h-8 pl-8 text-[13px]"
+            />
+          </div>
+
+          <Select
+            value={source}
+            onValueChange={(value) => {
+              setSource(value as ErrorSource | "all");
+              setOffset(0);
+            }}
+          >
+            <SelectTrigger
+              className="h-8 w-[132px] text-[13px]"
+              aria-label="Source"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="all">All sources</SelectItem>
+                {SOURCES.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {value}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={level}
+            onValueChange={(value) => {
+              setLevel(value as ErrorLevel | "all");
+              setOffset(0);
+            }}
+          >
+            <SelectTrigger
+              className="h-8 w-[116px] text-[13px]"
+              aria-label="Level"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="all">All levels</SelectItem>
+                <SelectItem value="error">Error</SelectItem>
+                <SelectItem value="warn">Warn</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+
+          {jobId && (
+            <Badge
+              variant="outline"
+              className="h-8 gap-1.5 rounded-full px-2.5 font-normal"
+              title={jobId}
+            >
+              Job {jobId.slice(0, 8)}
+              <button
+                type="button"
+                aria-label="Clear job filter"
+                className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={clearJob}
+              >
+                <X className="size-3" aria-hidden="true" />
+              </button>
+            </Badge>
+          )}
+
+          {hasFilters && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={resetFilters}
+            >
+              Clear filters
+            </Button>
+          )}
+        </div>
+      )}
 
       {error && (
         <Alert variant="destructive" className="mt-4">
@@ -575,7 +589,7 @@ function ErrorsContent() {
         </Alert>
       )}
 
-      {!(error && rows.length === 0) && (
+      {!(error && scopedRows.length === 0) && (
         <Card className="mt-4 min-w-0 overflow-hidden">
           <CardContent className="p-0">
             {initialLoading ? (
@@ -584,7 +598,24 @@ function ErrorsContent() {
                   <Skeleton key={i} className="h-10 w-full" />
                 ))}
               </div>
-            ) : rows.length === 0 ? (
+            ) : !selectedCompany ? (
+              <Empty className="py-12">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <WarningCircle aria-hidden="true" />
+                  </EmptyMedia>
+                  <EmptyTitle>No company selected</EmptyTitle>
+                  <EmptyDescription>
+                    Add a company to start capturing errors.
+                  </EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href="/knowledge/ingest">Add a company</Link>
+                  </Button>
+                </EmptyContent>
+              </Empty>
+            ) : scopedRows.length === 0 ? (
               <Empty className="py-12">
                 <EmptyHeader>
                   <EmptyMedia variant="icon">
@@ -624,7 +655,7 @@ function ErrorsContent() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((row) => {
+                  {scopedRows.map((row) => {
                     const route =
                       contextValue(row.context, "path") ??
                       contextValue(row.context, "stage");
@@ -682,11 +713,12 @@ function ErrorsContent() {
               </Table>
             )}
 
-            {total > 0 && (
+            {scopedTotal > 0 && (
               <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-2.5">
                 <p className="font-sans text-xs tabular-nums text-muted-foreground">
-                  Showing {showingFrom}–{showingTo} of {total.toLocaleString()}{" "}
-                  {total === 1 ? "item" : "items"}
+                  Showing {showingFrom}–{showingTo} of{" "}
+                  {scopedTotal.toLocaleString()}{" "}
+                  {scopedTotal === 1 ? "item" : "items"}
                 </p>
                 <Pagination className="mx-0 w-auto">
                   <PaginationContent>

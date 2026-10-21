@@ -455,7 +455,7 @@ export interface ErrorListResult {
 }
 
 export interface ErrorFilters {
-  companyId?: string;
+  companyId: string;
   source?: ErrorSource;
   level?: ErrorLevel;
   /** ISO date/datetime. */
@@ -489,7 +489,7 @@ export interface ActivityListResult {
 }
 
 export interface ActivityFilters {
-  companyId?: string;
+  companyId: string;
   status?: string;
   kind?: ActivityKind;
   /** ISO date/datetime. */
@@ -790,12 +790,12 @@ class ApiClient {
    * Operations reads: captured errors + the derived activity trail.
    */
   operations = {
-    errors: async (filters: ErrorFilters = {}): Promise<ErrorListResult> => {
+    errors: async (filters: ErrorFilters): Promise<ErrorListResult> => {
       const qs = toQuery({ ...filters });
       return this.request(`/api/operations/errors${qs ? `?${qs}` : ""}`);
     },
 
-    activity: async (filters: ActivityFilters = {}): Promise<ActivityListResult> => {
+    activity: async (filters: ActivityFilters): Promise<ActivityListResult> => {
       const qs = toQuery({ ...filters });
       return this.request(`/api/operations/activity${qs ? `?${qs}` : ""}`);
     },

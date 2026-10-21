@@ -11,13 +11,15 @@ import {
   Clock,
   Globe,
   ListBullets,
-  MagnifyingGlass,
   Prohibit,
   WarningCircle,
   XCircle,
 } from "@phosphor-icons/react";
 import { StudioShell } from "@/components/studio-shell";
-import { useCompanyStore } from "@/stores/use-company-store";
+import {
+  useCompanyStore,
+  useSelectedCompany,
+} from "@/stores/use-company-store";
 import {
   apiClient,
   type ActivityEvent,
@@ -26,7 +28,6 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -237,7 +238,9 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function ActivityPage() {
-  const companies = useCompanyStore((s) => s.companies);
+  const selectedCompany = useSelectedCompany();
+  const companiesLoading = useCompanyStore((s) => s.isLoading);
+  const companyId = selectedCompany?.id ?? null;
 
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [total, setTotal] = useState(0);
@@ -247,21 +250,17 @@ export default function ActivityPage() {
   const [offset, setOffset] = useState(0);
 
   const [preset, setPreset] = useState<Preset>("7d");
-  const [companyId, setCompanyId] = useState("all");
   const [status, setStatus] = useState("all");
   const [kind, setKind] = useState<ActivityKind | "all">("all");
-  const [search, setSearch] = useState("");
-  const [q, setQ] = useState("");
   const [live, setLive] = useState(false);
   const [selected, setSelected] = useState<ActivityEvent | null>(null);
 
+  // A company switch starts a fresh view: no stale page, sheet, or live poll.
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setQ(search.trim());
-      setOffset(0);
-    }, 300);
-    return () => window.clearTimeout(timer);
-  }, [search]);
+    setOffset(0);
+    setSelected(null);
+    setLive(false);
+  }, [companyId]);
 
   useEffect(() => {
     if (!live) return;
@@ -281,6 +280,17 @@ export default function ActivityPage() {
 
   useEffect(() => {
     let cancelled = false;
+
+    if (!companyId) {
+      setEvents([]);
+      setTotal(0);
+      setLoading(false);
+      setError(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const since =
       preset === "all"
         ? undefined
@@ -291,11 +301,10 @@ export default function ActivityPage() {
 
     apiClient.operations
       .activity({
-        companyId: companyId === "all" ? undefined : companyId,
+        companyId,
         status: status === "all" ? undefined : status,
         kind: kind === "all" ? undefined : kind,
         since,
-        q: q || undefined,
         limit: PAGE_SIZE,
         offset,
       })
@@ -315,7 +324,7 @@ export default function ActivityPage() {
     return () => {
       cancelled = true;
     };
-  }, [companyId, status, kind, preset, q, offset, refreshKey, live]);
+  }, [companyId, status, kind, preset, offset, refreshKey, live]);
 
   // If the trail shrinks under a live refresh, fall back to a valid page.
   useEffect(() => {
@@ -327,11 +336,8 @@ export default function ActivityPage() {
 
   const resetFilters = useCallback(() => {
     setPreset("7d");
-    setCompanyId("all");
     setStatus("all");
     setKind("all");
-    setSearch("");
-    setQ("");
     setOffset(0);
   }, []);
 
@@ -348,19 +354,24 @@ export default function ActivityPage() {
   }, []);
 
   const hasFilters =
-    preset !== "7d" ||
-    companyId !== "all" ||
-    status !== "all" ||
-    kind !== "all" ||
-    search.trim() !== "";
+    preset !== "7d" || status !== "all" || kind !== "all";
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // Never paint rows from the previous company while the new fetch is in
+  // flight. `total` is only trusted when every returned event belongs to the
+  // current company.
+  const scopedEvents = companyId
+    ? events.filter((event) => event.companyId === companyId)
+    : [];
+  const scopedTotal = events.length === scopedEvents.length ? total : 0;
+
+  const totalPages = Math.max(1, Math.ceil(scopedTotal / PAGE_SIZE));
   const page = Math.floor(offset / PAGE_SIZE) + 1;
   const canPrev = offset > 0;
-  const canNext = offset + PAGE_SIZE < total;
-  const showingFrom = total === 0 ? 0 : offset + 1;
-  const showingTo = Math.min(offset + PAGE_SIZE, total);
-  const initialLoading = loading && events.length === 0;
+  const canNext = offset + PAGE_SIZE < scopedTotal;
+  const showingFrom = scopedTotal === 0 ? 0 : offset + 1;
+  const showingTo = Math.min(offset + PAGE_SIZE, scopedTotal);
+  const initialLoading =
+    (companiesLoading && !companyId) || (loading && scopedEvents.length === 0);
 
   const selectedCrawl = selected?.kind === "crawl_job";
   const selectedSnapshot = selected?.kind === "snapshot";
@@ -374,14 +385,16 @@ export default function ActivityPage() {
               Activity
             </h1>
             <p className="mt-1 max-w-[65ch] text-sm text-muted-foreground">
-              Crawl jobs and snapshot changes across every company, newest
-              first.
+              {selectedCompany
+                ? `Crawl jobs and snapshot changes for ${selectedCompany.name}, newest first.`
+                : "Crawl jobs and snapshot changes for the selected company."}
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {total > 0 && (
+            {scopedTotal > 0 && (
               <Badge variant="secondary" className="rounded-full font-normal">
-                {total.toLocaleString()} {total === 1 ? "event" : "events"}
+                {scopedTotal.toLocaleString()}{" "}
+                {scopedTotal === 1 ? "event" : "events"}
               </Badge>
             )}
             <Button
@@ -395,153 +408,115 @@ export default function ActivityPage() {
           </div>
         </div>
 
-        <div className="mt-6 flex flex-wrap items-center gap-2 rounded-lg border bg-card p-2">
-          <Select
-            value={preset}
-            onValueChange={(value) => {
-              setPreset(value as Preset);
-              setOffset(0);
-            }}
-          >
-            <SelectTrigger
-              className="h-8 w-[148px] text-[13px]"
-              aria-label="Date range"
+        {selectedCompany && (
+          <div className="mt-6 flex flex-wrap items-center gap-2 rounded-lg border bg-card p-2">
+            <Select
+              value={preset}
+              onValueChange={(value) => {
+                setPreset(value as Preset);
+                setOffset(0);
+              }}
             >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {PRESETS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+              <SelectTrigger
+                className="h-8 w-[148px] text-[13px]"
+                aria-label="Date range"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {PRESETS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
 
-          <Button
-            type="button"
-            variant={live ? "secondary" : "outline"}
-            size="sm"
-            className="h-8 text-xs"
-            aria-pressed={live}
-            title={
-              live
-                ? "Live updates on — paging turns this off"
-                : "Poll for new activity every 5 seconds"
-            }
-            onClick={toggleLive}
-          >
-            <span
-              className={cn(
-                "size-1.5 rounded-full",
-                live ? "animate-pulse bg-emerald-500" : "bg-muted-foreground/40"
-              )}
-              aria-hidden="true"
-            />
-            Live
-          </Button>
-
-          <div className="relative min-w-[200px] flex-1">
-            <MagnifyingGlass
-              className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <Input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search company…"
-              aria-label="Search activity by company"
-              className="h-8 pl-8 text-[13px]"
-            />
-          </div>
-
-          <Select
-            value={companyId}
-            onValueChange={(value) => {
-              setCompanyId(value);
-              setOffset(0);
-            }}
-          >
-            <SelectTrigger
-              className="h-8 w-[180px] text-[13px]"
-              aria-label="Company"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value="all">All companies</SelectItem>
-                {companies.map((company) => (
-                  <SelectItem key={company.id} value={company.id}>
-                    {company.name}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={status}
-            onValueChange={(value) => {
-              setStatus(value);
-              setOffset(0);
-            }}
-          >
-            <SelectTrigger
-              className="h-8 w-[148px] text-[13px]"
-              aria-label="Status"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value="all">All statuses</SelectItem>
-                {STATUSES.map((value) => (
-                  <SelectItem key={value} value={value}>
-                    {statusLabel(value)}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={kind}
-            onValueChange={(value) => {
-              setKind(value as ActivityKind | "all");
-              setOffset(0);
-            }}
-          >
-            <SelectTrigger
-              className="h-8 w-[136px] text-[13px]"
-              aria-label="Kind"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value="all">All kinds</SelectItem>
-                <SelectItem value="crawl_job">Crawl jobs</SelectItem>
-                <SelectItem value="snapshot">Snapshots</SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-
-          {hasFilters && (
             <Button
               type="button"
-              variant="ghost"
+              variant={live ? "secondary" : "outline"}
               size="sm"
               className="h-8 text-xs"
-              onClick={resetFilters}
+              aria-pressed={live}
+              title={
+                live
+                  ? "Live updates on — paging turns this off"
+                  : "Poll for new activity every 5 seconds"
+              }
+              onClick={toggleLive}
             >
-              Clear filters
+              <span
+                className={cn(
+                  "size-1.5 rounded-full",
+                  live ? "animate-pulse bg-emerald-500" : "bg-muted-foreground/40"
+                )}
+                aria-hidden="true"
+              />
+              Live
             </Button>
-          )}
-        </div>
+
+            <Select
+              value={status}
+              onValueChange={(value) => {
+                setStatus(value);
+                setOffset(0);
+              }}
+            >
+              <SelectTrigger
+                className="h-8 w-[148px] text-[13px]"
+                aria-label="Status"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  {STATUSES.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {statusLabel(value)}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={kind}
+              onValueChange={(value) => {
+                setKind(value as ActivityKind | "all");
+                setOffset(0);
+              }}
+            >
+              <SelectTrigger
+                className="h-8 w-[136px] text-[13px]"
+                aria-label="Kind"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="all">All kinds</SelectItem>
+                  <SelectItem value="crawl_job">Crawl jobs</SelectItem>
+                  <SelectItem value="snapshot">Snapshots</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+
+            {hasFilters && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={resetFilters}
+              >
+                Clear filters
+              </Button>
+            )}
+          </div>
+        )}
 
         {error && (
           <Alert variant="destructive" className="mt-4">
@@ -562,7 +537,7 @@ export default function ActivityPage() {
           </Alert>
         )}
 
-        {!(error && events.length === 0) && (
+        {!(error && scopedEvents.length === 0) && (
           <Card className="mt-4 min-w-0 overflow-hidden">
             <CardContent className="p-0">
               {initialLoading ? (
@@ -571,7 +546,24 @@ export default function ActivityPage() {
                     <Skeleton key={i} className="h-10 w-full" />
                   ))}
                 </div>
-              ) : events.length === 0 ? (
+              ) : !selectedCompany ? (
+                <Empty className="py-12">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <ListBullets aria-hidden="true" />
+                    </EmptyMedia>
+                    <EmptyTitle>No company selected</EmptyTitle>
+                    <EmptyDescription>
+                      Add a company to start the activity trail.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                  <EmptyContent>
+                    <Button asChild variant="outline" size="sm">
+                      <Link href="/knowledge/ingest">Add a company</Link>
+                    </Button>
+                  </EmptyContent>
+                </Empty>
+              ) : scopedEvents.length === 0 ? (
                 <Empty className="py-12">
                   <EmptyHeader>
                     <EmptyMedia variant="icon">
@@ -582,7 +574,7 @@ export default function ActivityPage() {
                     </EmptyTitle>
                     <EmptyDescription>
                       {hasFilters
-                        ? "Nothing matches this search and filter combination."
+                        ? "Nothing matches this filter combination."
                         : "Ingest a site to start the trail. Crawl jobs and snapshots will appear here."}
                     </EmptyDescription>
                   </EmptyHeader>
@@ -625,7 +617,7 @@ export default function ActivityPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {events.map((event) => (
+                    {scopedEvents.map((event) => (
                       <TableRow
                         key={`${event.kind}-${event.id}`}
                         className="cursor-pointer"
@@ -666,11 +658,12 @@ export default function ActivityPage() {
                 </Table>
               )}
 
-              {total > 0 && (
+              {scopedTotal > 0 && (
                 <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-2.5">
                   <p className="font-sans text-xs tabular-nums text-muted-foreground">
                     Showing {showingFrom}–{showingTo} of{" "}
-                    {total.toLocaleString()} {total === 1 ? "item" : "items"}
+                    {scopedTotal.toLocaleString()}{" "}
+                    {scopedTotal === 1 ? "item" : "items"}
                   </p>
                   <Pagination className="mx-0 w-auto">
                     <PaginationContent>

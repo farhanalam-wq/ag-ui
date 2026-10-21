@@ -38,7 +38,7 @@ export const operationsRoutes = new Elysia({ prefix: "/api/operations" })
   .get(
     "/errors",
     async ({ query, set }) => {
-      if (query.companyId !== undefined && !UUID_RE.test(query.companyId)) {
+      if (!UUID_RE.test(query.companyId)) {
         set.status = 422;
         return { error: "companyId must be a UUID" };
       }
@@ -67,7 +67,7 @@ export const operationsRoutes = new Elysia({ prefix: "/api/operations" })
     },
     {
       query: t.Object({
-        companyId: t.Optional(t.String({ format: "uuid" })),
+        companyId: t.String({ format: "uuid" }),
         source: t.Optional(ERROR_SOURCE),
         level: t.Optional(ERROR_LEVEL),
         // Parsed in the handler so date-only and full ISO datetime both work.
@@ -79,14 +79,14 @@ export const operationsRoutes = new Elysia({ prefix: "/api/operations" })
       detail: {
         summary: "List captured errors",
         description:
-          "Offset-paged error events across the stack. Filters: companyId, source, level, since, q (message/route), jobId. Invalid companyId format is 422; an unknown UUID is an empty list.",
+          "Offset-paged error events for one company. `companyId` is required. Filters: source, level, since, q (message/route), jobId. Invalid companyId format is 422; an unknown UUID is an empty list.",
       },
     }
   )
   .get(
     "/activity",
     async ({ query, set }) => {
-      if (query.companyId !== undefined && !UUID_RE.test(query.companyId)) {
+      if (!UUID_RE.test(query.companyId)) {
         set.status = 422;
         return { error: "companyId must be a UUID" };
       }
@@ -114,7 +114,7 @@ export const operationsRoutes = new Elysia({ prefix: "/api/operations" })
     },
     {
       query: t.Object({
-        companyId: t.Optional(t.String({ format: "uuid" })),
+        companyId: t.String({ format: "uuid" }),
         status: t.Optional(t.String({ maxLength: 40 })),
         kind: t.Optional(t.Union([t.Literal("crawl_job"), t.Literal("snapshot")])),
         since: t.Optional(t.String()),
@@ -124,7 +124,7 @@ export const operationsRoutes = new Elysia({ prefix: "/api/operations" })
       detail: {
         summary: "List derived activity",
         description:
-          "Offset-paged activity trail derived from crawl_jobs + company_snapshots (newest first). Filters: companyId, status, kind, since, q (company name).",
+          "Offset-paged activity trail for one company, derived from crawl_jobs + company_snapshots (newest first). `companyId` is required. Filters: status, kind, since, q (company name).",
       },
     }
   );
