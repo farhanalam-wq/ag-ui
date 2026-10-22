@@ -256,6 +256,23 @@ export interface BreakdownRow {
 }
 
 /**
+ * A day whose pageviews or sessions sit far enough from the same-length
+ * baseline to be worth a human's attention. The channel mix that day is
+ * context, not a proven cause.
+ */
+export interface Anomaly {
+  metric: "pageviews" | "sessions";
+  day: string;
+  observed: number;
+  expected: number;
+  z: number;
+  direction: "spike" | "dip";
+  baselineWindow: string;
+  context: Array<{ label: string; pageviews: number; sessions: number }>;
+  note: string;
+}
+
+/**
  * The Website surface's headline report. Totals and trend come from the
  * rollup; the splits are raw scans. `uniques` is absent when the HLL merge
  * fails — absence is the honest answer, zero would not be.
@@ -271,6 +288,9 @@ export interface WebsiteReport {
     referrer: BreakdownRow[];
     viewport: BreakdownRow[];
   };
+  /** Unusual days in the window; empty when the baseline is too thin. */
+  anomalies: Anomaly[];
+  anomalyThresholds: { minDaily: number; z: number };
   freshness: Freshness;
 }
 
@@ -291,18 +311,6 @@ export interface AcquisitionReport {
   freshness: Freshness;
 }
 
-export interface EngagementReport {
-  kind: "engagement";
-  companyId: string;
-  rangeDays: number;
-  totals: Record<string, number>;
-  trend: TrendPoint[];
-  breakdowns: {
-    path: BreakdownRow[];
-    device: BreakdownRow[];
-  };
-  freshness: Freshness;
-}
 
 export interface ContentReport {
   kind: "content";

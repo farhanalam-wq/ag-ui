@@ -1003,16 +1003,6 @@ export const REPORTS = {
       dimensions: ["day"],
     },
   },
-  engagement: {
-    activity: {
-      metrics: ["sessions", "pageviews", "engagedSessions", "scrolls", "downloads", "clicks"],
-      dimensions: ["day", "path", "device"],
-    },
-    quality: {
-      metrics: ["engagementRate", "bounceRate", "pagesPerSession", "avgEngagementTime"],
-      dimensions: ["day"],
-    },
-  },
   content: {
     pages: {
       metrics: ["sessions", "pageviews"],

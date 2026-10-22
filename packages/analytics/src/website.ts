@@ -11,10 +11,9 @@
  * path, referrer and viewport are not rolled up. Humans only: `is_bot` is a
  * stored flag, so the filter is free.
  *
- * The engagement totals live here rather than in a second report because the
- * Overview tab shows them next to traffic, and two queries computing "engaged
- * sessions" is how two pages start disagreeing. `getEngagementReport` (until
- * the Engagement page retires) reads the same helper.
+ * The engagement totals live here rather than in a second report: the Overview
+ * tab shows them next to traffic, and a second query computing "engaged
+ * sessions" is how two pages start disagreeing.
  *
  * ORM-first: Drizzle builder for every query. Aggregates Postgres returns as
  * bigint/numeric are cast in SQL (`::int`, `::float`) so the values stay
@@ -44,6 +43,7 @@ import {
   type TrendPoint,
   type WebsiteReport,
 } from "./registry";
+import { getAnomalies } from "./anomalies";
 
 /** The UTC calendar days a report window covers, oldest first. */
 function calendarDays(rangeDays: number, now: Date): string[] {
@@ -225,6 +225,8 @@ export async function getWebsiteReport(
     });
   };
 
+  const anomaly = await getAnomalies(companyId, days[0]!, rangeDays);
+
   return {
     kind: "website",
     companyId,
@@ -236,6 +238,8 @@ export async function getWebsiteReport(
       referrer: await top(pageViews.referrer, "(direct)"),
       viewport: await top(pageViews.viewport, "(unknown)"),
     },
+    anomalies: anomaly.anomalies,
+    anomalyThresholds: anomaly.thresholds,
     freshness: await reportFreshness(false, dataQuality),
   };
 }

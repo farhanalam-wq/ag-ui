@@ -44,6 +44,21 @@ export function formatMetric(
   }
 }
 
+/**
+ * A previous-period delta, or null when there is nothing honest to compare
+ * against. A zero baseline has no percentage: "+∞%" is not a finding.
+ */
+export function formatDelta(
+  current: number | null | undefined,
+  previous: number | null | undefined
+): string | null {
+  if (previous === null || previous === undefined || previous <= 0) return null;
+  if (current === null || current === undefined) return null;
+  const pct = ((current - previous) / previous) * 100;
+  const sign = pct > 0 ? "+" : "";
+  return `${sign}${Math.round(pct * 10) / 10}% vs previous period`;
+}
+
 /** The number a breakdown cell shows: counts as counts, nothing invented. */
 export function formatCount(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {

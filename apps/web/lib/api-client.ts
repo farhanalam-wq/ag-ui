@@ -93,6 +93,38 @@ export interface WebsiteAnalytics {
     referrer: WebsiteBreakdownRow[];
     viewport: WebsiteBreakdownRow[];
   };
+  /** Unusual days in the window; empty when the baseline is too thin. */
+  anomalies: Anomaly[];
+  anomalyThresholds: { minDaily: number; z: number };
+  freshness: Freshness;
+}
+
+export interface Anomaly {
+  metric: "pageviews" | "sessions";
+  day: string;
+  observed: number;
+  expected: number;
+  z: number;
+  direction: "spike" | "dip";
+  baselineWindow: string;
+  /** Correlated channel mix for that day — context, not cause. */
+  context: Array<{ label: string; pageviews: number; sessions: number }>;
+  note: string;
+}
+
+export interface AudienceAnalytics {
+  kind: "audience";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  breakdowns: {
+    device: BreakdownRow[];
+    browser: BreakdownRow[];
+    os: BreakdownRow[];
+    hour: BreakdownRow[];
+  };
+  /** Share of visits that reported a timezone (0-100). */
+  timezoneCoverage: number;
   freshness: Freshness;
 }
 
@@ -143,18 +175,6 @@ export interface AcquisitionAnalytics {
   freshness: Freshness;
 }
 
-export interface EngagementAnalytics {
-  kind: "engagement";
-  companyId: string;
-  rangeDays: number;
-  totals: Record<string, number>;
-  trend: { d: string; sessions: number; pageviews: number; engagedSessions: number }[];
-  breakdowns: {
-    path: BreakdownRow[];
-    device: BreakdownRow[];
-  };
-  freshness: Freshness;
-}
 
 export interface ContentAnalytics {
   kind: "content";
@@ -170,43 +190,6 @@ export interface ContentAnalytics {
   freshness: Freshness;
 }
 
-export interface InsightsPayload {
-  kind: "insights";
-  companyId: string;
-  rangeDays: number;
-  qualityMatrix: {
-    channel: string;
-    sessions: number;
-    pageviews: number;
-    pagesPerSession: number;
-    interactionRate: number;
-    singleViewShare: number;
-    qualityScore: number;
-    confidence: "high" | "low";
-  }[];
-  opportunityMap: {
-    path: string;
-    sessions: number;
-    singleViewShare: number;
-    engagedRate: number;
-    opportunity: string;
-    reason: string;
-  }[];
-  journeys: { from: string; to: string; journeys: number; shareOfEntry: number }[];
-  anomalies: {
-    metric: string;
-    day: string;
-    observed: number;
-    expected: number;
-    z: number;
-    direction: "spike" | "dip";
-    baselineWindow: string;
-    context: { label: string; pageviews: number; sessions: number }[];
-    note: string;
-  }[];
-  thresholds: Record<string, number>;
-  freshness: Freshness;
-}
 
 export interface DiscoveryResponse {  success: boolean;
   domain: string;
@@ -793,19 +776,14 @@ class ApiClient {
       return this.analyticsRequest(`/api/analytics/acquisition?${q.toString()}`);
     },
 
-    engagement: (companyId: string, range = "30d"): Promise<EngagementAnalytics> =>
-      this.analyticsRequest(
-        `/api/analytics/engagement?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
-      ),
-
     content: (companyId: string, range = "30d"): Promise<ContentAnalytics> =>
       this.analyticsRequest(
         `/api/analytics/content?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
       ),
 
-    insights: (companyId: string, range = "14d"): Promise<InsightsPayload> =>
+    audience: (companyId: string, range = "30d"): Promise<AudienceAnalytics> =>
       this.analyticsRequest(
-        `/api/analytics/insights?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+        `/api/analytics/audience?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
       ),
   };
 

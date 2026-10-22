@@ -65,15 +65,32 @@ a daily trend that includes engaged sessions, and
 `breakdowns: { path, referrer, viewport }`. `uniques` is **absent** when the HLL
 merge fails, never zero. An empty referrer is reported as `(direct)` and an
 empty viewport as `(unknown)`, so the breakdown adds up to the KPI row; an
-empty path is dropped — it is not a page. The engagement totals are the same
-helper the old Engagement report uses, so the two cannot disagree.
+empty path is dropped — it is not a page.
+
+The same payload carries `anomalies` and `anomalyThresholds`
+(`{ minDaily, z }`). An anomaly is a day whose pageviews or sessions sit at
+least `z` (2) standard deviations from the equal-length window immediately
+before the report range, with at least `minDaily` (20) mean daily traffic in
+that baseline; fewer than three baseline days flags nothing. Each anomaly names
+the baseline window and the busiest channels for that day as **correlated
+context, never a cause**. The baseline is aligned to the same calendar window
+as the KPI row, so a flagged day is a day the totals already contain. The
+array is empty when no day qualifies — that is a normal answer, not an error.
+
+Website is one route with four tabs (`?tab=overview|acquisition|content|audience`);
+Acquisition, Content and Audience read `/api/analytics/{acquisition,content,audience}`
+and only the active tab is fetched. The old `/api/analytics/engagement` and
+`/api/analytics/insights` routes are **gone**: engagement totals live in the
+Website report (one helper, one definition) and anomalies live on the Website
+Overview. A stale client calling the old paths gets `404`.
 
 Agent routes: `/api/analytics/agent/overview` (sessions, opens, open rate,
 questions), `/api/analytics/agent/questions` (volume, depth, panel time, by
 page), `/api/analytics/agent/quality` (grounded rate, answers without a source,
 answer-time percentiles, grounding by page) and `/api/analytics/agent/voice`. The older `/api/analytics/agent` and
 `/api/analytics/voice` stay as shims for one release; they return the same
-data under the older keys.
+data under the older keys. Analytics exposes **14** routes today (including the
+two shims and `/cache-stats`); the shims retire in the next commit, leaving 12.
 
 ## Time contract (UTC)
 Every session in the pool is opened with `TimeZone=UTC` (a startup parameter, set in

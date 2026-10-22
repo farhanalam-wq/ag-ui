@@ -14,7 +14,6 @@ import {
   getConversionAnalytics,
   getRealtimeSnapshot,
   getAcquisitionReport,
-  getEngagementReport,
   getContentReport,
   getAudienceReport,
   getVoiceReport,
@@ -27,7 +26,6 @@ import {
   withAnalyticsCache,
   cacheCounters,
   type Channel,
-  getInsightsReport,
 } from "@ag-ui/analytics";
 import { logger } from "@ag-ui/shared";
 
@@ -266,31 +264,6 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       },
     }
   )
-  .get(
-    "/insights",
-    async ({ query, set }) => {
-      const company = await tenant(query.companyId, set);
-      if (!company) return { error: "Company not found" };
-      const days = parseWindowDays(query.range);
-      if (days === null) {
-        set.status = 422;
-        return { error: RANGE_ERROR };
-      }
-      return report(set, company, {
-        label: "Insights",
-        errorMessage: "Insights unavailable - try again shortly",
-        cacheKey: `ana:v3:insights:${company.id}:${days}d`,
-        compute: () => getInsightsReport(company.id, days),
-      });
-    },
-    {
-      query: t.Object({ companyId: t.String(), range: t.Optional(t.String()) }),
-      detail: {
-        summary: "Differentiating analytics",
-        description: "Quality matrix, opportunity map, journey explorer, anomaly investigation. First-party only; correlations, not causes.",
-      },
-    }
-  )
   // Ops: cache hit/miss counters (proves the cache actually absorbs load).
   .get("/cache-stats", async () => {
     const redis = await getRedisClient();
@@ -335,38 +308,6 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       detail: {
         summary: "Acquisition analytics",
         description: "Sessions/users/views with previous-period comparison, channel/source/medium/campaign/landing splits. First-party only.",
-      },
-    }
-  )
-  .get(
-    "/engagement",
-    async ({ query, set }) => {
-      const company = await tenant(query.companyId, set);
-      if (!company) return { error: "Company not found" };
-      const days = parseWindowDays(query.range);
-      if (days === null) {
-        set.status = 422;
-        return { error: RANGE_ERROR };
-      }
-      const v1 = validateReportQuery({ metrics: REPORTS.engagement.activity.metrics, dimensions: REPORTS.engagement.activity.dimensions, rangeDays: days });
-      const v2 = validateReportQuery({ metrics: REPORTS.engagement.quality.metrics, dimensions: REPORTS.engagement.quality.dimensions, rangeDays: days });
-      const errors = [...(!v1.ok ? v1.errors : []), ...(!v2.ok ? v2.errors : [])];
-      if (errors.length > 0) {
-        set.status = 422;
-        return { error: "Invalid engagement query", details: errors };
-      }
-      return report(set, company, {
-        label: "Engagement",
-        errorMessage: "Engagement analytics unavailable - try again shortly",
-        cacheKey: `ana:v3:engagement:${company.id}:${days}d`,
-        compute: () => getEngagementReport(company.id, days),
-      });
-    },
-    {
-      query: t.Object({ companyId: t.String(), range: t.Optional(t.String()) }),
-      detail: {
-        summary: "Engagement analytics",
-        description: "Views, sessions, engaged sessions, engagement rate, bounce rate, pages per session, paths, devices. First-party only.",
       },
     }
   )
