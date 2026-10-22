@@ -13,6 +13,7 @@
     "@ag-ui/database": "workspace:*",
     "@ag-ui/genui": "workspace:*",
     "@ag-ui/shared": "workspace:*",
+    "ua-parser-js": "^2.0.10",
     "zod": "3.25.76"
   },
   "devDependencies": {

@@ -17,8 +17,15 @@ import { sessionIslands } from "./sessions";
 export async function getContentReport(companyId: string, rangeDays: number): Promise<ContentReport> {
   const dataQuality: string[] = [];
   const to = new Date();
-  const from = new Date(to.getTime() - rangeDays * 86_400_000);
-  const fromDay = from.toISOString().slice(0, 10);
+  // The same calendar days every other report uses: a "29d" range is the
+  // last 29 calendar days, not a rolling 29×24 hours that clips the day
+  // before. A rolling window started a day early and summed a whole extra
+  // day of rollups, so this page showed a larger "Sessions" number than the
+  // Website page for the same range.
+  const fromDay = new Date(to.getTime() - (rangeDays - 1) * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  const from = new Date(`${fromDay}T00:00:00Z`);
 
   const t = await db
     .select({

@@ -103,8 +103,25 @@ export type DimensionId =
   | "campaign"
   | "landingPage"
   | "device"
+  | "browser"
+  | "os"
+  | "hour"
   | "referrer"
   | "title";
+
+/**
+ * The browser taxonomy.
+ *
+ * One list, in the product's own words — not the parser's. `ua-parser-js`
+ * names forty browsers; the product reports six, and the sixth is "other",
+ * so a report never shows a browser the customer cannot act on.
+ */
+export const BROWSER_VALUES = ["chrome", "safari", "firefox", "edge", "opera", "other"] as const;
+export type BrowserValue = (typeof BROWSER_VALUES)[number];
+
+/** The operating-system taxonomy, same rule: six values, "other" catches the rest. */
+export const OS_VALUES = ["windows", "macos", "ios", "android", "linux", "other"] as const;
+export type OsValue = (typeof OS_VALUES)[number];
 
 export interface DimensionDef {
   id: DimensionId;
@@ -219,6 +236,10 @@ export const CAVEATS = {
   "assisted-approximate": "Assisted conversions are matched on the visit, not the day — approximate.",
   "channel-overlap": "A session active in two channels counts in both.",
   "rollup-stale": "Totals are older than one rollup cycle.",
+  "timezone-unavailable":
+    "Some visits did not report a timezone, so those hours are shown in UTC instead of the visitor's own time.",
+  "dimensions-unavailable":
+    "Some events in this range were collected before the collector recorded a browser and operating system, so they are counted as Unknown.",
 } as const;
 
 export type CaveatId = keyof typeof CAVEATS;
@@ -265,7 +286,10 @@ export const METRICS: Record<string, MetricDef> = {
     definition:
       "Visits: a run of events with no gap wider than 30 minutes. One page load is not one session — a visitor who reads for an hour is one session.",
     status: "available",
-    dimensions: ["day", "path", "channel", "source", "medium", "campaign", "landingPage", "device", "referrer"],
+    dimensions: [
+      "day", "path", "channel", "source", "medium", "campaign", "landingPage",
+      "device", "browser", "os", "hour", "referrer",
+    ],
   },
   uniques: {
     id: "uniques",
@@ -299,7 +323,10 @@ export const METRICS: Record<string, MetricDef> = {
     source: { kind: "column", table: "metrics_daily", column: "pageviews" },
     definition: "Human pageview events. Bot traffic is flagged at write time and excluded from every report.",
     status: "available",
-    dimensions: ["day", "path", "title", "channel", "source", "medium", "campaign", "landingPage", "device", "referrer"],
+    dimensions: [
+      "day", "path", "title", "channel", "source", "medium", "campaign", "landingPage",
+      "device", "browser", "os", "hour", "referrer",
+    ],
   },
   engagedSessions: {
     id: "engagedSessions",
@@ -573,6 +600,28 @@ export const DIMENSIONS: Record<DimensionId, DimensionDef> = {
     status: "available",
     source: { kind: "computed", how: "viewport width bucket (< 768px = Mobile)" },
   },
+  browser: {
+    id: "browser",
+    label: "Browser",
+    definition: "The visitor's browser, in the product's own six-value taxonomy.",
+    status: "available",
+    source: { kind: "column", table: "page_views", column: "browser" },
+  },
+  os: {
+    id: "os",
+    label: "Operating system",
+    definition: "The visitor's operating system, in the product's own six-value taxonomy.",
+    status: "available",
+    source: { kind: "column", table: "page_views", column: "os" },
+  },
+  hour: {
+    id: "hour",
+    label: "Hour of day",
+    definition:
+      "The hour a visit started, in the visitor's own timezone when the snippet reported one, UTC otherwise.",
+    status: "available",
+    source: { kind: "computed", how: "visit start hour + the visit's reported UTC offset" },
+  },
   referrer: {
     id: "referrer",
     label: "Referrer",
@@ -636,6 +685,12 @@ export const REPORTS = {
     titles: {
       metrics: ["pageviews"],
       dimensions: ["title"],
+    },
+  },
+  audience: {
+    profile: {
+      metrics: ["sessions", "pageviews"],
+      dimensions: ["day", "device", "browser", "os", "hour"],
     },
   },
 } as const satisfies Record<string, Record<string, ReportGroup>>;

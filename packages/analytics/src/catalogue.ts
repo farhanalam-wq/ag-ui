@@ -21,6 +21,8 @@ export {
   CAVEATS,
   GROUPS,
   REPORTS,
+  BROWSER_VALUES,
+  OS_VALUES,
   metricById,
   surfaceTabs,
   tabMetrics,
@@ -39,4 +41,6 @@ export {
   type SourceRef,
   type SourceTable,
   type ReportGroup,
+  type BrowserValue,
+  type OsValue,
 } from "@ag-ui/shared";

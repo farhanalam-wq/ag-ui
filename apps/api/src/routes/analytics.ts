@@ -17,6 +17,7 @@ import {
   getAcquisitionReport,
   getEngagementReport,
   getContentReport,
+  getAudienceReport,
   validateReportQuery,
   REPORTS,
   withAnalyticsCache,
@@ -446,6 +447,37 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       detail: {
         summary: "Engagement analytics",
         description: "Views, sessions, engaged sessions, engagement rate, bounce rate, pages per session, paths, devices. First-party only.",
+      },
+    }
+  )
+  .get(
+    "/audience",
+    async ({ query, set }) => {
+      const company = await tenant(query.companyId, set);
+      if (!company) return { error: "Company not found" };
+      const days = parseWindowDays(query.range);
+      if (days === null) {
+        set.status = 422;
+        return { error: RANGE_ERROR };
+      }
+      const v1 = validateReportQuery({ metrics: REPORTS.audience.profile.metrics, dimensions: REPORTS.audience.profile.dimensions, rangeDays: days });
+      if (!v1.ok) {
+        set.status = 422;
+        return { error: "Invalid audience query", details: v1.errors };
+      }
+      return report(set, company, {
+        label: "Audience",
+        errorMessage: "Audience analytics unavailable - try again shortly",
+        cacheKey: `ana:v1:audience:${company.id}:${days}d`,
+        compute: () => getAudienceReport(company.id, days),
+      });
+    },
+    {
+      query: t.Object({ companyId: t.String(), range: t.Optional(t.String()) }),
+      detail: {
+        summary: "Audience analytics",
+        description:
+          "Sessions and views by device, browser, operating system and hour of day. First-party only; no country (no GeoIP source agreed).",
       },
     }
   )

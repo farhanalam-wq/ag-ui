@@ -32,6 +32,7 @@ import {
   MAX_ACTIVE_SECONDS_PER_VISIT,
   SESSION_GAP_MINUTES,
 } from "./sessions";
+import { deviceCaseSqlText } from "./dimensions";
 import { ROLLUP_LAST_KEY } from "./registry";
 
 export const HLL_TTL_SECONDS = 30 * 86_400;
@@ -66,13 +67,13 @@ export async function upsertSessions(fromISO: string, toISO: string): Promise<nu
   const rows = (await client.unsafe(
     `
     WITH ev AS (
-      SELECT company_id, session_hash, created_at, type, value,
+      SELECT company_id, session_hash, created_at, type, value, viewport, browser, os, tz_offset,
              LAG(created_at) OVER (PARTITION BY company_id, session_hash ORDER BY created_at) AS prev
       FROM page_views
       WHERE created_at >= $1 AND created_at < $2 AND is_bot = false
     ),
     islands AS (
-      SELECT company_id, session_hash, created_at, type, value,
+      SELECT company_id, session_hash, created_at, type, value, viewport, browser, os, tz_offset,
              SUM(${ISLAND_CASE}) OVER (PARTITION BY company_id, session_hash ORDER BY created_at) AS island
       FROM ev
     ),
@@ -87,11 +88,21 @@ export async function upsertSessions(fromISO: string, toISO: string): Promise<nu
              -- Engaged = 2+ pageviews or any interaction event. The same rule
              -- lives in sessions.ts and is what the reports read back.
              (COUNT(*) FILTER (WHERE type = 'pageview') >= 2
-               OR BOOL_OR(type IN (${ENGAGEMENT_TYPES_SQL}))) AS engaged
+               OR BOOL_OR(type IN (${ENGAGEMENT_TYPES_SQL}))) AS engaged,
+             -- The visit's profile, taken from the visit's first event: the
+             -- device from its first page (same rule the reports use), the
+             -- browser, the OS and the timezone from the first event of all.
+             (ARRAY_AGG(viewport ORDER BY created_at) FILTER (WHERE type = 'pageview'))[1] AS first_viewport,
+             (ARRAY_AGG(browser ORDER BY created_at))[1] AS first_browser,
+             (ARRAY_AGG(os ORDER BY created_at))[1] AS first_os,
+             (ARRAY_AGG(tz_offset ORDER BY created_at))[1] AS first_tz
       FROM islands GROUP BY company_id, session_hash, island
     )
-    INSERT INTO sessions (company_id, session_hash, started_at, ended_at, pageview_count, active_seconds, converted, revenue, engaged)
-    SELECT company_id, session_hash, started_at, ended_at, pageviews, active_seconds, converted, revenue, engaged FROM sess
+    INSERT INTO sessions (company_id, session_hash, started_at, ended_at, pageview_count, active_seconds, converted, revenue, engaged, device, browser, os, tz_offset)
+    SELECT company_id, session_hash, started_at, ended_at, pageviews, active_seconds, converted, revenue, engaged,
+           ${deviceCaseSqlText("first_viewport")} AS device,
+           first_browser, first_os, first_tz
+    FROM sess
     WHERE started_at >= $3 AND started_at < $2
     ON CONFLICT (company_id, session_hash, started_at) DO UPDATE SET
       ended_at = EXCLUDED.ended_at,
@@ -99,7 +110,11 @@ export async function upsertSessions(fromISO: string, toISO: string): Promise<nu
       active_seconds = EXCLUDED.active_seconds,
       converted = EXCLUDED.converted,
       revenue = EXCLUDED.revenue,
-      engaged = EXCLUDED.engaged
+      engaged = EXCLUDED.engaged,
+      device = EXCLUDED.device,
+      browser = EXCLUDED.browser,
+      os = EXCLUDED.os,
+      tz_offset = EXCLUDED.tz_offset
     RETURNING id;`,
     [scanFrom, toISO, fromISO]
   )) as unknown[];

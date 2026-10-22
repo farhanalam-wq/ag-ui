@@ -6,6 +6,8 @@
  * storage budget so a malicious or buggy client cannot blow up a row.
  */
 
+import { BROWSER_VALUES, OS_VALUES, type BrowserValue, type OsValue } from "./catalogue";
+
 export type TrackEventType =
   | "pageview"
   | "chat_open"
@@ -38,6 +40,12 @@ export interface RawTrackEvent {
   referrer?: unknown;
   viewport?: unknown;
   user_agent?: unknown;
+  /** Derived at the collector from the request's user agent. */
+  browser?: unknown;
+  /** Derived at the collector from the request's user agent. */
+  os?: unknown;
+  /** Derived at the collector from the visitor's reported timezone. */
+  tz_offset?: unknown;
   session_hash?: unknown;
   visitor_hash?: unknown;
   /** Conversion revenue (B2C). Only honored on type === "conversion". */
@@ -57,6 +65,9 @@ export interface ValidatedTrackEvent {
   referrer: string;
   viewport: string;
   user_agent: string;
+  browser: BrowserValue | null;
+  os: OsValue | null;
+  tz_offset: number | null;
   session_hash: string;
   visitor_hash: string;
   value: number | null;
@@ -72,11 +83,36 @@ const MAX_VP_LEN = 32;
 const MAX_UA_LEN = 300;
 const MAX_VALUE = 1_000_000_000;
 
+/** UTC-14 to UTC+14, in minutes. Nothing outside that is a real timezone. */
+const MAX_TZ_OFFSET_MINUTES = 14 * 60;
+
 function str(v: unknown, max: number): string | null {
   if (typeof v !== "string") return null;
   const t = v.trim();
   if (t.length === 0 || t.length > max) return null;
   return t;
+}
+
+/**
+ * A derived dimension is only kept if it is one of the product's own values.
+ *
+ * The collector computes these, but the validator is the last gate before
+ * the row is written, and a value outside the taxonomy would be a
+ * breakdown nobody can act on.
+ */
+function enumValue<T extends string>(v: unknown, allowed: readonly T[]): T | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim().toLowerCase();
+  return (allowed as readonly string[]).includes(t) ? (t as T) : null;
+}
+
+/** A timezone offset in minutes, or null when it is missing or impossible. */
+function tzOffsetValue(v: unknown): number | null {
+  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+  if (!Number.isFinite(n)) return null;
+  const rounded = Math.round(n);
+  if (rounded < -MAX_TZ_OFFSET_MINUTES || rounded > MAX_TZ_OFFSET_MINUTES) return null;
+  return rounded;
 }
 
 function optStr(v: unknown, max: number): string {
@@ -174,6 +210,9 @@ export function validateTrackEvent(
       referrer: optStr(raw.referrer, MAX_REF_LEN),
       viewport: optStr(raw.viewport, MAX_VP_LEN),
       user_agent: optStr(raw.user_agent, MAX_UA_LEN),
+      browser: enumValue(raw.browser, BROWSER_VALUES),
+      os: enumValue(raw.os, OS_VALUES),
+      tz_offset: tzOffsetValue(raw.tz_offset),
       session_hash,
       visitor_hash,
       value,

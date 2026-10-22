@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, integer, index, boolean, unique, numeric, date, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, integer, index, boolean, unique, numeric, date, primaryKey, smallint } from "drizzle-orm/pg-core";
 
 export const companies = pgTable("companies", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -282,6 +282,12 @@ export const pageViews = pgTable(
     referrer: text("referrer").default("").notNull(),
     viewport: text("viewport").default("").notNull(),
     userAgent: text("user_agent").default("").notNull(),
+    // Visitor profile, derived once at the collector and stored so a report
+    // never re-parses a user agent (and never disagrees with another one).
+    browser: text("browser"),
+    os: text("os"),
+    /** Minutes east of UTC, from the visitor's own timezone. Null when unknown. */
+    tzOffset: smallint("tz_offset"),
     isBot: boolean("is_bot").default(false).notNull(),
     value: numeric("value"),
     meta: jsonb("meta"),
@@ -302,6 +308,14 @@ export const sessions = pgTable(
     endedAt: timestamp("ended_at", { withTimezone: true }),
     pageviewCount: integer("pageview_count").default(0).notNull(),
     activeSeconds: integer("active_seconds").default(0).notNull(),
+    // The visit's visitor profile, copied from the event that opened it. One
+    // row per visit, so a breakdown by these is a breakdown of visits — the
+    // same unit every "Sessions" figure counts.
+    device: text("device"),
+    browser: text("browser"),
+    os: text("os"),
+    /** Minutes east of UTC, from the visitor's own timezone. Null when unknown. */
+    tzOffset: smallint("tz_offset"),
     converted: boolean("converted").default(false).notNull(),
     revenue: numeric("revenue").default("0").notNull(),
     engaged: boolean("engaged").default(false).notNull(),

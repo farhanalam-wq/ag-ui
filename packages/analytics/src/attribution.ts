@@ -94,9 +94,11 @@ export function visitAttrCTEs(companyId: string, from: Date, to: Date) {
   return { v1, v2 };
 }
 
-/** Desktop vs Mobile from a "WxH" viewport column. */
-export function deviceFragment(vp: SQLWrapper): SQL<string> {
-  return sql<string>`CASE
-    WHEN ${vp} ~ '^[0-9]{1,4}x' AND substring(${vp} from '^([0-9]{1,4})x')::int < 768
-    THEN 'Mobile' ELSE 'Desktop' END`;
-}
+/**
+ * Desktop vs Mobile from a "WxH" viewport column.
+ *
+ * The rule itself lives in `dimensions.ts`, next to the other dimension
+ * rules and the raw-SQL copy the rollup uses. This re-export keeps the
+ * existing call sites working.
+ */
+export { deviceCaseSql as deviceFragment } from "./dimensions";

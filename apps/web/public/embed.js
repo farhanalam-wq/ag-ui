@@ -263,6 +263,18 @@
       }
     }
 
+    // The visitor's timezone, as an IANA zone ("Europe/Berlin"). The
+    // collector resolves it to an offset, so "3pm" means 3pm where the
+    // visitor is. The zone is a claim about the clock, not an identity:
+    // nothing here identifies anyone.
+    function timezone() {
+      try {
+        return String(Intl.DateTimeFormat().resolvedOptions().timeZone || "").slice(0, 64);
+      } catch (e) {
+        return "";
+      }
+    }
+
     function send(type, extra) {
       var payload = {
         event_id: newEventId(),
@@ -272,6 +284,7 @@
         viewport: viewport(),
         user_agent: String(navigator.userAgent || "").slice(0, 300),
         session_hash: sessionId,
+        tz: timezone(),
       };
       if (extra) {
         for (var k in extra) {

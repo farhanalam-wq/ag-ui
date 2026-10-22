@@ -29,7 +29,12 @@ import {
   getRedisClient,
   closeRedisConnection,
 } from "../packages/database/src/index";
-import { buildDailyRollup, rebuildDailyHll, dailyUniquesKey } from "../packages/analytics/src/index";
+import {
+  buildDailyRollup,
+  rebuildDailyHll,
+  dailyUniquesKey,
+  parseUserAgent,
+} from "../packages/analytics/src/index";
 
 /** The two fixture companies. Fixed ids so `--clear` can find them again. */
 export const FIXTURE_COMPANY_A = "a0000000-0000-4000-8000-000000000001";
@@ -38,6 +43,17 @@ const FIXTURE_COMPANIES = [FIXTURE_COMPANY_A, FIXTURE_COMPANY_B];
 
 /** Everything the fixture writes carries this prefix, so `--clear` is exact. */
 const EVENT_PREFIX = "fx-";
+
+/**
+ * The timezone each fixture company pretends to be in, in minutes east of
+ * UTC. The busy company is on US Pacific (-420) and the quiet one on
+ * Central Europe (+60), so the hour-of-day breakdown is not the same shape
+ * for both and the timezone offset is visible in the data.
+ */
+const TZ_OFFSET_BY_COMPANY: Record<string, number> = {
+  "a0000000-0000-4000-8000-000000000001": -420,
+  "a0000000-0000-4000-8000-000000000002": 60,
+};
 
 const PATHS = [
   "/", "/pricing", "/product", "/docs", "/blog/analytics-guide",
@@ -117,6 +133,9 @@ interface EventRow {
   type: string;
   companyId: string;
   sessionHash: string;
+  browser: string;
+  os: string;
+  tzOffset: number;
   visitorHash: string;
   url: string;
   path: string;
@@ -135,7 +154,11 @@ interface EventRow {
  * The shape is deliberately ordinary: a weekly rhythm, a slow growth trend, a
  * few bots, and the interactions that make the engagement and content
  * numbers non-zero. `anchorStart` is the first day's midnight, so the last
- * day is today.
+ * day is *yesterday*: the fixture never writes an event in the future, so
+ * every report's window — the rollup's whole days, and the reports that
+ * stop at "now" — covers exactly the same traffic. A seed that invented
+ * afternoon traffic at eight in the morning would make two reports
+ * disagree by exactly the amount the fixture cheated.
  */
 function dayEvents(
   companyId: string,
@@ -160,6 +183,8 @@ function dayEvents(
     const sessionHash = uuidFrom(hash32(`${companyId}:${dayIndex}:v${v}`));
     const visitorHash = uuidFrom(hash32(`${companyId}:visitor:${dayIndex}:${Math.floor(v / 2)}`));
     const ua = isBot ? BOT_AGENTS[Math.floor(rand() * BOT_AGENTS.length)]! : USER_AGENTS[Math.floor(rand() * USER_AGENTS.length)]!;
+    // The visitor profile, derived exactly the way the collector derives it.
+    const { browser, os } = parseUserAgent(ua);
     const viewport = isBot ? "" : rand() < 0.45 ? "390x844" : rand() < 0.5 ? "768x1024" : "1440x900";
     const referrer = REFERRERS[Math.floor(rand() * REFERRERS.length)]!;
     const campaign = CAMPAIGNS[Math.floor(rand() * CAMPAIGNS.length)]!;
@@ -181,6 +206,9 @@ function dayEvents(
         type,
         companyId,
         sessionHash,
+        browser,
+        os,
+        tzOffset: TZ_OFFSET_BY_COMPANY[companyId] ?? 0,
         visitorHash,
         url,
         path,
@@ -355,7 +383,8 @@ async function main() {
   const all: EventRow[] = [];
   const today = new Date();
   const todayStart = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
-  const anchorStart = todayStart - (days - 1) * 86_400_000;
+  // The window ends yesterday: today is left empty on purpose.
+  const anchorStart = todayStart - days * 86_400_000;
   for (let d = 0; d < days; d++) {
     all.push(...dayEvents(FIXTURE_COMPANY_A, d, days, true, anchorStart));
     all.push(...dayEvents(FIXTURE_COMPANY_B, d, days, false, anchorStart));
@@ -378,6 +407,9 @@ async function main() {
       referrer: r.referrer,
       viewport: r.viewport,
       userAgent: r.userAgent,
+      browser: r.browser,
+      os: r.os,
+      tzOffset: r.tzOffset,
       isBot: r.isBot,
       value: r.value,
       meta: r.meta,
@@ -405,11 +437,11 @@ async function main() {
   console.log(`[FIXTURES] ${convos.length} conversations, ${msgs.length} messages`);
 
   // Roll the fixtures up so the reports have rollup-bound numbers too.
-  for (let d = days - 1; d >= 0; d--) {
+  for (let d = days; d >= 1; d--) {
     const day = new Date(todayStart - d * 86_400_000).toISOString().slice(0, 10);
     await buildDailyRollup(day);
   }
-  for (let d = days - 1; d >= 0; d--) {
+  for (let d = days; d >= 1; d--) {
     const day = new Date(todayStart - d * 86_400_000).toISOString().slice(0, 10);
     await rebuildDailyHll(redis, day);
   }

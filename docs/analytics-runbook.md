@@ -69,8 +69,32 @@ cascade to their events, sessions, rollups and conversations, and the Redis HLL
 keys are deleted with them. It creates the `page_views` monthly partitions it
 needs, exactly like the worker does.
 
+**The window ends yesterday, not today.** The fixture never invents traffic in
+the future: a seed that wrote afternoon visits at eight in the morning made the
+rollup-based reports and the session-table-based reports disagree by exactly
+the traffic it had made up. Today is deliberately empty.
+
 **Do not run it against a production database** — it inserts 10k+ events and
 rebuilds 90 days of rollups.
+
+## The visitor profile (browser, OS, timezone)
+
+Three columns are derived **at the collector** and stored, so no report ever
+re-parses a user agent:
+
+| Column | Where it comes from |
+|---|---|
+| `page_views.browser` | the request's user agent, read by `ua-parser-js` and mapped into the product's six-value taxonomy |
+| `page_views.os` | the same user agent, the product's six-value operating systems |
+| `page_views.tz_offset` | the visitor's IANA timezone (the snippet sends the zone), resolved to minutes east of UTC for the event's instant — so daylight saving is right |
+| `sessions.device` / `.browser` / `.os` / `.tz_offset` | copied by the rollup from the event that opened the visit, so a breakdown counts visits |
+
+The snippet change is one field (`tz`). A visitor with no zone is bucketed in
+UTC and the report says so (`timezone-unavailable`); events collected before
+this landed have no profile at all (`dimensions-unavailable`).
+
+Country is **not** collected: the GeoIP source is still an open decision
+(`docs/analytics-rebuild.md` D12). The raw IP is never stored either way.
 
 ## Recompute / repair
 `bun run rebuild:analytics --cwd workers/worker` rebuilds the session rows, the

@@ -182,7 +182,11 @@ export function validateReportQuery(q: ReportQuery): { ok: true } | { ok: false;
       if (!m.dimensions.includes(d as DimensionId)) {
         errors.push({
           code: "incompatible-dimensions",
-          message: `"${id}" cannot break down by "${d}" (HLL keys are per company-day only).`,
+          // The metric's own note explains the usual reason (uniques live in
+          // per-day HLL keys); without one, say what actually happened.
+          message: m.note
+            ? `"${id}" cannot break down by "${d}" — ${m.note}`
+            : `"${id}" cannot break down by "${d}" (not one of the metric's dimensions).`,
         });
       }
     }
@@ -286,6 +290,20 @@ export interface ContentReport {
   byTitle: BreakdownRow[];
   byChannel: BreakdownRow[];
   byDevice: BreakdownRow[];
+  freshness: Freshness;
+}
+
+export interface AudienceReport {
+  kind: "audience";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  byDevice: BreakdownRow[];
+  byBrowser: BreakdownRow[];
+  byOs: BreakdownRow[];
+  byHour: BreakdownRow[];
+  /** The share of visits that reported a timezone (0-100). */
+  timezoneCoverage: number;
   freshness: Freshness;
 }
 
