@@ -32,6 +32,7 @@ Every analytics report answers with the same envelope:
 
 ```jsonc
 {
+  "kind": "website",                 // the report that answered
   "companyId": "uuid",
   "rangeDays": 30,
   "compare": "off",                 // or "previous-period" (acquisition)
@@ -46,7 +47,7 @@ Every analytics report answers with the same envelope:
 
 - `breakdowns` is keyed by **dimension id** (`channel`, `sourceMedium`,
   `campaign`, `landingPage`, `path`, `title`, `device`, `browser`, `os`,
-  `hour`), never by a service-specific `by*` key.
+  `hour`, `viewport`), never by a service-specific `by*` key.
 - `X-Analytics-Cache` is `HIT` (fresh, no compute), `STALE` (served
   immediately while a refresh runs behind the request) or `MISS` (computed
   now). It is the only way to tell a stale read from a fresh one.
@@ -56,6 +57,16 @@ Every analytics report answers with the same envelope:
 - A bad `range` is `422 { error }`, a company this session does not own is
   `404`, the read budget is `429` with `Retry-After`. The web client raises
   one `ApiError` carrying the status, code, details and `retryAfterSec`.
+
+Website: `/api/analytics/website` returns `kind: "website"` — totals
+(sessions, uniques, pageviews, engaged sessions, engagement rate, bounce rate,
+pages per session, average engagement time, plus scroll/download/click counts),
+a daily trend that includes engaged sessions, and
+`breakdowns: { path, referrer, viewport }`. `uniques` is **absent** when the HLL
+merge fails, never zero. An empty referrer is reported as `(direct)` and an
+empty viewport as `(unknown)`, so the breakdown adds up to the KPI row; an
+empty path is dropped — it is not a page. The engagement totals are the same
+helper the old Engagement report uses, so the two cannot disagree.
 
 Agent routes: `/api/analytics/agent/overview` (sessions, opens, open rate,
 questions), `/api/analytics/agent/questions` (volume, depth, panel time, by

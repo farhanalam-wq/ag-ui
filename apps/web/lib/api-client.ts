@@ -76,14 +76,23 @@ export interface Freshness {
   notes: string[];
 }
 
+export interface WebsiteBreakdownRow {
+  label: string;
+  pageviews: number;
+}
+
 export interface WebsiteAnalytics {
+  kind: "website";
   companyId: string;
   rangeDays: number;
-  totals: { sessions: number; pageviews: number; uniques: number | null; conversions: number };
-  trend: { d: string; pageviews: number; sessions: number }[];
-  topPages: { label: string; views: number }[];
-  referrers: { label: string; views: number }[];
-  viewports: { label: string; views: number }[];
+  /** `uniques` is absent when the HLL merge failed — never a fake zero. */
+  totals: Record<string, number>;
+  trend: { d: string; sessions: number; pageviews: number; engagedSessions: number }[];
+  breakdowns: {
+    path: WebsiteBreakdownRow[];
+    referrer: WebsiteBreakdownRow[];
+    viewport: WebsiteBreakdownRow[];
+  };
   freshness: Freshness;
 }
 

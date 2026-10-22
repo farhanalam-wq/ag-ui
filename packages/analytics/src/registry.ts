@@ -255,6 +255,25 @@ export interface BreakdownRow {
   [metric: string]: string | number;
 }
 
+/**
+ * The Website surface's headline report. Totals and trend come from the
+ * rollup; the splits are raw scans. `uniques` is absent when the HLL merge
+ * fails — absence is the honest answer, zero would not be.
+ */
+export interface WebsiteReport {
+  kind: "website";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  trend: TrendPoint[];
+  breakdowns: {
+    path: BreakdownRow[];
+    referrer: BreakdownRow[];
+    viewport: BreakdownRow[];
+  };
+  freshness: Freshness;
+}
+
 export interface AcquisitionReport {
   kind: "acquisition";
   companyId: string;

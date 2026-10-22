@@ -108,6 +108,7 @@ export type DimensionId =
   | "os"
   | "hour"
   | "referrer"
+  | "viewport"
   | "title";
 
 /**
@@ -942,6 +943,13 @@ export const DIMENSIONS: Record<DimensionId, DimensionDef> = {
     status: "available",
     source: { kind: "column", table: "page_views", column: "referrer" },
   },
+  viewport: {
+    id: "viewport",
+    label: "Viewport",
+    definition: "The screen size the event reported, as a width bucket (e.g. 1440x900).",
+    status: "available",
+    source: { kind: "column", table: "page_views", column: "viewport" },
+  },
   title: {
     id: "title",
     label: "Page title",
@@ -970,6 +978,21 @@ export interface ReportGroup {
  * repeated in the route handler.
  */
 export const REPORTS = {
+  website: {
+    overview: {
+      metrics: [
+        "sessions",
+        "uniques",
+        "pageviews",
+        "engagedSessions",
+        "engagementRate",
+        "bounceRate",
+        "pagesPerSession",
+        "avgEngagementTime",
+      ],
+      dimensions: ["day"],
+    },
+  },
   acquisition: {
     traffic: {
       metrics: ["sessions", "pageviews"],
