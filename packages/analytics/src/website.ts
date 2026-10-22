@@ -4,9 +4,24 @@
  * GA-style website analytics from rollups (trend/totals) + bounded raw
  * scans (top pages, referrers, viewports). Humans-only throughout
  * (is_bot=false is a stored flag, so the filter is free).
+ *
+ * ORM-first: Drizzle builder for every query. Aggregates that Postgres
+ * returns as bigint/numeric are cast in SQL (`::int`, `::float`) so the
+ * values stay numbers in JS, and `day` is read as text because the driver
+ * parses `date` columns into Date objects.
  */
 
-import { client } from "@ag-ui/database";
+import {
+  db,
+  metricsDaily,
+  pageViews,
+  sql,
+  eq,
+  and,
+  gte,
+  desc,
+  type PgColumn,
+} from "@ag-ui/database";
 import type { CacheRedis } from "./cache";
 import { dailyUniquesKey } from "./identity";
 
@@ -43,12 +58,17 @@ export async function getWebsiteAnalytics(
     days.push(new Date(now.getTime() - i * 86_400_000).toISOString().slice(0, 10));
   }
 
-  const tRows = (await client.unsafe(
-    `SELECT day::text AS day, SUM(pageviews)::int AS pv, SUM(sessions)::int AS se,
-      SUM(conversions)::int AS cv FROM metrics_daily
-      WHERE company_id = $1 AND day >= $2::date GROUP BY day ORDER BY day;`,
-    [companyId, fromISO.slice(0, 10)]
-  )) as Array<{ day: string; pv: number; se: number; cv: number }>;
+  const tRows = await db
+    .select({
+      day: sql<string>`${metricsDaily.day}::text`.as("day"),
+      pv: sql<number>`COALESCE(SUM(${metricsDaily.pageviews}), 0)::int`.as("pv"),
+      se: sql<number>`COALESCE(SUM(${metricsDaily.sessions}), 0)::int`.as("se"),
+      cv: sql<number>`COALESCE(SUM(${metricsDaily.conversions}), 0)::int`.as("cv"),
+    })
+    .from(metricsDaily)
+    .where(and(eq(metricsDaily.companyId, companyId), gte(metricsDaily.day, fromISO.slice(0, 10))))
+    .groupBy(metricsDaily.day)
+    .orderBy(metricsDaily.day);
   const byDay = new Map(tRows.map((r) => [r.day.slice(0, 10), r]));
   const trend: WebsiteTrendPoint[] = days.map((d) => ({
     d,
@@ -79,13 +99,24 @@ export async function getWebsiteAnalytics(
     dataQuality.push("uniques-unavailable");
   }
 
-  const top = async (col: string, label: string, extra = ""): Promise<RankedRow[]> => {
-    const rows = (await client.unsafe(
-      `SELECT ${col} AS label, COUNT(*)::int AS views FROM page_views
-       WHERE company_id = $1 AND type = 'pageview' AND is_bot = false
-       AND created_at >= $2 ${extra} GROUP BY ${col} ORDER BY views DESC LIMIT 10;`,
-      [companyId, fromISO]
-    )) as Array<{ label: string; views: number }>;
+  const top = async (col: PgColumn): Promise<RankedRow[]> => {
+    const rows = await db
+      .select({
+        label: sql<string>`${col}`.as("label"),
+        views: sql<number>`COUNT(*)::int`.as("views"),
+      })
+      .from(pageViews)
+      .where(
+        and(
+          eq(pageViews.companyId, companyId),
+          eq(pageViews.type, "pageview"),
+          eq(pageViews.isBot, false),
+          gte(pageViews.createdAt, new Date(fromISO))
+        )
+      )
+      .groupBy(col)
+      .orderBy(desc(sql`COUNT(*)`))
+      .limit(10);
     return rows
       .filter((r) => (r.label ?? "").length > 0)
       .map((r) => ({ label: r.label.length > 80 ? r.label.slice(0, 80) : r.label, views: r.views }));
@@ -96,9 +127,9 @@ export async function getWebsiteAnalytics(
     rangeDays,
     totals,
     trend,
-    topPages: await top("path", "path"),
-    referrers: await top("referrer", "referrer"),
-    viewports: await top("viewport", "viewport"),
+    topPages: await top(pageViews.path),
+    referrers: await top(pageViews.referrer),
+    viewports: await top(pageViews.viewport),
     dataQuality,
   };
 }

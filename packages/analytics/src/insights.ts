@@ -10,7 +10,7 @@
  *   slices as context, never as proven causes).
  */
 
-import { db, metricsDaily, sql, eq, and, desc } from "@ag-ui/database";
+import { db, metricsDaily, sql, eq, and, gte, lte, desc, count } from "@ag-ui/database";
 import { freshnessStub } from "./registry";
 import { visitAttrCTEs } from "./attribution";
 import { engagedInteractionSql, engagedSessionSql, sessionIslands } from "./sessions";
@@ -145,7 +145,7 @@ export async function getInsightsReport(companyId: string, rangeDays: number): P
     })
     .from(perCS)
     .groupBy(perCS.channel)
-    .orderBy(desc(sql`COUNT(*)`));
+    .orderBy(desc(count()));
   const qualityMatrix: QualityRow[] = qRows.map((r) => {
     const se = Number(r.sessions);
     const pv = Number(r.pageviews);
@@ -185,7 +185,7 @@ export async function getInsightsReport(companyId: string, rangeDays: number): P
     })
     .from(perVisit)
     .groupBy(perVisit.entryPath)
-    .orderBy(desc(sql`COUNT(*)`))
+    .orderBy(desc(count()))
     .limit(10);
   const opportunityMap: OpportunityRow[] = oppRows
     .filter((r) => (r.path ?? "").length > 0)
@@ -217,7 +217,7 @@ export async function getInsightsReport(companyId: string, rangeDays: number): P
     .from(seq)
     .where(and(eq(seq.rn, 1), sql`${seq.nextPath} IS NOT NULL AND ${seq.nextPath} <> ${seq.path}`))
     .groupBy(seq.path, seq.nextPath)
-    .orderBy(desc(sql`COUNT(*)`))
+    .orderBy(desc(count()))
     .limit(15);
   const entryVol = new Map<string, number>();
   for (const o of opportunityMap) entryVol.set(o.path, o.sessions);
@@ -242,7 +242,7 @@ export async function getInsightsReport(companyId: string, rangeDays: number): P
       se: metricsDaily.sessions,
     })
     .from(metricsDaily)
-    .where(and(eq(metricsDaily.companyId, companyId), sql`${metricsDaily.day} >= ${prev0}::date`, sql`${metricsDaily.day} <= ${todayStr}::date`))
+    .where(and(eq(metricsDaily.companyId, companyId), gte(metricsDaily.day, prev0), lte(metricsDaily.day, todayStr)))
     .orderBy(metricsDaily.day);
   const base = dRows.filter((r) => r.day < cur0);
   const curr = dRows.filter((r) => r.day >= cur0);

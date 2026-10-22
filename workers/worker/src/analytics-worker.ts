@@ -19,7 +19,7 @@ import {
   redisConnection,
   type AnalyticsTrackJobData,
 } from "@ag-ui/queues";
-import { client, recordError } from "@ag-ui/database";
+import { client, db, pageViews, recordError } from "@ag-ui/database";
 import {
   isBot,
   dedupeKey,
@@ -99,34 +99,30 @@ async function ensurePartitions(rows: BufferedEvent[]): Promise<void> {
   });
 }
 
-const COLS = [
-  "event_id", "type", "company_id", "widget_key_id", "session_hash",
-  "visitor_hash", "url", "path", "referrer", "viewport", "user_agent",
-  "is_bot", "value", "meta", "created_at",
-] as const;
-
 async function flush(): Promise<void> {
   if (buffer.length === 0) return;
   const rows = buffer;
   buffer = [];
   try {
     await ensurePartitions(rows);
-    const params: unknown[] = [];
-    const tuples = rows.map((r) => {
-      const base = params.length;
-      const vals = [
-        r.event_id, r.type, r.company_id, r.widget_key_id, r.session_hash,
-        r.visitor_hash, r.url, r.path, r.referrer, r.viewport, r.user_agent,
-        isBot(r.user_agent), r.value,
-        r.meta === null ? null : JSON.stringify(r.meta), r.created_at,
-      ];
-      vals.forEach((v) => params.push(v));
-      return `(${vals.map((_, i) => `$${base + i + 1}`).join(",")})`;
-    });
-    await client.unsafe(
-      `INSERT INTO page_views (${COLS.join(",")}) VALUES ${tuples.join(",")} ON CONFLICT DO NOTHING;`,
-      params as any[]
-    );
+    const values = rows.map((r) => ({
+      eventId: r.event_id,
+      type: r.type,
+      companyId: r.company_id,
+      widgetKeyId: r.widget_key_id,
+      sessionHash: r.session_hash,
+      visitorHash: r.visitor_hash,
+      url: r.url,
+      path: r.path,
+      referrer: r.referrer,
+      viewport: r.viewport,
+      userAgent: r.user_agent,
+      isBot: isBot(r.user_agent),
+      value: r.value === null ? null : String(r.value),
+      meta: r.meta,
+      createdAt: new Date(r.created_at),
+    }));
+    await db.insert(pageViews).values(values).onConflictDoNothing();
     insertedRows += rows.length;
   } catch (err: any) {
     flushErrors++;

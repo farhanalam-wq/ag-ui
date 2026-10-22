@@ -11,7 +11,7 @@
  * and uniques report null honestly.
  */
 
-import { db, metricsDaily, sql, eq, and, or, desc } from "@ag-ui/database";
+import { db, metricsDaily, sql, eq, and, or, gte, lt, desc, count } from "@ag-ui/database";
 import type { CacheRedis } from "./cache";
 import { dailyUniquesKey } from "./identity";
 import {
@@ -116,7 +116,7 @@ export async function getAcquisitionReport(
       se: metricsDaily.sessions,
     })
     .from(metricsDaily)
-    .where(and(eq(metricsDaily.companyId, companyId), sql`${metricsDaily.day} >= ${fromDay}::date`))
+    .where(and(eq(metricsDaily.companyId, companyId), gte(metricsDaily.day, fromDay)))
     .orderBy(metricsDaily.day);
   const byDay = new Map(tRows.map((r) => [r.day.slice(0, 10), r]));
   const days = dayList(new Date(nowMs + 86_400_000).toISOString().slice(0, 10), rangeDays);
@@ -138,8 +138,8 @@ export async function getAcquisitionReport(
       .where(
         and(
           eq(metricsDaily.companyId, companyId),
-          sql`${metricsDaily.day} >= ${prevFrom.toISOString().slice(0, 10)}::date`,
-          sql`${metricsDaily.day} < ${fromDay}::date`
+          gte(metricsDaily.day, prevFrom.toISOString().slice(0, 10)),
+          lt(metricsDaily.day, fromDay)
         )
       );
     previousTotals = { sessions: Number(pr[0]?.se ?? 0), pageviews: Number(pr[0]?.pv ?? 0) };
@@ -170,7 +170,7 @@ export async function getAcquisitionReport(
     })
     .from(perVisit)
     .groupBy(perVisit.entryPath)
-    .orderBy(desc(sql`COUNT(*)`))
+    .orderBy(desc(count()))
     .limit(10);
   const byLandingPage: BreakdownRow[] = landing
     .filter((r) => (r.label ?? "").length > 0)

@@ -11,7 +11,7 @@
  * of the same tab.
  */
 
-import { client, db, sql } from "@ag-ui/database";
+import { db, metricsDaily, conversations, sql, eq, and, gte } from "@ag-ui/database";
 import { sessionIslands } from "./sessions";
 
 export interface ConversionDayPoint {
@@ -57,12 +57,19 @@ export async function getConversionAnalytics(
     days.push(new Date(now.getTime() - i * 86_400_000).toISOString().slice(0, 10));
   }
 
-  const tRows = (await client.unsafe(
-    `SELECT day::text AS day, SUM(pageviews)::int AS pv, SUM(sessions)::int AS se,
-      SUM(conversions)::int AS cv, SUM(revenue)::float AS rev, SUM(chat_opens)::int AS co
-      FROM metrics_daily WHERE company_id = $1 AND day >= $2::date GROUP BY day ORDER BY day;`,
-    [companyId, fromDay]
-  )) as Array<{ day: string; pv: number; se: number; cv: number; rev: number; co: number }>;
+  const tRows = await db
+    .select({
+      day: sql<string>`${metricsDaily.day}::text`.as("day"),
+      pv: sql<number>`COALESCE(SUM(${metricsDaily.pageviews}), 0)::int`.as("pv"),
+      se: sql<number>`COALESCE(SUM(${metricsDaily.sessions}), 0)::int`.as("se"),
+      cv: sql<number>`COALESCE(SUM(${metricsDaily.conversions}), 0)::int`.as("cv"),
+      rev: sql<number>`COALESCE(SUM(${metricsDaily.revenue}), 0)::float`.as("rev"),
+      co: sql<number>`COALESCE(SUM(${metricsDaily.chatOpens}), 0)::int`.as("co"),
+    })
+    .from(metricsDaily)
+    .where(and(eq(metricsDaily.companyId, companyId), gte(metricsDaily.day, fromDay)))
+    .groupBy(metricsDaily.day)
+    .orderBy(metricsDaily.day);
   const byDay = new Map(tRows.map((r) => [r.day.slice(0, 10), r]));
   const sessions = tRows.reduce((a, r) => a + (r.se ?? 0), 0);
   const chatOpens = tRows.reduce((a, r) => a + (r.co ?? 0), 0);
@@ -94,11 +101,11 @@ export async function getConversionAnalytics(
     .from(perVisit);
   const a = assist[0] ?? { convs: 0, rev: 0, assisted: 0, assistedRev: 0 };
 
-  const convos = (await client.unsafe(
-    `SELECT COUNT(*)::int AS c FROM conversations WHERE company_id = $1 AND created_at >= $2;`,
-    [companyId, fromISO]
-  )) as Array<{ c: number }>;
-  const started = convos[0]?.c ?? 0;
+  const [convRow] = await db
+    .select({ c: sql<number>`COUNT(*)::int`.as("c") })
+    .from(conversations)
+    .where(and(eq(conversations.companyId, companyId), gte(conversations.createdAt, new Date(fromISO))));
+  const started = Number(convRow?.c ?? 0);
 
   const fCounts = [sessions, chatOpens, started, conversions];
   const stages = ["Eligible sessions", "Widget opened", "Conversation started", "Recorded conversion"];

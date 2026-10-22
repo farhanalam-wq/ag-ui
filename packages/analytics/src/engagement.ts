@@ -46,7 +46,7 @@ export async function getEngagementReport(
       clicks: metricsDaily.clicks,
     })
     .from(metricsDaily)
-    .where(and(eq(metricsDaily.companyId, companyId), sql`${metricsDaily.day} >= ${fromDay}::date`))
+    .where(and(eq(metricsDaily.companyId, companyId), gte(metricsDaily.day, fromDay)))
     .orderBy(metricsDaily.day);
   const byDay = new Map(tRows.map((r) => [String(r.day).slice(0, 10), r]));
   const daySet = new Set(days);

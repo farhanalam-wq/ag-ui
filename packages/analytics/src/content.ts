@@ -6,7 +6,10 @@
  * from the shared attr CTEs with builder aggregation.
  */
 
-import { db, metricsDaily, sql, eq, and, desc } from "@ag-ui/database";
+import { db, metricsDaily, sql, eq, and, gte, desc, count, type SQL, type PgColumn } from "@ag-ui/database";
+
+/** What `groupBy`/`orderBy` accept: a column, a SQL fragment, or an aliased fragment. */
+type Groupable = SQL | PgColumn | SQL.Aliased;
 import { freshnessStub, type BreakdownRow, type ContentReport } from "./registry";
 import { deviceFragment, visitAttrCTEs } from "./attribution";
 import { sessionIslands } from "./sessions";
@@ -23,13 +26,13 @@ export async function getContentReport(companyId: string, rangeDays: number): Pr
       se: sql<number>`COALESCE(SUM(${metricsDaily.sessions}), 0)::int`.as("se"),
     })
     .from(metricsDaily)
-    .where(and(eq(metricsDaily.companyId, companyId), sql`${metricsDaily.day} >= ${fromDay}::date`));
+    .where(and(eq(metricsDaily.companyId, companyId), gte(metricsDaily.day, fromDay)));
   const totals = { sessions: Number(t[0]?.se ?? 0), pageviews: Number(t[0]?.pv ?? 0) };
   if (totals.sessions === 0 && totals.pageviews === 0) dataQuality.push("tracking-off");
 
   // Same window, same island rule as the rollup: a "session" here is a visit.
   const { v1, v2 } = visitAttrCTEs(companyId, from, to);
-  const split = async (labelFrag: ReturnType<typeof sql<string>>, groupFrag: ReturnType<typeof sql>): Promise<BreakdownRow[]> => {
+  const split = async (labelFrag: Groupable, groupFrag: Groupable): Promise<BreakdownRow[]> => {
     const rows = await db
       .with(v1, v2)
       .select({
@@ -38,7 +41,7 @@ export async function getContentReport(companyId: string, rangeDays: number): Pr
         sessions: sql<number>`COUNT(DISTINCT ${v2.visitKey}) FILTER (WHERE ${v2.type} = 'pageview')::int`.as("sessions"),
       })
       .from(v2)
-      .groupBy(sql`${groupFrag}`)
+      .groupBy(groupFrag)
       .orderBy(desc(sql`COUNT(*) FILTER (WHERE ${v2.type} = 'pageview')`))
       .limit(10);
     return rows
@@ -47,9 +50,9 @@ export async function getContentReport(companyId: string, rangeDays: number): Pr
   };
 
   const devFrag = deviceFragment(v2.viewport);
-  const byPath = await split(sql<string>`${v2.path}`, sql`${v2.path}`);
-  const byChannel = await split(sql<string>`${v2.channel}`, sql`${v2.channel}`);
-  const byDevice = await split(sql<string>`${devFrag}`, sql`${devFrag}`);
+  const byPath = await split(v2.path, v2.path);
+  const byChannel = await split(v2.channel, v2.channel);
+  const byDevice = await split(devFrag, devFrag);
 
   // Page titles from pageview meta (tag-captured document.title).
   const isl = sessionIslands(companyId, from, to);
@@ -63,7 +66,7 @@ export async function getContentReport(companyId: string, rangeDays: number): Pr
     .from(isl)
     .where(and(eq(isl.type, "pageview"), sql`${titleFrag} IS NOT NULL AND ${titleFrag} <> ''`))
     .groupBy(sql`${titleFrag}`)
-    .orderBy(desc(sql`COUNT(*)`))
+    .orderBy(desc(count()))
     .limit(10);
   const byTitle: BreakdownRow[] = titleRows.map((r) => ({
     label: r.label,

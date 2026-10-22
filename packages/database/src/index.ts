@@ -11,6 +11,7 @@ export const db = drizzle(client, { schema });
 export * from "./schema";
 export * from "./errors";
 export * from "drizzle-orm";
+export type { PgColumn } from "drizzle-orm/pg-core";
 export * from "./theme";
 export * from "./retrieval";
 export * from "./qdrant";
