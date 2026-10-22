@@ -30,6 +30,7 @@ import {
   desc,
 } from "@ag-ui/database";
 import { detectQueryIntents } from "@ag-ui/shared";
+import { reportFreshness } from "./registry";
 
 /**
  * The overview accepts the same window as every other report: Nd, 1..90.
@@ -411,6 +412,7 @@ export async function getCompanyOverview(
     companyName,
     isMock: false,
     dataQuality,
+    freshness: await reportFreshness(false, dataQuality),
     hero: {
       assistedRate,
       baselineRate,

@@ -11,7 +11,7 @@
  * No GA4, no third-party APIs, no paid services.
  */
 
-import { DIMENSIONS, METRICS, type DimensionDef, type DimensionId } from "./catalogue";
+import { DIMENSIONS, METRICS, caveatNotes, type DimensionDef, type DimensionId } from "./catalogue";
 
 export * from "./catalogue";
 
@@ -213,7 +213,15 @@ export interface Freshness {
   /** Rollup lag in minutes: website/acquisition numbers move on the worker tick. */
   rollupLagMinutes: number;
   live: boolean;
+  /** The caveat codes, machine-readable. */
   dataQuality: string[];
+  /**
+   * The same caveats in plain language.
+   *
+   * The codes are for machines, the notes are for the customer. Resolving
+   * them server-side keeps one wording for every surface (F-07).
+   */
+  notes: string[];
 }
 
 /** Where the rollup tick stamps the time of its last run. */
@@ -312,5 +320,11 @@ export async function reportFreshness(
   } catch {
     // Redis down: the configured interval is the honest worst case.
   }
-  return { computedAt: computedAt.toISOString(), rollupLagMinutes: lagMinutes, live, dataQuality };
+  return {
+    computedAt: computedAt.toISOString(),
+    rollupLagMinutes: lagMinutes,
+    live,
+    dataQuality,
+    notes: caveatNotes(dataQuality),
+  };
 }

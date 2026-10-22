@@ -9,6 +9,8 @@
  * Run: bun test packages/analytics/src/catalogue.test.ts
  */
 import { describe, expect, test } from "bun:test";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   conversations,
   messages as messagesTable,
@@ -24,6 +26,7 @@ import {
   METRICS,
   REPORTS,
   SURFACES,
+  caveatNotes,
   type CaveatId,
   type DimensionId,
   type SourceRef,
@@ -137,6 +140,29 @@ describe("the catalogue is a contract", () => {
         expect(CAVEATS[c as CaveatId]).toBeDefined();
       }
     }
+  });
+
+  test("every caveat the reports can raise has a sentence", () => {
+    // The reports push flags by hand. A flag with no sentence would be
+    // dropped silently by `caveatNotes`, so the customer would see a
+    // caveat disappear instead of being explained.
+    const dir = import.meta.dir;
+    const used = new Set<string>();
+    for (const file of readdirSync(dir)) {
+      if (!file.endsWith(".ts") || file.endsWith(".test.ts")) continue;
+      const src = readFileSync(join(dir, file), "utf8");
+      for (const m of src.matchAll(/dataQuality\.push\("([^"]+)"\)/g)) used.add(m[1]!);
+    }
+    expect(used.size).toBeGreaterThan(0);
+    for (const code of used) {
+      expect(`${code}: ${CAVEATS[code as CaveatId] ?? "MISSING"}`).not.toContain("MISSING");
+    }
+  });
+
+  test("the caveat sentences resolve, and unknown codes are dropped", () => {
+    expect(caveatNotes(["tracking-off"])).toEqual([CAVEATS["tracking-off"]]);
+    expect(caveatNotes(["not-a-real-code"])).toEqual([]);
+    expect(caveatNotes([])).toEqual([]);
   });
 });
 

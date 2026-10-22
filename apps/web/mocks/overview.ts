@@ -83,6 +83,8 @@ export interface OverviewMock {
   companyId: string;
   companyName: string;
   isMock: boolean;
+  /** The freshness envelope, same shape as every other report. */
+  freshness: import("@/lib/api-client").Freshness;
   hero: HeroLift;
   kpis: CompactKpi[];
   funnel: FunnelStage[];

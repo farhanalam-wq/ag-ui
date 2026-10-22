@@ -6,7 +6,6 @@ import { Target } from "@phosphor-icons/react";
 import { StudioShell } from "@/components/studio-shell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -17,6 +16,8 @@ import {
 import { useSelectedCompany } from "@/stores/use-company-store";
 import { apiClient } from "@/lib/api-client";
 import { useCompanyReport, type Range } from "@/lib/analytics";
+import { DataQualityNote } from "@/components/analytics/data-quality-note";
+import { FreshnessBadge } from "@/components/analytics/freshness-badge";
 
 const ConversionsTrendChart = dynamic(
   () => import("../../overview-charts").then((m) => m.ConversionsChart),
@@ -54,14 +55,7 @@ export default function ConversionsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {data && (
-            <Badge
-              variant="outline"
-              className="rounded-full border-emerald-500/30 bg-emerald-500/10 font-normal text-emerald-700 dark:text-emerald-300"
-            >
-              Live
-            </Badge>
-          )}
+          <FreshnessBadge freshness={data?.freshness} />
           <label className="inline-flex h-8 items-center rounded-md border px-2 text-[13px] text-muted-foreground">
             Range
             <select
@@ -193,6 +187,8 @@ export default function ConversionsPage() {
               </ol>
             </CardContent>
           </Card>
+
+          <DataQualityNote notes={data.freshness.notes} />
 
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Target className="size-3.5" aria-hidden="true" />

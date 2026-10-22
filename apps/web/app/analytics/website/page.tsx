@@ -25,6 +25,9 @@ import {
 import { useSelectedCompany } from "@/stores/use-company-store";
 import { apiClient, type WebsiteAnalytics, type RealtimeSnapshot } from "@/lib/api-client";
 import { type Range } from "@/lib/analytics";
+import { DataQualityNote } from "@/components/analytics/data-quality-note";
+import { FreshnessBadge } from "@/components/analytics/freshness-badge";
+import { MetricStory } from "@/components/analytics/metric-story";
 
 const TrafficTrendChart = dynamic(
   () => import("../../overview-charts").then((m) => m.MonitoringTrendChart),
@@ -132,14 +135,7 @@ export default function WebsiteAnalyticsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {data && !data.dataQuality.includes("tracking-off") && (
-            <Badge
-              variant="outline"
-              className="rounded-full border-emerald-500/30 bg-emerald-500/10 font-normal text-emerald-700 dark:text-emerald-300"
-            >
-              Live
-            </Badge>
-          )}
+          <FreshnessBadge freshness={data?.freshness} />
           <label className="inline-flex h-8 items-center rounded-md border px-2 text-[13px] text-muted-foreground">
             Range
             <select
@@ -359,12 +355,14 @@ export default function WebsiteAnalyticsPage() {
             </CardContent>
           </Card>
 
-          {data.dataQuality.includes("tracking-off") && (
+          {data.freshness.dataQuality.includes("tracking-off") && (
             <p className="text-[13px] text-muted-foreground">
               No tracked traffic in this range. Add <code>data-track="on"</code> to
               the embed snippet to start measuring.
             </p>
           )}
+          <MetricStory metrics={["sessions", "uniques", "pageviews"]} />
+          <DataQualityNote notes={data.freshness.notes} />
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Globe className="size-3.5" aria-hidden="true" />
             Humans only — bot traffic is flagged at write time and excluded

@@ -40,6 +40,21 @@ export interface DiscoveredPageItem {
   depth: number;
 }
 
+/**
+ * The freshness envelope every analytics response carries.
+ *
+ * `dataQuality` is the machine-readable caveat codes; `notes` is the same
+ * caveats in plain language, resolved server-side from the catalogue so
+ * every surface says the same thing (F-07).
+ */
+export interface Freshness {
+  computedAt: string;
+  rollupLagMinutes: number;
+  live: boolean;
+  dataQuality: string[];
+  notes: string[];
+}
+
 export interface WebsiteAnalytics {
   companyId: string;
   rangeDays: number;
@@ -48,7 +63,7 @@ export interface WebsiteAnalytics {
   topPages: { label: string; views: number }[];
   referrers: { label: string; views: number }[];
   viewports: { label: string; views: number }[];
-  dataQuality: string[];
+  freshness: Freshness;
 }
 
 export interface ConversionAnalytics {
@@ -64,7 +79,7 @@ export interface ConversionAnalytics {
   };
   daily: { d: string; conversions: number; revenue: number }[];
   funnel: { stage: string; count: number; pctOfTop: number }[];
-  dataQuality: string[];
+  freshness: Freshness;
 }
 
 export interface RealtimeSnapshot {
@@ -93,7 +108,7 @@ export interface AcquisitionAnalytics {
   bySourceMedium: BreakdownRow[];
   byCampaign: BreakdownRow[];
   byLandingPage: BreakdownRow[];
-  freshness: { computedAt: string; rollupLagMinutes: number; live: boolean; dataQuality: string[] };
+  freshness: Freshness;
 }
 
 export interface EngagementAnalytics {
@@ -104,7 +119,7 @@ export interface EngagementAnalytics {
   trend: { d: string; sessions: number; pageviews: number; engagedSessions: number }[];
   byPath: BreakdownRow[];
   byDevice: BreakdownRow[];
-  freshness: { computedAt: string; rollupLagMinutes: number; live: boolean; dataQuality: string[] };
+  freshness: Freshness;
 }
 
 export interface ContentAnalytics {
@@ -116,7 +131,7 @@ export interface ContentAnalytics {
   byTitle: BreakdownRow[];
   byChannel: BreakdownRow[];
   byDevice: BreakdownRow[];
-  freshness: { computedAt: string; rollupLagMinutes: number; live: boolean; dataQuality: string[] };
+  freshness: Freshness;
 }
 
 export interface InsightsPayload {
@@ -154,7 +169,7 @@ export interface InsightsPayload {
     note: string;
   }[];
   thresholds: Record<string, number>;
-  freshness: { computedAt: string; rollupLagMinutes: number; live: boolean; dataQuality: string[] };
+  freshness: Freshness;
 }
 
 export interface DiscoveryResponse {  success: boolean;

@@ -13,6 +13,7 @@
 
 import { db, metricsDaily, conversations, sql, eq, and, gte } from "@ag-ui/database";
 import { sessionIslands } from "./sessions";
+import { reportFreshness, type Freshness } from "./registry";
 
 export interface ConversionDayPoint {
   d: string;
@@ -45,7 +46,7 @@ export async function getConversionAnalytics(
   };
   daily: ConversionDayPoint[];
   funnel: ConversionFunnelStage[];
-  dataQuality: string[];
+  freshness: Freshness;
 }> {
   const dataQuality = ["assisted-approximate"];
   const now = new Date();
@@ -132,6 +133,6 @@ export async function getConversionAnalytics(
       revenue: r1(byDay.get(d)?.rev ?? 0),
     })),
     funnel,
-    dataQuality,
+    freshness: await reportFreshness(false, dataQuality),
   };
 }

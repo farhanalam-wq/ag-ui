@@ -24,6 +24,7 @@ import {
 } from "@ag-ui/database";
 import type { CacheRedis } from "./cache";
 import { dailyUniquesKey } from "./identity";
+import { reportFreshness, type Freshness } from "./registry";
 
 export interface WebsiteTrendPoint {
   d: string;
@@ -47,7 +48,7 @@ export async function getWebsiteAnalytics(
   topPages: RankedRow[];
   referrers: RankedRow[];
   viewports: RankedRow[];
-  dataQuality: string[];
+  freshness: Freshness;
 }> {
   const dataQuality: string[] = [];
   const now = new Date();
@@ -130,6 +131,6 @@ export async function getWebsiteAnalytics(
     topPages: await top(pageViews.path),
     referrers: await top(pageViews.referrer),
     viewports: await top(pageViews.viewport),
-    dataQuality,
+    freshness: await reportFreshness(false, dataQuality),
   };
 }

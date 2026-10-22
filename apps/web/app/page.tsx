@@ -46,6 +46,8 @@ import { useSelectedCompany } from "@/stores/use-company-store";
 import type { OverviewMock } from "@/mocks/overview";
 import { apiClient } from "@/lib/api-client";
 import type { Range } from "@/lib/analytics";
+import { DataQualityNote } from "@/components/analytics/data-quality-note";
+import { FreshnessBadge } from "@/components/analytics/freshness-badge";
 
 const INTENT_COLORS = [
   "hsl(var(--chart-1))",
@@ -197,12 +199,7 @@ export default function OverviewPage() {
             </div>
             {data && (
               <div className="flex flex-wrap items-center gap-2">
-                <Badge
-                  variant="outline"
-                  className="rounded-full border-emerald-500/30 bg-emerald-500/10 font-normal text-emerald-700 dark:text-emerald-300"
-                >
-                  Live
-                </Badge>
+                <FreshnessBadge freshness={data.freshness} />
                 <Badge
                   variant="outline"
                   className="rounded-full font-normal"
@@ -820,6 +817,9 @@ export default function OverviewPage() {
                   </Card>
                 </div>
               </div>
+              {data.freshness.notes.length > 0 ? (
+                <DataQualityNote notes={data.freshness.notes} />
+              ) : null}
             </div>
           )}
         </div>

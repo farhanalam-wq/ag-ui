@@ -51,6 +51,27 @@ sides agree only while the session timezone is UTC.
   runtime partition children. `db:migrate` (or `db:baseline` → `db:migrate`)
   is the only supported path.
 
+## Fixture data (for review, not for production)
+The analytics module has only ever been seen with a handful of rows in it, so
+the repo ships a deterministic fixture:
+
+```bash
+bun run fixtures:analytics              # 90 days for two companies, then rolled up
+bun run fixtures:analytics -- --days 30 # a shorter window
+bun run fixtures:analytics:clear        # remove everything it created
+```
+
+It creates two companies with fixed ids — `Fixture Co (busy)` and
+`Fixture Co (quiet)` — so the numbers can be reviewed on every surface and the
+second company proves the tenant scoping. The seed is idempotent (fixed event
+ids, `ON CONFLICT DO NOTHING`) and removable with one command: the companies
+cascade to their events, sessions, rollups and conversations, and the Redis HLL
+keys are deleted with them. It creates the `page_views` monthly partitions it
+needs, exactly like the worker does.
+
+**Do not run it against a production database** — it inserts 10k+ events and
+rebuilds 90 days of rollups.
+
 ## Recompute / repair
 `bun run rebuild:analytics --cwd workers/worker` rebuilds the session rows, the
 daily metrics and the unique-visitor HLL for a date range, straight from the raw
