@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
 import { swagger } from "@elysiajs/swagger";
 import { logger } from "@ag-ui/shared";
+import { recordError } from "@ag-ui/database";
 import { companiesRoutes } from "./routes/companies";
 import { analyticsRoutes } from "./routes/analytics";
 import { chatRoutes } from "./routes/chat";
@@ -11,11 +12,29 @@ import { embedRoutes } from "./routes/embed";
 import { voiceRoutes } from "./routes/voice";
 import { voiceToolRoutes } from "./routes/voice-tool";
 import { uploadsRoutes } from "./routes/uploads";
+import { operationsRoutes } from "./routes/operations";
 
 const PORT = parseInt(process.env.PORT || "3001", 10);
 
 export const app = new Elysia()
   .use(cors())
+  // Operations error sink. Fire-and-forget and total by contract; returning
+  // nothing keeps Elysia's normal status/response behaviour untouched.
+  .onError(({ code, error, set, request }) => {
+    const status = typeof set.status === "number" ? set.status : 500;
+    void recordError({
+      level: status >= 500 ? "error" : "warn",
+      source: "api",
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      context: {
+        code,
+        method: request.method,
+        path: new URL(request.url).pathname,
+        status,
+      },
+    });
+  })
   .use(
     swagger({
       path: "/swagger",
@@ -46,6 +65,7 @@ export const app = new Elysia()
   .use(voiceRoutes)
   .use(voiceToolRoutes)
   .use(uploadsRoutes)
+  .use(operationsRoutes)
   .listen(PORT);
 
 logger.info(`ag-ui Elysia API running at http://localhost:${PORT}`);

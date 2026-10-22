@@ -9,6 +9,7 @@ export const client = postgres(connectionString, { prepare: false });
 export const db = drizzle(client, { schema });
 
 export * from "./schema";
+export * from "./errors";
 export * from "drizzle-orm";
 export * from "./theme";
 export * from "./retrieval";

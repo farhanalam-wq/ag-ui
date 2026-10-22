@@ -363,3 +363,33 @@ export const widgetThemeOverrides = pgTable("widget_theme_overrides", {
   override: jsonb("override").notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+/**
+ * Operations error sink — one row per captured failure.
+ *
+ * Written ONLY through `recordError()` (packages/database/src/errors.ts) so
+ * every surface (API, workers, runtime) uses the same shape. `companyId` is
+ * nullable + SET NULL: errors outlive company deletion, and anonymous
+ * embed/runtime failures are still captured.
+ *
+ * Never store visitor content, secrets, or PII in `context`.
+ */
+export const errorEvents = pgTable(
+  "error_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    level: text("level").default("error").notNull(), // 'error' | 'warn'
+    source: text("source").notNull(), // 'api'|'crawler'|'worker'|'embed'|'retrieval'|'chat'|'voice'
+    message: text("message").notNull(),
+    stack: text("stack"),
+    context: jsonb("context"), // method, path, code, status, jobId, companyId…
+    companyId: uuid("company_id").references(() => companies.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("error_events_source_created_idx").on(t.source, t.createdAt),
+    index("error_events_company_created_idx").on(t.companyId, t.createdAt),
+  ]
+);

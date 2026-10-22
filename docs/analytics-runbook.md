@@ -54,7 +54,8 @@ All rate paths fail open when Redis is down (by design — availability over pre
 | 400 `organic-search-unsupported` | By design: no Organic Search bucket first-party; search referrers are Referral |
 
 ## Known limitations (operator-owned)
-- No user↔company authorization on analytics reads (pre-existing; companyId is the boundary).
+- No user↔company authorization on analytics reads **until auth lands** (pre-existing; `companyId` is
+  the only boundary today). The auth contract is `docs/auth-tenancy.md`; do not add a local guard.
 - Cold-report p95 ~0.85s on dev hardware (measured Phase 8); no production SLA claimed.
 - Channel attribution is referrer+UTM only (Direct/Unassigned for the unattributable).
 - `newUsers` metric still `planned`; engagement sessions are raw tab-sessions.

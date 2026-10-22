@@ -19,7 +19,7 @@ import {
   redisConnection,
   type AnalyticsTrackJobData,
 } from "@ag-ui/queues";
-import { client } from "@ag-ui/database";
+import { client, recordError } from "@ag-ui/database";
 import {
   isBot,
   dedupeKey,
@@ -88,7 +88,9 @@ async function ensurePartitions(rows: BufferedEvent[]): Promise<void> {
         );
       } catch (err: any) {
         // Concurrent worker race on first touch: 42P07/42710 means the
-        // partition now exists — safe to proceed. Anything else rethrows.
+        // partition now exists — safe to proceed. Anything else rethrows and
+        // is captured once by the flush catch below, so this site stays
+        // un-instrumented (no double capture for a benign race).
         const code = String(err?.code ?? "");
         if (code !== "42P07" && code !== "42710") throw err;
       }
@@ -129,6 +131,14 @@ async function flush(): Promise<void> {
   } catch (err: any) {
     flushErrors++;
     logger.error(`[ANALYTICS WORKER] flush of ${rows.length} rows failed: ${err?.message ?? err}`);
+    void recordError({
+      source: "worker",
+      message: err?.message ?? String(err),
+      stack: err?.stack,
+      // Rows can span tenants, so this failure is intentionally not attributed
+      // to one company.
+      context: { stage: "analytics-flush", rows: rows.length },
+    });
   }
 }
 
