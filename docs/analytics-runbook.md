@@ -24,6 +24,18 @@
 `ANALYTICS_ROLLUP_MS` (default 15 min), `ANALYTICS_RAW_RETAIN_MONTHS` (default 3).
 All rate paths fail open when Redis is down (by design — availability over precision).
 
+## Time contract (UTC)
+Every session in the pool is opened with `TimeZone=UTC` (a startup parameter, set in
+`packages/database/src/index.ts`). This is part of the contract, not a preference:
+- the naive `timestamp` columns (`conversations`, `messages`, `error_events`,
+  `company_snapshots`) hold **UTC wall-clock**;
+- day buckets and `metrics_daily.day` are **UTC days**;
+- `now() - interval` on the SQL side means the same thing as `Date.now()` on the JS side.
+
+If the database host is ever configured with a non-UTC default, the client pins it back
+to UTC — do not remove that. Naive timestamps are read as UTC by Drizzle, so the two
+sides agree only while the session timezone is UTC.
+
 ## Rollback
 - Analytics DDL is additive + rerunnable (`IF NOT EXISTS` / DO-blocks). Rollback =
   forward-fix + **rebuild** (see Recompute below). A plain rerun of

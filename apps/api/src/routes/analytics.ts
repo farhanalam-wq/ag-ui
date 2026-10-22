@@ -17,6 +17,7 @@ import {
   getEngagementReport,
   getContentReport,
   validateReportQuery,
+  REPORTS,
   withAnalyticsCache,
   cacheCounters,
   type OverviewRangeDays,
@@ -370,12 +371,8 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       // uniques is totals-only (HLL keys are per company-day); validate it
       // against [day] separately so its constraint doesn't veto breakdowns.
       const base = { rangeDays: days, compare: query.compare === "previous" ? "previous-period" : "off", channelFilter: channels } as const;
-      const v1 = validateReportQuery({
-        metrics: ["sessions", "pageviews"],
-        dimensions: ["day", "channel", "source", "medium", "campaign", "landingPage"],
-        ...base,
-      });
-      const v2 = validateReportQuery({ metrics: ["uniques"], dimensions: ["day"], rangeDays: days });
+      const v1 = validateReportQuery({ metrics: REPORTS.acquisition.traffic.metrics, dimensions: REPORTS.acquisition.traffic.dimensions, ...base });
+      const v2 = validateReportQuery({ metrics: REPORTS.acquisition.uniques.metrics, dimensions: REPORTS.acquisition.uniques.dimensions, rangeDays: days });
       const errors = [...(!v1.ok ? v1.errors : []), ...(!v2.ok ? v2.errors : [])];
       if (errors.length > 0) {
         set.status = 400;
@@ -412,12 +409,8 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
         set.status = 400;
         return { error: RANGE_ERROR };
       }
-      const v1 = validateReportQuery({
-        metrics: ["sessions", "pageviews", "engagedSessions", "scrolls", "downloads", "clicks"],
-        dimensions: ["day", "path", "device"],
-        rangeDays: days,
-      });
-      const v2 = validateReportQuery({ metrics: ["engagementRate", "bounceRate", "pagesPerSession", "avgEngagementTime"], dimensions: ["day"], rangeDays: days });
+      const v1 = validateReportQuery({ metrics: REPORTS.engagement.activity.metrics, dimensions: REPORTS.engagement.activity.dimensions, rangeDays: days });
+      const v2 = validateReportQuery({ metrics: REPORTS.engagement.quality.metrics, dimensions: REPORTS.engagement.quality.dimensions, rangeDays: days });
       const errors = [...(!v1.ok ? v1.errors : []), ...(!v2.ok ? v2.errors : [])];
       if (errors.length > 0) {
         set.status = 400;
@@ -448,12 +441,8 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
         set.status = 400;
         return { error: RANGE_ERROR };
       }
-      const v1 = validateReportQuery({
-        metrics: ["sessions", "pageviews"],
-        dimensions: ["day", "path", "channel", "device"],
-        rangeDays: days,
-      });
-      const v2 = validateReportQuery({ metrics: ["pageviews"], dimensions: ["title"], rangeDays: days });
+      const v1 = validateReportQuery({ metrics: REPORTS.content.pages.metrics, dimensions: REPORTS.content.pages.dimensions, rangeDays: days });
+      const v2 = validateReportQuery({ metrics: REPORTS.content.titles.metrics, dimensions: REPORTS.content.titles.dimensions, rangeDays: days });
       const errors = [...(!v1.ok ? v1.errors : []), ...(!v2.ok ? v2.errors : [])];
       if (errors.length > 0) {
         set.status = 400;

@@ -29,8 +29,15 @@ export const WIDGET_KINDS = [
 ] as const;
 export type WidgetKind = (typeof WIDGET_KINDS)[number];
 
-const REPORTS = ["acquisition", "engagement", "content"] as const;
-type Report = (typeof REPORTS)[number];
+/** The reports a widget can render. */
+const WIDGET_REPORTS = ["acquisition", "engagement", "content"] as const;
+type Report = (typeof WIDGET_REPORTS)[number];
+
+/**
+ * The metrics a widget trend can plot. Catalogue ids — the catalogue test
+ * asserts every one of them exists and is available.
+ */
+export const WIDGET_TREND_METRICS = ["pageviews", "sessions", "engagedSessions"] as const;
 const TABLES = ["channel", "sourceMedium", "campaign", "landing", "path", "title", "device"] as const;
 type TableSel = (typeof TABLES)[number];
 
@@ -43,11 +50,11 @@ const REPORT_TABLES: Record<Report, TableSel[]> = {
 
 export const WidgetConfigSchema = z.object({
   kind: z.enum(WIDGET_KINDS),
-  report: z.enum(REPORTS).optional(),
+  report: z.enum(WIDGET_REPORTS).optional(),
   table: z.enum(TABLES).optional(),
   rangeDays: z.number().int().min(1).max(90).default(14),
   variant: z.enum(["line", "bar"]).default("line"),
-  trendMetric: z.enum(["pageviews", "sessions", "engagedSessions"]).default("pageviews"),
+  trendMetric: z.enum(WIDGET_TREND_METRICS).default("pageviews"),
   channels: z.array(z.enum(["Direct", "Organic Social", "Campaign", "Email", "Referral"])).default([]),
   compare: z.boolean().default(false),
 });

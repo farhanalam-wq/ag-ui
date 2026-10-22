@@ -17,6 +17,7 @@ import { getEngagementReport } from "./engagement";
 import { getContentReport } from "./content";
 import { getInsightsReport } from "./insights";
 import { buildWidgetSpec, type WidgetKind } from "./widgets";
+import { GROUPS } from "./catalogue";
 import type { Channel } from "./registry";
 
 export interface QueryPlan {
@@ -48,6 +49,24 @@ const EXAMPLES = [
 ];
 
 const CHANNELS: Channel[] = ["Direct", "Organic Social", "Campaign", "Email", "Referral"];
+
+/**
+ * The words that map to a metric.
+ *
+ * The metric ids are catalogue ids. The catalogue test asserts that every
+ * one of them exists and is available, so the copilot cannot drift into
+ * asking for a metric the product does not have.
+ */
+export const METRIC_KEYWORDS: ReadonlyArray<{ pattern: RegExp; metrics: string[] }> = [
+  { pattern: /\busers?\b|\bvisitors?\b/, metrics: ["uniques"] },
+  { pattern: /\bsessions?\b|\bvisits?\b/, metrics: ["sessions"] },
+  { pattern: /\bviews?\b|\bpageviews?\b|\btraffic\b/, metrics: ["pageviews"] },
+  { pattern: /\bengaged?\b|\bengagement\b/, metrics: ["engagedSessions", "engagementRate"] },
+  { pattern: /\bactive time\b|\btime on\b|\btime spent\b/, metrics: ["avgEngagementTime"] },
+  { pattern: /\bscroll/, metrics: ["scrolls"] },
+  { pattern: /\bdownload/, metrics: ["downloads"] },
+  { pattern: /\bclicks?\b/, metrics: ["clicks"] },
+];
 
 function findChannels(text: string): Channel[] {
   const t = ` ${text.toLowerCase()} `;
@@ -116,14 +135,9 @@ export function parseQuestion(text: string): { ok: true; plan: QueryPlan } | { o
 
   // Metrics vocabulary.
   const metrics: string[] = [];
-  if (/\busers?\b|\bvisitors?\b/.test(t)) metrics.push("uniques");
-  if (/\bsessions?\b|\bvisits?\b/.test(t)) metrics.push("sessions");
-  if (/\bviews?\b|\bpageviews?\b|\btraffic\b/.test(t)) metrics.push("pageviews");
-  if (/\bengaged?\b|\bengagement\b/.test(t)) metrics.push("engagedSessions", "engagementRate");
-  if (/\bactive time\b|\btime on\b|\btime spent\b/.test(t)) metrics.push("avgEngagementTime");
-  if (/\bscroll/.test(t)) metrics.push("scrolls");
-  if (/\bdownload/.test(t)) metrics.push("downloads");
-  if (/\bclicks?\b/.test(t)) metrics.push("clicks");
+  for (const { pattern, metrics: ids } of METRIC_KEYWORDS) {
+    if (pattern.test(t)) metrics.push(...ids);
+  }
   if (metrics.length === 0) {
     // Bare dimension questions ("channels?", "top pages?") default to views+sessions.
     if (/\bchannels?\b|\bsources?\b|\bmedium\b|\bcampaigns?\b|\blanding\b|\bpages?\b|\bpaths?\b|\btitles?\b|\bdevice\b|\bmobile\b|\bdesktop\b/.test(t)) {
@@ -134,7 +148,7 @@ export function parseQuestion(text: string): { ok: true; plan: QueryPlan } | { o
   }
 
   // Report routing.
-  const engagementOnly = metrics.every((m) => ["engagedSessions", "engagementRate", "avgEngagementTime", "scrolls", "downloads", "clicks"].includes(m));
+  const engagementOnly = metrics.every((m) => (GROUPS.engagement as readonly string[]).includes(m));
   const wantsTitle = /\btitle\b|\btitles\b/.test(t);
   const wantsPath = /\bpages?\b|\bpaths?\b|\blanding\b/.test(t);
   const wantsChannelDim = /\bchannels?\b|\bsources?\b|\bmedium\b|\bcampaigns?\b/.test(t);
