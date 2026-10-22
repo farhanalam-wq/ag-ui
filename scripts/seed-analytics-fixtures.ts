@@ -276,7 +276,9 @@ function dayEvents(
 /** Conversations with messages, so the agent-side numbers are not empty. */
 function conversationRows(companyId: string, days: number) {
   const rand = rng(hash32(`${companyId}:conversations`));
-  const convos: Array<{ id: string; companyId: string; title: string; createdAt: Date }> = [];
+  const convos: Array<{
+    id: string; companyId: string; title: string; path: string; createdAt: Date;
+  }> = [];
   const msgs: Array<{
     id: string; conversationId: string; role: string; content: string;
     evidence: unknown; visualSpec: unknown; createdAt: Date;
@@ -289,7 +291,10 @@ function conversationRows(companyId: string, days: number) {
     const q = QUESTIONS[Math.floor(rand() * QUESTIONS.length)]!;
     const a = ANSWERS[Math.floor(rand() * ANSWERS.length)]!;
     const grounded = rand() < 0.65;
-    convos.push({ id, companyId, title: q.slice(0, 60), createdAt });
+    // The host page the conversation started on — the join that makes
+    // "which pages can the agent answer from" answerable.
+    const path = PATHS[Math.floor(rand() * PATHS.length)]!;
+    convos.push({ id, companyId, title: q.slice(0, 60), path, createdAt });
     msgs.push({
       id: uuidFrom(hash32(`${companyId}:msg:${i}:u`)),
       conversationId: id,
@@ -452,6 +457,7 @@ async function main() {
     id: c.id,
     companyId: c.companyId,
     title: c.title,
+    path: c.path,
     createdAt: c.createdAt,
   }))).onConflictDoNothing();
   await db.insert(messagesTable).values(msgs.map((m) => ({

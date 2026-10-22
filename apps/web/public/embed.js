@@ -216,12 +216,58 @@
     }
     var opening = frame.hidden;
     frame.hidden = !frame.hidden;
+    // Re-send the host path on every open: the visitor may have navigated
+    // while the panel was closed (SPA route change without an iframe reload).
+    if (opening) postHostContext();
     if (opening) chatTracking.open();
     else chatTracking.close();
   });
 
   document.body.appendChild(orb);
   document.body.appendChild(frame);
+
+  // --- Host page context for the panel --------------------------------------
+  // The chat iframe is cross-origin, so it cannot read the host path. The
+  // conversation stores the page it started on (Agent -> Quality: which pages
+  // the agent can answer from), so the parent forwards the path it already
+  // knows. The panel treats it as untrusted and the API normalises it with the
+  // same rule as the collector; it never contains anything the visitor said.
+  function postHostContext() {
+    try {
+      if (!frame || !frame.contentWindow) return;
+      var path = "/";
+      try {
+        path = window.location.pathname || "/";
+      } catch (e) {
+        /* opaque origin */
+      }
+      frame.contentWindow.postMessage(
+        { type: "ag-ui/context", path: String(path).slice(0, 1024) },
+        "*"
+      );
+    } catch (e) {
+      /* no frame yet */
+    }
+  }
+
+  frame.addEventListener("load", postHostContext);
+  window.addEventListener("popstate", postHostContext);
+
+  // SPA route changes: the panel can stay mounted while the host page changes.
+  // Independent of data-track, because the conversation path is product data,
+  // not traffic analytics.
+  ["pushState", "replaceState"].forEach(function (method) {
+    try {
+      var original = history[method];
+      history[method] = function () {
+        var result = original.apply(history, arguments);
+        window.setTimeout(postHostContext, 0);
+        return result;
+      };
+    } catch (e) {
+      /* frozen history */
+    }
+  });
 
   // --- Cookieless traffic tracking (opt-in via data-track="on") -------------
   // ~1KB, zero dependencies. Pageviews (incl. SPA route changes) and
@@ -405,7 +451,14 @@
         // Only our own frame, only our own message type.
         if (!frame || !frame.contentWindow || ev.source !== frame.contentWindow) return;
         var d = ev.data;
-        if (!d || d.type !== "ag-ui/agent-event") return;
+        if (!d) return;
+        // The panel asks once on mount (and again after a host route change it
+        // missed). Answer with the current host path.
+        if (d.type === "ag-ui/context-request") {
+          postHostContext();
+          return;
+        }
+        if (d.type !== "ag-ui/agent-event") return;
         var name = typeof d.event === "string" ? d.event : "";
         if (AGENT_EVENTS.indexOf(name) === -1) return;
         if (name === "chat_message") {

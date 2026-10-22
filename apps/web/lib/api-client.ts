@@ -312,6 +312,8 @@ export interface CompanyDetailResponse {
 export interface ChatStreamPayload {
   message: string;
   conversationId?: string;
+  /** Host page path (embed only), so the conversation knows where it started. */
+  path?: string;
 }
 
 export interface ChatStreamEvent {

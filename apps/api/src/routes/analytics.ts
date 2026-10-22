@@ -21,6 +21,7 @@ import {
   getAgentReport,
   getAgentOverview,
   getAgentQuestions,
+  getAgentQualityReport,
   validateReportQuery,
   REPORTS,
   withAnalyticsCache,
@@ -488,6 +489,41 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
         summary: "Agent questions",
         description:
           "Questions asked, questions per session, average and longest panel time, and questions by page. Counts only.",
+      },
+    }
+  )
+  .get(
+    "/agent/quality",
+    async ({ query, set }) => {
+      const company = await tenant(query.companyId, set);
+      if (!company) return { error: "Company not found" };
+      const days = parseWindowDays(query.range);
+      if (days === null) {
+        set.status = 422;
+        return { error: RANGE_ERROR };
+      }
+      const v1 = validateReportQuery({
+        metrics: REPORTS.agent.quality.metrics,
+        dimensions: REPORTS.agent.quality.dimensions,
+        rangeDays: days,
+      });
+      if (!v1.ok) {
+        set.status = 422;
+        return { error: "Invalid agent quality query", details: v1.errors };
+      }
+      return report(set, company, {
+        label: "Agent quality",
+        errorMessage: "Agent quality unavailable - try again shortly",
+        cacheKey: `ana:v2:agent-quality:${company.id}:${days}d`,
+        compute: () => getAgentQualityReport(company.id, days),
+      });
+    },
+    {
+      query: t.Object({ companyId: t.String(), range: t.Optional(t.String()) }),
+      detail: {
+        summary: "Agent quality",
+        description:
+          "Grounded answer rate, answers without a retrieved source, answer-time percentiles, and grounding by page. Counts only: no question text or snippets.",
       },
     }
   )

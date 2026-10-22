@@ -103,6 +103,12 @@ export const conversations = pgTable("conversations", {
     .references(() => companies.id, { onDelete: "cascade" })
     .notNull(),
   title: text("title").default("New Conversation").notNull(),
+  /**
+   * Host page the conversation started on, normalised like `page_views.path`.
+   * Null when unknown (older rows, the playground). Never visitor content:
+   * it is the page they were reading, not what they asked.
+   */
+  path: text("path"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

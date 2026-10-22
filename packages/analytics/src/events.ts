@@ -206,6 +206,20 @@ function derivePath(url: string, explicit: unknown): string {
 }
 
 /**
+ * A page path a client sent, or null. Same rule the collector applies, minus
+ * the fallback: the chat panel asks for the *host* path, and a conversation
+ * must never claim a path it was not given. Query and hash are dropped, so a
+ * path is a page and not a query log.
+ */
+export function normalizePagePath(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("/")) return null;
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) return null;
+  return trimmed.split(/[?#]/)[0]!.slice(0, MAX_PATH_LEN) || "/";
+}
+
+/**
  * Validates one raw event. Returns the normalized event or a short reason.
  * Never throws on hostile input.
  */

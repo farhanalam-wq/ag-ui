@@ -15,6 +15,7 @@ export * from "./content";
 export * from "./audience";
 export * from "./voice";
 export * from "./agent";
+export * from "./quality";
 export * from "./insights";
 export * from "./dimensions";
 export * from "./useragent";

@@ -3,7 +3,7 @@
  * Run: bun test packages/analytics/src/events.test.ts
  */
 import { describe, expect, test } from "bun:test";
-import { validateTrackEvent, TRACK_EVENT_TYPES } from "./events";
+import { validateTrackEvent, normalizePagePath, TRACK_EVENT_TYPES } from "./events";
 
 const base = {
   event_id: "e1",
@@ -139,5 +139,30 @@ describe("chat events are counts only", () => {
     });
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.event.meta).toEqual({ durationSec: 14400, turns: 0 });
+  });
+});
+
+describe("normalizePagePath (conversation host path)", () => {
+  test("accepts a same-site path", () => {
+    expect(normalizePagePath("/pricing")).toBe("/pricing");
+    expect(normalizePagePath("  /docs/getting-started  ")).toBe("/docs/getting-started");
+  });
+
+  test("drops query and hash, so a path is not a query log", () => {
+    expect(normalizePagePath("/search?q=card+4111")).toBe("/search");
+    expect(normalizePagePath("/docs#install")).toBe("/docs");
+  });
+
+  test("rejects anything that is not a path", () => {
+    expect(normalizePagePath("https://evil.example/x")).toBeNull();
+    expect(normalizePagePath("pricing")).toBeNull();
+    expect(normalizePagePath("/a\u0000b")).toBeNull();
+    expect(normalizePagePath(42)).toBeNull();
+    expect(normalizePagePath(null)).toBeNull();
+  });
+
+  test("truncates rather than storing an unbounded string", () => {
+    const long = "/" + "a".repeat(5000);
+    expect(normalizePagePath(long)!.length).toBe(1024);
   });
 });

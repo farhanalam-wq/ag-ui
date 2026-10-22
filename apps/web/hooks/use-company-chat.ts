@@ -58,7 +58,7 @@ export function useCompanyChat() {
     async (
       text: string,
       companyIdOrKey: string,
-      options?: { apiBase?: string; channel?: "chat" | "embed" }
+      options?: { apiBase?: string; channel?: "chat" | "embed"; path?: string }
     ) => {
       if (!text.trim() || isStreaming) return;
 
@@ -97,7 +97,7 @@ export function useCompanyChat() {
       const streamFn =
         channel === "embed"
           ? (
-              payload: { message: string; conversationId?: string },
+              payload: { message: string; conversationId?: string; path?: string },
               callbacks: Parameters<typeof apiClient.chat.stream>[2],
               signal?: AbortSignal
             ) =>
@@ -109,7 +109,7 @@ export function useCompanyChat() {
                 options?.apiBase
               )
           : (
-              payload: { message: string; conversationId?: string },
+              payload: { message: string; conversationId?: string; path?: string },
               callbacks: Parameters<typeof apiClient.chat.stream>[2],
               signal?: AbortSignal
             ) => apiClient.chat.stream(companyIdOrKey, payload, callbacks, signal);
@@ -119,6 +119,9 @@ export function useCompanyChat() {
           {
             message: text.trim(),
             conversationId: activeConversationId || undefined,
+            // Host page, embed channel only. The playground has no page, and
+            // the company chat endpoint does not accept the field.
+            ...(channel === "embed" && options?.path ? { path: options.path } : {}),
           },
           {
             onStatus: (data) => {

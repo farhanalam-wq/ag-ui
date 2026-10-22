@@ -10,7 +10,8 @@
    `drizzle/0007_analytics.sql` owns the analytics tables (hand-written: `page_views`
    is RANGE-partitioned, which drizzle-kit cannot express).
    `0009_analytics_sessions.sql` adds `sessions.engaged` and
-   `metrics_daily/metrics_hourly.engaged_sessions`. Unrelated:
+   `metrics_daily/metrics_hourly.engaged_sessions`; `0011_conversations_path.sql`
+   adds `conversations.path` (the host page a conversation started on). Unrelated:
    `migrate-task1-task2.ts`, `migrate-drop-pgvector.ts` (pre-existing, destructive-adjacent
    — see Rollback).
 3. Start API (`apps/api`), web (`apps/web`), and at least one worker
@@ -58,7 +59,8 @@ Every analytics report answers with the same envelope:
 
 Agent routes: `/api/analytics/agent/overview` (sessions, opens, open rate,
 questions), `/api/analytics/agent/questions` (volume, depth, panel time, by
-page) and `/api/analytics/agent/voice`. The older `/api/analytics/agent` and
+page), `/api/analytics/agent/quality` (grounded rate, answers without a source,
+answer-time percentiles, grounding by page) and `/api/analytics/agent/voice`. The older `/api/analytics/agent` and
 `/api/analytics/voice` stay as shims for one release; they return the same
 data under the older keys.
 
@@ -178,6 +180,38 @@ Two unit notes, so a number is never read as something it is not:
   twice on the Website page.
 - `textVsVoice` is a share of **agent sessions**, because a voice call and a
   typed question are only comparable as sessions.
+
+## Agent quality (grounded answers, answer time)
+
+`GET /api/analytics/agent/quality` reads `messages`, not events:
+
+- **Answers** = assistant messages in range.
+- **Grounded** = answers whose `evidence` array has at least one retrieved
+  source. `groundedAnswerRate` is that share; `answersWithoutEvidence` is the
+  remainder, which is the content team's to-do list. There is **no separate
+  "fallback rate"** — the pipeline has no deterministic fallback branch, so it
+  would be the same number inverted.
+- **Answer time** = assistant `created_at` minus the preceding user
+  `created_at` in the same conversation. That is generation + streaming;
+  retrieval is excluded, because the user row is written immediately before
+  the model call. Time-to-first-token is not stored. The median and p95 come
+  from one windowed `percentile_cont` query — the only raw SQL in the report,
+  because the builder cannot express a windowed percentile.
+- **By page** joins `conversations.path`. The panel forwards its host path over
+  `postMessage` (`ag-ui/context`), the API normalises it with the same rule as
+  the collector (`normalizePagePath`) and stores it once, at conversation
+  creation. A conversation with no known path is excluded from the per-page
+  breakdown, never counted as `/`.
+
+Nothing here reads `messages.content`: the report is counts, and no question
+text, snippet or transcript is returned or logged.
+
+**If the numbers are zero:** confirm the fixture (or a real conversation) has
+`conversations.path` set — rows created before `0011` have no path, so the
+per-page card is empty even when the headline numbers are fine. If *answers* is
+zero while the Agent → Questions tab shows questions, the site is running an
+older embed snippet: `chat_message` events are counted, but only the chat
+pipeline writes `messages`.
 
 ## Voice (counts only)
 

@@ -43,6 +43,7 @@ import {
   newSessionHash,
   parseUserAgent,
   timezoneOffsetMinutes,
+  normalizePagePath,
 } from "@ag-ui/analytics";
 import { randomUUID } from "node:crypto";
 
@@ -637,7 +638,14 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
         if (!activeConvId) {
           const [newConv] = await db
             .insert(conversations)
-            .values({ companyId: company.id, title: userQuery.slice(0, 50) })
+            .values({
+              companyId: company.id,
+              title: userQuery.slice(0, 50),
+              // The host page, so the quality report can answer "which pages
+              // can the agent answer from". Null when the panel did not send
+              // one — never inferred from a referer.
+              path: normalizePagePath(body.path),
+            })
             .returning();
           activeConvId = newConv.id;
         }
@@ -712,6 +720,12 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
       body: t.Object({
         message: t.String({ minLength: 1, maxLength: 2000 }),
         conversationId: t.Optional(t.String()),
+        /**
+         * Host page path, forwarded by the panel from its parent over
+         * postMessage. Untrusted: normalised server-side and stored only on a
+         * new conversation. Never the visitor's words.
+         */
+        path: t.Optional(t.String({ maxLength: 1024 })),
       }),
       detail: { summary: "Stream widget chat (SSE)", description: "Anonymous rate-limited streaming chat resolved via opaque widget key." },
     }

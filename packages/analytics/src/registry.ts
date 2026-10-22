@@ -360,6 +360,23 @@ export interface AgentOverviewReport {
   freshness: Freshness;
 }
 
+/**
+ * Agent → Quality: is an answer backed by a retrieved source, how long does it
+ * take, and which pages can the agent answer from. Counts only — no question
+ * text, no snippets.
+ */
+export interface AgentQualityReport {
+  kind: "agent-quality";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  trend: TrendPoint[];
+  breakdowns: {
+    path: BreakdownRow[];
+  };
+  freshness: Freshness;
+}
+
 /** Agent → Questions: how much is asked, how deep, and on which pages. */
 export interface AgentQuestionsReport {
   kind: "agent-questions";

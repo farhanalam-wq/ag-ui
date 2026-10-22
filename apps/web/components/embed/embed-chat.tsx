@@ -87,6 +87,22 @@ function postAgentEvent(
 }
 
 /**
+ * The host page path forwarded by the loader, or null.
+ *
+ * Untrusted: it arrives over postMessage from a cross-origin parent, so it is
+ * only accepted as a same-site path (leading `/`, no control characters, no
+ * query or hash) and truncated. The API normalises it again before it reaches
+ * the database — this check keeps junk out of the request, not out of the DB.
+ */
+function sanitizeHostPath(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("/")) return null;
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) return null;
+  return trimmed.split(/[?#]/)[0]!.slice(0, 1024) || "/";
+}
+
+/**
  * How the chat UI identifies its company. Raw-key identity serves the public
  * widget; company identity serves first-party surfaces (playground-style
  * chat, studio preview) with no key in the URL. Both render the same UI from
@@ -210,6 +226,9 @@ function EmbedChatInner({
   // Host light/dark context (from the studio preview channel). null = no host
   // tooling, i.e. the standalone widget, which defaults to dark chrome.
   const [contextDark, setContextDark] = useState<boolean | null>(null);
+  // Host page path, forwarded by the loader. A conversation records it once,
+  // so the quality report can say which pages the agent can answer from.
+  const hostPathRef = useRef<string | null>(null);
   // Explicit preview mode from host tooling: "auto" follows the brand surface
   // then the context; "light"/"dark" force the neutral chrome (brand colours
   // still win inline, so an override is an inspection mode).
@@ -437,6 +456,23 @@ function EmbedChatInner({
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
+  // Host page context: the loader answers `ag-ui/context-request` and pushes a
+  // fresh path on load and on route changes. Only the parent may send it.
+  useEffect(() => {
+    const onContext = (e: MessageEvent) => {
+      try {
+        if (e.source !== window.parent) return;
+        const data = e.data as { type?: unknown; path?: unknown } | null;
+        if (!data || data.type !== "ag-ui/context") return;
+        hostPathRef.current = sanitizeHostPath(data.path);
+      } catch {
+        // malformed host message — ignore
+      }
+    };
+    window.addEventListener("message", onContext);
+    return () => window.removeEventListener("message", onContext);
+  }, []);
+
   // Announce readiness so preview tooling (the studio) can (re)send the theme +
   // mode without racing this listener's mount. A no-op in production: no parent
   // tooling listens, and only same-origin parents receive it.
@@ -447,6 +483,9 @@ function EmbedChatInner({
           { type: "ag-ui/ready" },
           window.location.origin
         );
+        // Cross-origin parent: the request carries no data, so the wildcard
+        // target reveals nothing. The reply is validated above.
+        window.parent.postMessage({ type: "ag-ui/context-request" }, "*");
       }
     } catch {
       // non-frame context — nothing to signal
@@ -486,7 +525,11 @@ function EmbedChatInner({
       // turn count and the host path, so this is a notification, not an event.
       postAgentEvent("chat_message");
       if (identity.kind === "key") {
-        await sendMessage(text, sessionKey, { apiBase, channel: "embed" });
+        await sendMessage(text, sessionKey, {
+          apiBase,
+          channel: "embed",
+          path: hostPathRef.current ?? undefined,
+        });
       } else {
         await sendMessage(text, sessionKey, { apiBase, channel: "chat" });
       }
