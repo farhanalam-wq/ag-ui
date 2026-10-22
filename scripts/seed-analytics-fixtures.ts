@@ -230,8 +230,23 @@ function dayEvents(
       if (!isBot && rand() < 0.12) push("download", path, new Date(at.getTime() + 8_000));
       if (!isBot && rand() < 0.18) push("click", path, new Date(at.getTime() + 9_000));
     }
-    if (!isBot && rand() < 0.22) push("chat_open", firstPath, new Date(start + 30_000));
-    if (!isBot && rand() < 0.15) push("chat_message", firstPath, new Date(start + 40_000));
+    // The agent panel: open, one event per question, close with the panel's
+    // own clock — the same shape embed.js emits, so the Agent tab has data.
+    if (!isBot && rand() < 0.22) {
+      const openedAt = start + 30_000;
+      const turns = 1 + Math.floor(rand() * 3);
+      push("chat_open", firstPath, new Date(openedAt), null, { turns: 0 });
+      for (let q = 0; q < turns; q++) {
+        push("chat_message", firstPath, new Date(openedAt + (q + 1) * 20_000), null, {
+          turns: q + 1,
+        });
+      }
+      const durationSec = 40 + Math.floor(rand() * 200);
+      push("chat_close", firstPath, new Date(openedAt + durationSec * 1000), null, {
+        durationSec,
+        turns,
+      });
+    }
     // Voice: a small share of visits talk to the agent out loud. Counts only
     // (O-3) — the fixture writes the same two-event shape the snippet sends,
     // and a zero-turn call is the "silent call" the Voice tab reports.

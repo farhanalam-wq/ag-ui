@@ -19,6 +19,7 @@ import {
   getContentReport,
   getAudienceReport,
   getVoiceReport,
+  getAgentReport,
   validateReportQuery,
   REPORTS,
   withAnalyticsCache,
@@ -479,6 +480,37 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
         summary: "Audience analytics",
         description:
           "Sessions and views by device, browser, operating system and hour of day. First-party only; no country (no GeoIP source agreed).",
+      },
+    }
+  )
+  .get(
+    "/agent",
+    async ({ query, set }) => {
+      const company = await tenant(query.companyId, set);
+      if (!company) return { error: "Company not found" };
+      const days = parseWindowDays(query.range);
+      if (days === null) {
+        set.status = 422;
+        return { error: RANGE_ERROR };
+      }
+      const v1 = validateReportQuery({ metrics: REPORTS.agent.overview.metrics, dimensions: REPORTS.agent.overview.dimensions, rangeDays: days });
+      if (!v1.ok) {
+        set.status = 422;
+        return { error: "Invalid agent query", details: v1.errors };
+      }
+      return report(set, company, {
+        label: "Agent",
+        errorMessage: "Agent analytics unavailable - try again shortly",
+        cacheKey: `ana:v1:agent:${company.id}:${days}d`,
+        compute: () => getAgentReport(company.id, days),
+      });
+    },
+    {
+      query: t.Object({ companyId: t.String(), range: t.Optional(t.String()) }),
+      detail: {
+        summary: "Agent analytics",
+        description:
+          "Agent sessions, widget opens and open rate, questions per session, panel duration, and the text-vs-voice share. Counts only; question text is never stored.",
       },
     }
   )

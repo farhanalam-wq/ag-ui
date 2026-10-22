@@ -18,7 +18,8 @@ export type TrackEventType =
   | "click"
   | "heartbeat"
   | "voice_start"
-  | "voice_end";
+  | "voice_end"
+  | "chat_close";
 
 export const TRACK_EVENT_TYPES: readonly TrackEventType[] = [
   "pageview",
@@ -31,6 +32,7 @@ export const TRACK_EVENT_TYPES: readonly TrackEventType[] = [
   "heartbeat",
   "voice_start",
   "voice_end",
+  "chat_close",
 ] as const;
 
 /** Events that describe a voice call. They carry counts, never content. */
@@ -127,10 +129,22 @@ function optStr(v: unknown, max: number): string {
   return v.trim().slice(0, max);
 }
 
-/** Voice calls longer than this are a stuck tab, not a conversation. */
-const MAX_VOICE_DURATION_SEC = 4 * 60 * 60;
-/** A turn is one visitor utterance; more than this is not a real call. */
-const MAX_VOICE_TURNS = 500;
+/** A session longer than this is a stuck tab, not a conversation. */
+const MAX_EVENT_DURATION_SEC = 4 * 60 * 60;
+/** One turn is one visitor utterance or question; more is not a real session. */
+const MAX_EVENT_TURNS = 500;
+
+/** A duration in seconds, clamped to something a real session could last. */
+function durationValue(v: unknown): number {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? Math.min(MAX_EVENT_DURATION_SEC, Math.max(0, Math.round(n))) : 0;
+}
+
+/** A turn count, clamped. Never a string: these fields are counts only. */
+function turnsValue(v: unknown): number {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? Math.min(MAX_EVENT_TURNS, Math.max(0, Math.round(n))) : 0;
+}
 
 /**
  * The counts a voice call may report.
@@ -150,21 +164,34 @@ export function voiceEventMeta(
   if (type !== "voice_end") return rawMeta;
 
   const m = rawMeta ?? {};
-  const duration = typeof m.durationSec === "number" ? m.durationSec : Number(m.durationSec);
-  const turns = typeof m.turns === "number" ? m.turns : Number(m.turns);
-  const safeTurns = Number.isFinite(turns)
-    ? Math.min(MAX_VOICE_TURNS, Math.max(0, Math.round(turns)))
-    : 0;
+  const safeTurns = turnsValue(m.turns);
   return {
-    durationSec: Number.isFinite(duration)
-      ? Math.min(MAX_VOICE_DURATION_SEC, Math.max(0, Math.round(duration)))
-      : 0,
+    durationSec: durationValue(m.durationSec),
     turns: safeTurns,
     // Derived, not reported: a call where the visitor never spoke is a
     // silent call. One definition, at the gate, so the report and the
     // product cannot disagree about what abandonment means.
     abandoned: safeTurns === 0,
   };
+}
+
+/**
+ * The counts a text chat may report.
+ *
+ * Same rule as voice: the parent measures the panel (it owns open/close
+ * timing and the turn counter) and the collector rebuilds the meta from
+ * numbers. A question's text, a page title, a conversation id pasted into
+ * `meta` — none of it survives, because none of it is read.
+ */
+export function chatEventMeta(
+  type: TrackEventType,
+  rawMeta: Record<string, unknown> | null
+): Record<string, unknown> | null {
+  const m = rawMeta ?? {};
+  if (type === "chat_open") return { turns: 0 };
+  if (type === "chat_message") return { turns: turnsValue(m.turns) };
+  if (type !== "chat_close") return rawMeta;
+  return { durationSec: durationValue(m.durationSec), turns: turnsValue(m.turns) };
 }
 
 function derivePath(url: string, explicit: unknown): string {
@@ -242,8 +269,11 @@ export function validateTrackEvent(
     }
   }
 
-  // Voice events keep their counts and nothing else — see voiceEventMeta.
+  // Agent events keep their counts and nothing else — see the meta builders.
   if (type === "voice_start" || type === "voice_end") meta = voiceEventMeta(type, meta);
+  if (type === "chat_open" || type === "chat_message" || type === "chat_close") {
+    meta = chatEventMeta(type, meta);
+  }
 
   return {
     ok: true,

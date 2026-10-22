@@ -194,6 +194,15 @@
       });
   }
 
+  // Agent-panel analytics. The parent owns the panel, so it owns open/close
+  // timing and the turn count. initTracking() replaces these no-ops when
+  // tracking is enabled, so the widget behaves identically when it is off.
+  var chatTracking = {
+    open: function () {},
+    message: function () {},
+    close: function () {},
+  };
+
   orb.addEventListener("click", function () {
     if (orb.disabled) return;
     if (frame.hidden && !srcLoaded) {
@@ -205,7 +214,10 @@
     if (widgetKey && Date.now() - orbFetchedAt > ORB_STALE_MS) {
       fetchConfig().then(applyOrbTheme);
     }
+    var opening = frame.hidden;
     frame.hidden = !frame.hidden;
+    if (opening) chatTracking.open();
+    else chatTracking.close();
   });
 
   document.body.appendChild(orb);
@@ -330,11 +342,11 @@
     // It sends counts over postMessage and the parent emits the event here,
     // with the real page context (url, referrer, viewport, tz). The iframe
     // never emits analytics itself, and never sends anything the visitor said.
-    var AGENT_EVENTS = ["voice_start", "voice_end"];
-    // Server-side caps (events.ts -> voiceEventMeta); mirrored so a runaway
-    // tab cannot post an absurd value even before validation.
-    var MAX_VOICE_DURATION_SEC = 14400;
-    var MAX_VOICE_TURNS = 500;
+    var AGENT_EVENTS = ["voice_start", "voice_end", "chat_message"];
+    // Server-side caps (events.ts -> voice/chat meta builders); mirrored so a
+    // runaway tab cannot post an absurd value even before validation.
+    var MAX_AGENT_DURATION_SEC = 14400;
+    var MAX_AGENT_TURNS = 500;
 
     function intInRange(v, min, max) {
       var n = typeof v === "number" ? v : Number(v);
@@ -345,6 +357,49 @@
       return n;
     }
 
+    // --- Text chat: the panel's own events ---------------------------------
+    // chat_open → a turn per message → chat_close with the panel's duration.
+    // Counts only: the question text never leaves the iframe.
+    var panelOpen = false;
+    var panelOpenedAt = 0;
+    var panelTurns = 0;
+
+    function chatOpen() {
+      if (panelOpen) return;
+      panelOpen = true;
+      panelOpenedAt = Date.now();
+      panelTurns = 0;
+      send("chat_open", { meta: { turns: 0 } });
+    }
+
+    function chatMessage() {
+      if (!panelOpen) return;
+      panelTurns = Math.min(MAX_AGENT_TURNS, panelTurns + 1);
+      send("chat_message", { meta: { turns: panelTurns } });
+    }
+
+    function chatClose() {
+      if (!panelOpen) return;
+      panelOpen = false;
+      send("chat_close", {
+        meta: {
+          durationSec: intInRange(
+            (Date.now() - panelOpenedAt) / 1000,
+            0,
+            MAX_AGENT_DURATION_SEC
+          ),
+          turns: panelTurns,
+        },
+      });
+    }
+
+    chatTracking.open = chatOpen;
+    chatTracking.message = chatMessage;
+    chatTracking.close = chatClose;
+
+    // A panel still open when the tab goes away is a close, not a lost session.
+    window.addEventListener("pagehide", chatClose);
+
     window.addEventListener("message", function (ev) {
       try {
         // Only our own frame, only our own message type.
@@ -353,13 +408,19 @@
         if (!d || d.type !== "ag-ui/agent-event") return;
         var name = typeof d.event === "string" ? d.event : "";
         if (AGENT_EVENTS.indexOf(name) === -1) return;
+        if (name === "chat_message") {
+          // The iframe says a message went out; the parent counts the turn
+          // and emits the event with the host context.
+          chatMessage();
+          return;
+        }
         var extra = {};
         if (name === "voice_end") {
           // Rebuilt field by field: nothing from the iframe is trusted as-is.
           // Abandonment is not reported — the collector derives it from turns.
           extra.meta = {
-            durationSec: intInRange(d.durationSec, 0, MAX_VOICE_DURATION_SEC),
-            turns: intInRange(d.turns, 0, MAX_VOICE_TURNS),
+            durationSec: intInRange(d.durationSec, 0, MAX_AGENT_DURATION_SEC),
+            turns: intInRange(d.turns, 0, MAX_AGENT_TURNS),
           };
         }
         send(name, extra);
@@ -494,6 +555,10 @@
     }
     window.addEventListener("mousemove", markActive, { passive: true });
     window.addEventListener("keydown", markActive);
+    // Touch devices never fire mousemove, so a tap is the only sign of life
+    // (M-06). Passive: this must never delay a scroll or a tap.
+    window.addEventListener("touchstart", markActive, { passive: true });
+    window.addEventListener("pointerdown", markActive, { passive: true });
     window.setInterval(function () {
       try {
         if (document.visibilityState === "visible" && Date.now() - lastActive < 30000) {

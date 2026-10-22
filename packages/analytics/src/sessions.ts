@@ -41,6 +41,7 @@ export const ENGAGED_MIN_PAGEVIEWS = 2;
 export const ENGAGEMENT_EVENT_TYPES = [
   "chat_open",
   "chat_message",
+  "chat_close",
   "conversion",
   "scroll",
   "download",

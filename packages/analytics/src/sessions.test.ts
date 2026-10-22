@@ -87,7 +87,7 @@ describe("the event list cannot drift", () => {
 
   test("the SQL fragment contains nothing else", () => {
     expect(ENGAGEMENT_TYPES_SQL).toBe(
-      "'chat_open', 'chat_message', 'conversion', 'scroll', 'download', 'click', 'voice_start', 'voice_end'"
+      "'chat_open', 'chat_message', 'chat_close', 'conversion', 'scroll', 'download', 'click', 'voice_start', 'voice_end'"
     );
   });
 });

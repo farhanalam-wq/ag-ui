@@ -96,6 +96,52 @@ this landed have no profile at all (`dimensions-unavailable`).
 Country is **not** collected: the GeoIP source is still an open decision
 (`docs/analytics-rebuild.md` D12). The raw IP is never stored either way.
 
+## The agent panel (text chat)
+
+The panel's four events are emitted by the **parent page**, because the panel is
+a cross-origin iframe and only the parent knows the host path. The iframe never
+emits analytics; it sends one `chat_message` notification over the C7 bridge.
+
+| Event | When | `meta` |
+|---|---|---|
+| `chat_open` | the orb opens the panel | `{ turns: 0 }` |
+| `chat_message` | the visitor sends a question | `{ turns }` — the parent's running count |
+| `chat_close` | the panel closes, or the tab goes away | `{ durationSec, turns }` |
+
+Counts only: the collector rebuilds the meta from numbers
+(`events.ts` → `chatEventMeta`), so the question text, a page title or a
+conversation id cannot be stored even if a client sends one.
+
+`chat_open` and `chat_message` flow into the rollup columns
+(`metrics_daily.chat_opens`, `.messages`). `chat_close` has no column and is
+read from the event slice, like voice.
+
+`GET /api/analytics/agent` returns: agent sessions, opens and open rate,
+questions, questions per session, average/max panel time, voice calls, the
+text-vs-voice share, a daily trend and questions by page.
+
+Verifying by hand:
+
+```sql
+SELECT type, meta, path FROM page_views
+WHERE company_id = '<company>'
+  AND type IN ('chat_open','chat_message','chat_close','voice_start')
+ORDER BY created_at DESC LIMIT 20;
+```
+
+If the Agent numbers stay at zero while the site has traffic:
+- an older `embed.js` is installed (the panel events are new) — re-paste the snippet;
+- `data-track="on"` is missing;
+- nobody opened the widget — `agentSessions` counts sessions that actually asked,
+  so opens alone will not move it.
+
+Two unit notes, so a number is never read as something it is not:
+- `agentSessions` counts **browser sessions** (one tab), not the rollup's visit
+  islands; a pause longer than 30 minutes inside one tab counts once here and
+  twice on the Website page.
+- `textVsVoice` is a share of **agent sessions**, because a voice call and a
+  typed question are only comparable as sessions.
+
 ## Voice (counts only)
 
 Voice is measured from two events and **never stores what was said** (decision

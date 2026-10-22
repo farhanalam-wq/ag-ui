@@ -322,6 +322,21 @@ export interface VoiceReport {
 }
 
 /**
+ * The agent's own numbers: sessions that used it, widget opens, questions,
+ * panel duration, and the text-vs-voice share. Counts only, from events the
+ * parent page emitted.
+ */
+export interface AgentReport {
+  kind: "agent";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  trend: TrendPoint[];
+  byPath: BreakdownRow[];
+  freshness: Freshness;
+}
+
+/**
  * The freshness envelope every report carries.
  *
  * The rollup lag is **measured, not assumed**: the rollup tick stamps the

@@ -70,7 +70,10 @@ const CONFIG_POLL_MAX = 40;
  * concrete origin would silently drop every message. The security boundary is
  * the parent's `event.source === frame.contentWindow` check, not this value.
  */
-function postAgentEvent(event: "voice_start" | "voice_end", payload?: Record<string, unknown>) {
+function postAgentEvent(
+  event: "voice_start" | "voice_end" | "chat_message",
+  payload?: Record<string, unknown>
+) {
   try {
     if (window.parent && window.parent !== window) {
       window.parent.postMessage(
@@ -479,6 +482,9 @@ function EmbedChatInner({
   const handleSubmit = useCallback(
     async (text: string) => {
       if (!sessionKey || !text.trim() || isStreaming || phase !== "chat") return;
+      // The visitor pressed send: that is one question. The parent owns the
+      // turn count and the host path, so this is a notification, not an event.
+      postAgentEvent("chat_message");
       if (identity.kind === "key") {
         await sendMessage(text, sessionKey, { apiBase, channel: "embed" });
       } else {

@@ -92,3 +92,52 @@ describe("voice events are counts only (O-3)", () => {
     if (r.ok) expect(r.event.meta).toEqual({ durationSec: 0, turns: 0, abandoned: true });
   });
 });
+
+describe("chat events are counts only", () => {
+  test("chat_open stores a zero turn count and nothing else", () => {
+    const r = validateTrackEvent({
+      ...base,
+      event_id: "e-copen",
+      type: "chat_open",
+      meta: { turns: 9, text: "hello", title: "Pricing" },
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.event.meta).toEqual({ turns: 0 });
+  });
+
+  test("chat_message keeps its turn count and drops the question", () => {
+    const r = validateTrackEvent({
+      ...base,
+      event_id: "e-cmsg",
+      type: "chat_message",
+      meta: { turns: 2, text: "my card is 4111 1111" },
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.event.meta).toEqual({ turns: 2 });
+      expect(JSON.stringify(r.event.meta)).not.toContain("4111");
+    }
+  });
+
+  test("chat_close carries the panel's duration and turns, nothing else", () => {
+    const r = validateTrackEvent({
+      ...base,
+      event_id: "e-cclose",
+      type: "chat_close",
+      meta: { durationSec: 93.4, turns: 3, transcript: "secret" },
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.event.meta).toEqual({ durationSec: 93, turns: 3 });
+  });
+
+  test("runaway chat values are capped", () => {
+    const r = validateTrackEvent({
+      ...base,
+      event_id: "e-ccap",
+      type: "chat_close",
+      meta: { durationSec: 999_999, turns: -1 },
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.event.meta).toEqual({ durationSec: 14400, turns: 0 });
+  });
+});
