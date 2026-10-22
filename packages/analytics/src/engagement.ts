@@ -130,12 +130,14 @@ export async function getEngagementReport(
       avgEngagementTime: visits > 0 ? Math.round((activeSeconds / visits) * 10) / 10 : 0,
     },
     trend,
-    byPath: paths
-      .filter((r) => (r.label ?? "").length > 0 && Number(r.pageviews ?? 0) > 0)
-      .map((r) => ({ label: r.label, pageviews: Number(r.pageviews), sessions: Number(r.sessions) })),
-    byDevice: devices
-      .filter((r) => Number(r.pageviews ?? 0) > 0)
-      .map((r) => ({ label: r.label, pageviews: Number(r.pageviews), sessions: Number(r.sessions) })),
+    breakdowns: {
+      path: paths
+        .filter((r) => (r.label ?? "").length > 0 && Number(r.pageviews ?? 0) > 0)
+        .map((r) => ({ label: r.label, pageviews: Number(r.pageviews), sessions: Number(r.sessions) })),
+      device: devices
+        .filter((r) => Number(r.pageviews ?? 0) > 0)
+        .map((r) => ({ label: r.label, pageviews: Number(r.pageviews), sessions: Number(r.sessions) })),
+    },
     freshness: await reportFreshness(false, dataQuality),
   };
 }

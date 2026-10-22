@@ -160,7 +160,7 @@ export default function EngagementAnalyticsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.byPath.map((r) => (
+                    {data.breakdowns.path.map((r) => (
                       <TableRow key={r.label}>
                         <TableCell className="max-w-[280px] truncate font-mono text-xs">{r.label}</TableCell>
                         <TableCell className="text-right tabular-nums">{r.pageviews.toLocaleString()}</TableCell>
@@ -186,7 +186,7 @@ export default function EngagementAnalyticsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.byDevice.map((r) => (
+                    {data.breakdowns.device.map((r) => (
                       <TableRow key={r.label}>
                         <TableCell className="text-xs">{r.label}</TableCell>
                         <TableCell className="text-right tabular-nums">{r.pageviews.toLocaleString()}</TableCell>

@@ -16,7 +16,6 @@ const zero: AgentCounts = {
   questions: 0,
   textVisits: 0,
   voiceCalls: 0,
-  voiceVisits: 0,
   agentVisits: 0,
   closes: 0,
   durationSec: 0,
@@ -36,14 +35,14 @@ describe("agentTotals", () => {
         openVisits: 30,
         opens: 41, // a visit may open the panel twice; the rate uses visits
         agentVisits: 3,
-        voiceVisits: 1,
         voiceCalls: 2,
       },
       300
     );
     expect(t.chatOpenRate).toBe(10);
-    expect(t.textVsVoice).toBe(33.3);
     expect(t.voiceCalls).toBe(2);
+    // textVsVoice moved to the voice report, which owns the split.
+    expect(t.textVsVoice).toBeUndefined();
   });
 
   test("questions per session is one decimal, over visits that asked", () => {

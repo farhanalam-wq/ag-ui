@@ -86,10 +86,12 @@ export async function getContentReport(companyId: string, rangeDays: number): Pr
     companyId,
     rangeDays,
     totals,
-    byPath,
-    byTitle,
-    byChannel,
-    byDevice,
+    breakdowns: {
+      path: byPath,
+      title: byTitle,
+      channel: byChannel,
+      device: byDevice,
+    },
     freshness: await reportFreshness(false, dataQuality),
   };
 }

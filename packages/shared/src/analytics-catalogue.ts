@@ -100,6 +100,7 @@ export type DimensionId =
   | "channel"
   | "source"
   | "medium"
+  | "sourceMedium"
   | "campaign"
   | "landingPage"
   | "device"
@@ -704,7 +705,7 @@ export const METRICS: Record<string, MetricDef> = {
     unit: "percent",
     grain: "derived",
     freshness: "live",
-    source: { kind: "computed", how: "voiceAbandonedCalls / voiceCallsEnded × 100" },
+    source: { kind: "computed", how: "silent calls / calls that ended in range × 100" },
     definition: "Silent calls as a percentage of calls that ended.",
     status: "available",
     dimensions: ["day"],
@@ -797,6 +798,13 @@ export const DIMENSIONS: Record<DimensionId, DimensionDef> = {
     definition: "utm_medium, else channel default.",
     status: "available",
     source: { kind: "computed", how: "utm_medium, else the channel's default medium" },
+  },
+  sourceMedium: {
+    id: "sourceMedium",
+    label: "Source / medium",
+    definition: "utm_source / utm_medium as one pair; the referrer host and channel default when untagged.",
+    status: "available",
+    source: { kind: "computed", how: "utm_source || ' / ' || utm_medium, else referrer host and the channel's default medium" },
   },
   campaign: {
     id: "campaign",
@@ -914,21 +922,16 @@ export const REPORTS = {
   },
   agent: {
     overview: {
-      metrics: [
-        "agentSessions",
-        "chatOpens",
-        "chatOpenRate",
-        "messages",
-        "questionsPerSession",
-        "avgOpenDuration",
-        "maxOpenDuration",
-        "voiceCalls",
-        "textVsVoice",
-      ],
+      metrics: ["agentSessions", "chatOpens", "chatOpenRate", "messages", "questionsPerSession"],
+      dimensions: ["day"],
+    },
+    questions: {
+      metrics: ["messages", "questionsPerSession", "avgOpenDuration", "maxOpenDuration"],
       dimensions: ["day"],
     },
     voice: {
       metrics: [
+        "textVsVoice",
         "voiceCalls",
         "voiceTurns",
         "voiceAvgDuration",

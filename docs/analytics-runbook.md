@@ -25,6 +25,43 @@
 `ANALYTICS_ROLLUP_MS` (default 15 min), `ANALYTICS_RAW_RETAIN_MONTHS` (default 3).
 All rate paths fail open when Redis is down (by design — availability over precision).
 
+## API contract (v2)
+
+Every analytics report answers with the same envelope:
+
+```jsonc
+{
+  "companyId": "uuid",
+  "rangeDays": 30,
+  "compare": "off",                 // or "previous-period" (acquisition)
+  "totals": { "sessions": 120 },
+  "previousTotals": { },            // only when compare = previous-period
+  "trend": [ { "d": "2026-10-01", "sessions": 12 } ],
+  "breakdowns": { "channel": [ { "label": "Direct", "sessions": 12 } ] },
+  "freshness": { "computedAt": "…", "rollupLagMinutes": 4, "live": false,
+                 "dataQuality": [ ], "notes": [ ] }
+}
+```
+
+- `breakdowns` is keyed by **dimension id** (`channel`, `sourceMedium`,
+  `campaign`, `landingPage`, `path`, `title`, `device`, `browser`, `os`,
+  `hour`), never by a service-specific `by*` key.
+- `X-Analytics-Cache` is `HIT` (fresh, no compute), `STALE` (served
+  immediately while a refresh runs behind the request) or `MISS` (computed
+  now). It is the only way to tell a stale read from a fresh one.
+- `GET /api/analytics/cache-stats` returns the global hit/miss counters plus
+  `namespaces`, one entry per report (`acquisition`, `agent-overview`,
+  `agent-questions`, `voice`, …).
+- A bad `range` is `422 { error }`, a company this session does not own is
+  `404`, the read budget is `429` with `Retry-After`. The web client raises
+  one `ApiError` carrying the status, code, details and `retryAfterSec`.
+
+Agent routes: `/api/analytics/agent/overview` (sessions, opens, open rate,
+questions), `/api/analytics/agent/questions` (volume, depth, panel time, by
+page) and `/api/analytics/agent/voice`. The older `/api/analytics/agent` and
+`/api/analytics/voice` stay as shims for one release; they return the same
+data under the older keys.
+
 ## Time contract (UTC)
 Every session in the pool is opened with `TimeZone=UTC` (a startup parameter, set in
 `packages/database/src/index.ts`). This is part of the contract, not a preference:
@@ -164,9 +201,10 @@ track event with the real page context. The iframe never posts analytics
 directly.
 
 There is **no migration and no conversation row** for voice — the report reads
-the raw `page_views` slice (one event per call). `GET /api/analytics/voice`
-returns calls, ended calls, turns, average/max duration, silent calls and
-silent-call rate. A visit with a voice call counts as engaged.
+the raw `page_views` slice (one event per call). `GET /api/analytics/agent/voice`
+(or the older `/api/analytics/voice`) returns calls, turns, average/max
+duration, silent calls, silent-call rate, and the text-vs-voice share. A visit
+with a voice call counts as engaged.
 
 Verifying by hand:
 

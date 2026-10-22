@@ -194,10 +194,12 @@ export async function getAcquisitionReport(
     totals: { ...outTotals, ...(outUniques !== null ? { uniques: outUniques } : {}) },
     ...(previousTotals ? { previousTotals } : {}),
     trend,
-    byChannel,
-    bySourceMedium,
-    byCampaign,
-    byLandingPage,
+    breakdowns: {
+      channel: byChannel,
+      sourceMedium: bySourceMedium,
+      campaign: byCampaign,
+      landingPage: byLandingPage,
+    },
     freshness: await reportFreshness(false, dataQuality),
   };
 }

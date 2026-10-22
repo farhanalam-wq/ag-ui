@@ -139,10 +139,10 @@ export default function ContentAnalyticsPage() {
           </div>
 
           <div className="grid gap-4 xl:grid-cols-2">
-            {splitTable("Pages", "Views and sessions by path.", data.byPath, true)}
-            {splitTable("Page titles", "document.title captured by the tracker.", data.byTitle, false)}
-            {splitTable("Channels", "Which channels read which content.", data.byChannel, false)}
-            {splitTable("Devices", "Desktop vs mobile readership.", data.byDevice, false)}
+            {splitTable("Pages", "Views and sessions by path.", data.breakdowns.path, true)}
+            {splitTable("Page titles", "document.title captured by the tracker.", data.breakdowns.title, false)}
+            {splitTable("Channels", "Which channels read which content.", data.breakdowns.channel, false)}
+            {splitTable("Devices", "Desktop vs mobile readership.", data.breakdowns.device, false)}
           </div>
 
           <MetricStory metrics={["pageviews", "sessions", "scrolls", "downloads", "clicks"]} />

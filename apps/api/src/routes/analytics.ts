@@ -19,6 +19,8 @@ import {
   getAudienceReport,
   getVoiceReport,
   getAgentReport,
+  getAgentOverview,
+  getAgentQuestions,
   validateReportQuery,
   REPORTS,
   withAnalyticsCache,
@@ -92,7 +94,10 @@ async function report<T>(
   const { label, errorMessage, cacheKey, compute, fresh = 60, swr = 240 } = spec;
   try {
     const redis = await getRedisClient();
-    const { data } = await withAnalyticsCache(redis, cacheKey, fresh, swr, () => compute(redis));
+    const { data, cache } = await withAnalyticsCache(redis, cacheKey, fresh, swr, () => compute(redis));
+    // Prove the cache in the response: a hit, a miss, or a stale read that is
+    // refreshing in the background. Nothing else in the payload says which.
+    set.headers["x-analytics-cache"] = cache.toUpperCase();
     return data;
   } catch (err: any) {
     // Deliberate client errors (thrown with a 4xx status) pass through.
@@ -156,7 +161,7 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       return report(set, company, {
         label: "Overview",
         errorMessage: "Overview unavailable - try again shortly",
-        cacheKey: `ana:v1:overview:${company.id}:${days}d`,
+        cacheKey: `ana:v2:overview:${company.id}:${days}d`,
         compute: () => getCompanyOverview(company.id, company.name, days),
       });
     },
@@ -184,7 +189,7 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       return report(set, company, {
         label: "Website",
         errorMessage: "Website analytics unavailable - try again shortly",
-        cacheKey: `ana:v1:website:${company.id}:${days}d`,
+        cacheKey: `ana:v2:website:${company.id}:${days}d`,
         compute: (redis) => getWebsiteAnalytics(redis, company.id, days),
       });
     },
@@ -212,7 +217,7 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       return report(set, company, {
         label: "Conversions",
         errorMessage: "Conversion analytics unavailable - try again shortly",
-        cacheKey: `ana:v1:conversions:${company.id}:${days}d`,
+        cacheKey: `ana:v2:conversions:${company.id}:${days}d`,
         compute: () => getConversionAnalytics(company.id, days),
       });
     },
@@ -236,7 +241,7 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       return report(set, company, {
         label: "Realtime",
         errorMessage: "Realtime snapshot unavailable - try again shortly",
-        cacheKey: `ana:v1:realtime:${company.id}`,
+        cacheKey: `ana:v2:realtime:${company.id}`,
         fresh: 15,
         swr: 15,
         compute: () => getRealtimeSnapshot(company.id),
@@ -263,7 +268,7 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       return report(set, company, {
         label: "Insights",
         errorMessage: "Insights unavailable - try again shortly",
-        cacheKey: `ana:v1:insights:${company.id}:${days}d`,
+        cacheKey: `ana:v2:insights:${company.id}:${days}d`,
         compute: () => getInsightsReport(company.id, days),
       });
     },
@@ -305,7 +310,7 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       return report(set, company, {
         label: "Acquisition",
         errorMessage: "Acquisition analytics unavailable - try again shortly",
-        cacheKey: `ana:v1:acquisition:${company.id}:${days}d:${compare ? "prev" : "off"}:${[...channels].sort().join("+") || "all"}`,
+        cacheKey: `ana:v2:acquisition:${company.id}:${days}d:${compare ? "prev" : "off"}:${[...channels].sort().join("+") || "all"}`,
         compute: (redis) => getAcquisitionReport(redis, company.id, days, compare, channels as Channel[]),
       });
     },
@@ -342,7 +347,7 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       return report(set, company, {
         label: "Engagement",
         errorMessage: "Engagement analytics unavailable - try again shortly",
-        cacheKey: `ana:v1:engagement:${company.id}:${days}d`,
+        cacheKey: `ana:v2:engagement:${company.id}:${days}d`,
         compute: () => getEngagementReport(company.id, days),
       });
     },
@@ -372,7 +377,7 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       return report(set, company, {
         label: "Audience",
         errorMessage: "Audience analytics unavailable - try again shortly",
-        cacheKey: `ana:v1:audience:${company.id}:${days}d`,
+        cacheKey: `ana:v2:audience:${company.id}:${days}d`,
         compute: () => getAudienceReport(company.id, days),
       });
     },
@@ -403,7 +408,7 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       return report(set, company, {
         label: "Agent",
         errorMessage: "Agent analytics unavailable - try again shortly",
-        cacheKey: `ana:v1:agent:${company.id}:${days}d`,
+        cacheKey: `ana:v2:agent:${company.id}:${days}d`,
         compute: () => getAgentReport(company.id, days),
       });
     },
@@ -413,6 +418,111 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
         summary: "Agent analytics",
         description:
           "Agent sessions, widget opens and open rate, questions per session, panel duration, and the text-vs-voice share. Counts only; question text is never stored.",
+      },
+    }
+  )
+  .get(
+    "/agent/overview",
+    async ({ query, set }) => {
+      const company = await tenant(query.companyId, set);
+      if (!company) return { error: "Company not found" };
+      const days = parseWindowDays(query.range);
+      if (days === null) {
+        set.status = 422;
+        return { error: RANGE_ERROR };
+      }
+      const v1 = validateReportQuery({
+        metrics: REPORTS.agent.overview.metrics,
+        dimensions: REPORTS.agent.overview.dimensions,
+        rangeDays: days,
+      });
+      if (!v1.ok) {
+        set.status = 422;
+        return { error: "Invalid agent overview query", details: v1.errors };
+      }
+      return report(set, company, {
+        label: "Agent overview",
+        errorMessage: "Agent analytics unavailable - try again shortly",
+        cacheKey: `ana:v2:agent-overview:${company.id}:${days}d`,
+        compute: () => getAgentOverview(company.id, days),
+      });
+    },
+    {
+      query: t.Object({ companyId: t.String(), range: t.Optional(t.String()) }),
+      detail: {
+        summary: "Agent overview",
+        description:
+          "Agent sessions, widget opens and open rate, questions and questions per session. Counts only; question text is never stored.",
+      },
+    }
+  )
+  .get(
+    "/agent/questions",
+    async ({ query, set }) => {
+      const company = await tenant(query.companyId, set);
+      if (!company) return { error: "Company not found" };
+      const days = parseWindowDays(query.range);
+      if (days === null) {
+        set.status = 422;
+        return { error: RANGE_ERROR };
+      }
+      const v1 = validateReportQuery({
+        metrics: REPORTS.agent.questions.metrics,
+        dimensions: REPORTS.agent.questions.dimensions,
+        rangeDays: days,
+      });
+      if (!v1.ok) {
+        set.status = 422;
+        return { error: "Invalid agent questions query", details: v1.errors };
+      }
+      return report(set, company, {
+        label: "Agent questions",
+        errorMessage: "Agent analytics unavailable - try again shortly",
+        cacheKey: `ana:v2:agent-questions:${company.id}:${days}d`,
+        compute: () => getAgentQuestions(company.id, days),
+      });
+    },
+    {
+      query: t.Object({ companyId: t.String(), range: t.Optional(t.String()) }),
+      detail: {
+        summary: "Agent questions",
+        description:
+          "Questions asked, questions per session, average and longest panel time, and questions by page. Counts only.",
+      },
+    }
+  )
+  .get(
+    "/agent/voice",
+    async ({ query, set }) => {
+      const company = await tenant(query.companyId, set);
+      if (!company) return { error: "Company not found" };
+      const days = parseWindowDays(query.range);
+      if (days === null) {
+        set.status = 422;
+        return { error: RANGE_ERROR };
+      }
+      const v1 = validateReportQuery({
+        metrics: REPORTS.agent.voice.metrics,
+        dimensions: REPORTS.agent.voice.dimensions,
+        rangeDays: days,
+      });
+      if (!v1.ok) {
+        set.status = 422;
+        return { error: "Invalid voice query", details: v1.errors };
+      }
+      return report(set, company, {
+        label: "Voice",
+        errorMessage: "Voice analytics unavailable - try again shortly",
+        cacheKey: `ana:v2:voice:${company.id}:${days}d`,
+        compute: () => getVoiceReport(company.id, days),
+      });
+    },
+    {
+      query: t.Object({ companyId: t.String(), range: t.Optional(t.String()) }),
+      detail: {
+        summary: "Agent voice",
+        description:
+          "Voice calls, turns, duration, silent-call rate, and the text-vs-voice share. Counts only: no transcript or speech content is stored.",
       },
     }
   )
@@ -436,7 +546,7 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       return report(set, company, {
         label: "Content",
         errorMessage: "Content analytics unavailable - try again shortly",
-        cacheKey: `ana:v1:content:${company.id}:${days}d`,
+        cacheKey: `ana:v2:content:${company.id}:${days}d`,
         compute: () => getContentReport(company.id, days),
       });
     },
@@ -466,7 +576,7 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       return report(set, company, {
         label: "Voice",
         errorMessage: "Voice analytics unavailable - try again shortly",
-        cacheKey: `ana:v1:voice:${company.id}:${days}d`,
+        cacheKey: `ana:v2:voice:${company.id}:${days}d`,
         compute: () => getVoiceReport(company.id, days),
       });
     },

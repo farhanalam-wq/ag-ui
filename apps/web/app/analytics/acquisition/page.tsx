@@ -231,10 +231,10 @@ export default function AcquisitionAnalyticsPage() {
           </Card>
 
           <div className="grid gap-4 xl:grid-cols-2">
-            {breakdownTable("Channels", "Direct, Organic Social, Campaign, Email, Referral — derived on-site.", data.byChannel)}
-            {breakdownTable("Source / medium", "UTM source/medium, else referrer host.", data.bySourceMedium)}
-            {breakdownTable("Campaigns", "utm_campaign values; (not set) means untagged.", data.byCampaign)}
-            {breakdownTable("Landing pages", "Entry path of each session.", data.byLandingPage)}
+            {breakdownTable("Channels", "Direct, Organic Social, Campaign, Email, Referral — derived on-site.", data.breakdowns.channel)}
+            {breakdownTable("Source / medium", "UTM source/medium, else referrer host.", data.breakdowns.sourceMedium)}
+            {breakdownTable("Campaigns", "utm_campaign values; (not set) means untagged.", data.breakdowns.campaign)}
+            {breakdownTable("Landing pages", "Entry path of each session.", data.breakdowns.landingPage)}
           </div>
 
           <MetricStory metrics={["sessions", "uniques", "pageviews"]} />

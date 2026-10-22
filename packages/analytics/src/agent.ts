@@ -20,14 +20,21 @@
  *     request; the difference is a handful of unusually long tabs.
  *   - `chatOpenRate` divides by the rollup's visits, because "did anyone open
  *     the widget" is a question about all traffic, not about agent traffic.
- *   - `textVsVoice` is a share of *agent sessions*, which is the only unit
- *     text and voice genuinely share (a call is not a question and a question
- *     is not a call).
+ *   - the text-vs-voice share lives in the voice report, which already scans
+ *     the voice slice — a call is not a question, so the only unit both sides
+ *     share is a session, and that is what the split divides.
+ *
+ * The surface reads three narrow views (`getAgentOverview`,
+ * `getAgentQuestions`, and the voice report) rather than slicing one combined
+ * payload in the browser. `getAgentReport` stays as the combined shape the
+ * previous endpoint served.
  */
 
 import { db, pageViews, metricsDaily, sql, eq, and, gte, lt, inArray, desc } from "@ag-ui/database";
 import {
   reportFreshness,
+  type AgentOverviewReport,
+  type AgentQuestionsReport,
   type AgentReport,
   type BreakdownRow,
   type TrendPoint,
@@ -43,7 +50,6 @@ export interface AgentCounts {
   questions: number;
   textVisits: number;
   voiceCalls: number;
-  voiceVisits: number;
   agentVisits: number;
   closes: number;
   durationSec: number;
@@ -71,8 +77,6 @@ export function agentTotals(
     avgOpenDurationSec: c.closes > 0 ? Math.round(c.durationSec / c.closes) : 0,
     maxOpenDurationSec: c.maxDurationSec,
     voiceCalls: c.voiceCalls,
-    /** Share of agent sessions that included a voice call (0-100). */
-    textVsVoice: c.agentVisits > 0 ? Math.round((c.voiceVisits / c.agentVisits) * 1000) / 10 : 0,
   };
 }
 
@@ -113,7 +117,6 @@ export async function getAgentReport(
       questions: questionsSql.as("questions"),
       textVisits: sql<number>`COUNT(DISTINCT ${pageViews.sessionHash}) FILTER (WHERE ${isType("chat_message")})::int`.as("text_visits"),
       voiceCalls: sql<number>`COUNT(*) FILTER (WHERE ${isType("voice_start")})::int`.as("voice_calls"),
-      voiceVisits: sql<number>`COUNT(DISTINCT ${pageViews.sessionHash}) FILTER (WHERE ${isType("voice_start")})::int`.as("voice_visits"),
       agentVisits: sql<number>`COUNT(DISTINCT ${pageViews.sessionHash})::int`.as("agent_visits"),
       closes: sql<number>`COUNT(*) FILTER (WHERE ${isType("chat_close")})::int`.as("closes"),
       durationSec: sql<number>`COALESCE(SUM(${durationSecSql}) FILTER (WHERE ${isType("chat_close")}), 0)::int`.as("duration_sec"),
@@ -128,7 +131,6 @@ export async function getAgentReport(
     questions: Number(totalsRow?.questions ?? 0),
     textVisits: Number(totalsRow?.textVisits ?? 0),
     voiceCalls: Number(totalsRow?.voiceCalls ?? 0),
-    voiceVisits: Number(totalsRow?.voiceVisits ?? 0),
     agentVisits: Number(totalsRow?.agentVisits ?? 0),
     closes: Number(totalsRow?.closes ?? 0),
     durationSec: Number(totalsRow?.durationSec ?? 0),
@@ -194,7 +196,56 @@ export async function getAgentReport(
     rangeDays,
     totals: agentTotals(counts, visits),
     trend,
-    byPath,
+    breakdowns: { path: byPath },
     freshness: await reportFreshness(false, dataQuality),
+  };
+}
+
+/** Agent → Overview: the headline row, and the daily opens/questions trend. */
+export async function getAgentOverview(
+  companyId: string,
+  rangeDays: number
+): Promise<AgentOverviewReport> {
+  const full = await getAgentReport(companyId, rangeDays);
+  const t = full.totals;
+  return {
+    kind: "agent-overview",
+    companyId,
+    rangeDays,
+    totals: {
+      agentSessions: t.agentSessions ?? 0,
+      chatOpens: t.chatOpens ?? 0,
+      chatOpenRate: t.chatOpenRate ?? 0,
+      messages: t.messages ?? 0,
+      questionsPerSession: t.questionsPerSession ?? 0,
+    },
+    trend: full.trend.map((row) => ({
+      d: String(row.d),
+      chatOpens: Number(row.chatOpens ?? 0),
+      chatQuestions: Number(row.chatQuestions ?? 0),
+    })),
+    freshness: full.freshness,
+  };
+}
+
+/** Agent → Questions: depth and panel time, broken down by the page asked on. */
+export async function getAgentQuestions(
+  companyId: string,
+  rangeDays: number
+): Promise<AgentQuestionsReport> {
+  const full = await getAgentReport(companyId, rangeDays);
+  const t = full.totals;
+  return {
+    kind: "agent-questions",
+    companyId,
+    rangeDays,
+    totals: {
+      messages: t.messages ?? 0,
+      questionsPerSession: t.questionsPerSession ?? 0,
+      avgOpenDurationSec: t.avgOpenDurationSec ?? 0,
+      maxOpenDurationSec: t.maxOpenDurationSec ?? 0,
+    },
+    breakdowns: { path: full.breakdowns.path },
+    freshness: full.freshness,
   };
 }

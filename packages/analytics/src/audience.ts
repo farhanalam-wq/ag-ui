@@ -126,12 +126,14 @@ export async function getAudienceReport(
     companyId,
     rangeDays,
     totals,
-    byDevice: toRows(devices),
-    byBrowser: toRows(browsers),
-    byOs: toRows(oses),
-    byHour: [...hours.entries()]
-      .map(([label, v]) => ({ label, sessions: v.sessions, pageviews: v.pageviews }))
-      .sort((a, b) => String(a.label).localeCompare(String(b.label))),
+    breakdowns: {
+      device: toRows(devices),
+      browser: toRows(browsers),
+      os: toRows(oses),
+      hour: [...hours.entries()]
+        .map(([label, v]) => ({ label, sessions: v.sessions, pageviews: v.pageviews }))
+        .sort((a, b) => String(a.label).localeCompare(String(b.label))),
+    },
     timezoneCoverage,
     freshness: await reportFreshness(false, dataQuality),
   };

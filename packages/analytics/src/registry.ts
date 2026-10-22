@@ -263,10 +263,12 @@ export interface AcquisitionReport {
   totals: Record<string, number>;
   previousTotals?: Record<string, number>;
   trend: TrendPoint[];
-  byChannel: BreakdownRow[];
-  bySourceMedium: BreakdownRow[];
-  byCampaign: BreakdownRow[];
-  byLandingPage: BreakdownRow[];
+  breakdowns: {
+    channel: BreakdownRow[];
+    sourceMedium: BreakdownRow[];
+    campaign: BreakdownRow[];
+    landingPage: BreakdownRow[];
+  };
   freshness: Freshness;
 }
 
@@ -276,8 +278,10 @@ export interface EngagementReport {
   rangeDays: number;
   totals: Record<string, number>;
   trend: TrendPoint[];
-  byPath: BreakdownRow[];
-  byDevice: BreakdownRow[];
+  breakdowns: {
+    path: BreakdownRow[];
+    device: BreakdownRow[];
+  };
   freshness: Freshness;
 }
 
@@ -286,10 +290,12 @@ export interface ContentReport {
   companyId: string;
   rangeDays: number;
   totals: Record<string, number>;
-  byPath: BreakdownRow[];
-  byTitle: BreakdownRow[];
-  byChannel: BreakdownRow[];
-  byDevice: BreakdownRow[];
+  breakdowns: {
+    path: BreakdownRow[];
+    title: BreakdownRow[];
+    channel: BreakdownRow[];
+    device: BreakdownRow[];
+  };
   freshness: Freshness;
 }
 
@@ -298,10 +304,12 @@ export interface AudienceReport {
   companyId: string;
   rangeDays: number;
   totals: Record<string, number>;
-  byDevice: BreakdownRow[];
-  byBrowser: BreakdownRow[];
-  byOs: BreakdownRow[];
-  byHour: BreakdownRow[];
+  breakdowns: {
+    device: BreakdownRow[];
+    browser: BreakdownRow[];
+    os: BreakdownRow[];
+    hour: BreakdownRow[];
+  };
   /** The share of visits that reported a timezone (0-100). */
   timezoneCoverage: number;
   freshness: Freshness;
@@ -332,7 +340,35 @@ export interface AgentReport {
   rangeDays: number;
   totals: Record<string, number>;
   trend: TrendPoint[];
-  byPath: BreakdownRow[];
+  breakdowns: {
+    path: BreakdownRow[];
+  };
+  freshness: Freshness;
+}
+
+/**
+ * Agent → Overview: how many visits use the agent, and how many visitors
+ * even open it. The questions and voice tabs have their own payloads so a
+ * surface never has to slice a combined report.
+ */
+export interface AgentOverviewReport {
+  kind: "agent-overview";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  trend: TrendPoint[];
+  freshness: Freshness;
+}
+
+/** Agent → Questions: how much is asked, how deep, and on which pages. */
+export interface AgentQuestionsReport {
+  kind: "agent-questions";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  breakdowns: {
+    path: BreakdownRow[];
+  };
   freshness: Freshness;
 }
 

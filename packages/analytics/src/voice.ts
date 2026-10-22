@@ -13,10 +13,10 @@
  *
  *   - voice questions cannot be classified, searched, or joined with the
  *     text conversations — the Voice tab shows volume and depth only;
- *   - the text-vs-voice split needs the text side to be measured too, and
- *     chat events are not instrumented yet. The split arrives with the chat
- *     instrumentation, not here, because a split against a number that is
- *     always zero is worse than no split.
+ *   - the text-vs-voice split is a split of **sessions**, not of counts: a
+ *     call and a typed question are not comparable units, but the sessions
+ *     that used either are. It is computed here because this report already
+ *     scans the voice slice; the text side is one extra sparse scan.
  *
  * Why the raw event stream and not a rollup column: a voice call is one
  * event per call (a few per day even for a busy site), so this report is a
@@ -111,6 +111,29 @@ export async function getVoiceReport(
     });
   }
 
+  // Which modality actually wins. Sessions, because a call is not a question:
+  // voice sessions / sessions that used the agent at all.
+  const [split] = await db
+    .select({
+      agentVisits: sql<number>`COUNT(DISTINCT ${pageViews.sessionHash})::int`.as("agent_visits"),
+      voiceVisits:
+        sql<number>`COUNT(DISTINCT ${pageViews.sessionHash}) FILTER (WHERE ${pageViews.type} = 'voice_start')::int`.as(
+          "voice_visits"
+        ),
+    })
+    .from(pageViews)
+    .where(
+      and(
+        eq(pageViews.companyId, companyId),
+        gte(pageViews.createdAt, windowStart),
+        lt(pageViews.createdAt, now),
+        eq(pageViews.isBot, false),
+        inArray(pageViews.type, ["voice_start", "chat_message"])
+      )
+    );
+  const agentVisits = Number(split?.agentVisits ?? 0);
+  const voiceVisits = Number(split?.voiceVisits ?? 0);
+
   if (calls === 0) {
     // Zero calls is a real number when there is traffic; "no calls" is only
     // "no tracking" when the site had no traffic at all. Read the rollup,
@@ -129,14 +152,13 @@ export async function getVoiceReport(
 
   const totals = {
     voiceCalls: calls,
-    // A call that started and never ended in the window is still a call;
-    // "ended" is what the duration numbers are computed over.
-    voiceCallsEnded: ended,
     voiceTurns: turnsTotal,
     voiceAvgDurationSec: ended > 0 ? Math.round(durationSec / ended) : 0,
     voiceMaxDurationSec: maxDurationSec,
     voiceAbandonedCalls: abandoned,
     voiceAbandonRate: ended > 0 ? Math.round((abandoned / ended) * 1000) / 10 : 0,
+    // Share of agent sessions that included a call (0-100); the rest typed.
+    textVsVoice: agentVisits > 0 ? Math.round((voiceVisits / agentVisits) * 1000) / 10 : 0,
   };
 
   return {

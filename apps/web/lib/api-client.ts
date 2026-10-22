@@ -9,6 +9,27 @@ export const API_BASE_URL =
 import type { WidgetThemeOverride } from "@ag-ui/shared/client";
 import type { Range } from "@/lib/analytics";
 
+/**
+ * One typed error for analytics reads.
+ *
+ * The API answers 422 for a bad range, 404 for a company this session does
+ * not own, 429 for the read budget and 500 for an upstream failure — all with
+ * `{ error }`. The UI needs the status (retry, or fix the input) and, for
+ * 429, the wait. A bare `Error` string cannot carry either.
+ */
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: "not-found" | "invalid" | "rate-limited" | "upstream",
+    message: string,
+    readonly details?: unknown,
+    readonly retryAfterSec?: number
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 export interface CompanySummary {
   id: string;
   name: string;
@@ -104,10 +125,12 @@ export interface AcquisitionAnalytics {
   totals: Record<string, number>;
   previousTotals?: Record<string, number>;
   trend: { d: string; pageviews: number; sessions: number }[];
-  byChannel: BreakdownRow[];
-  bySourceMedium: BreakdownRow[];
-  byCampaign: BreakdownRow[];
-  byLandingPage: BreakdownRow[];
+  breakdowns: {
+    channel: BreakdownRow[];
+    sourceMedium: BreakdownRow[];
+    campaign: BreakdownRow[];
+    landingPage: BreakdownRow[];
+  };
   freshness: Freshness;
 }
 
@@ -117,8 +140,10 @@ export interface EngagementAnalytics {
   rangeDays: number;
   totals: Record<string, number>;
   trend: { d: string; sessions: number; pageviews: number; engagedSessions: number }[];
-  byPath: BreakdownRow[];
-  byDevice: BreakdownRow[];
+  breakdowns: {
+    path: BreakdownRow[];
+    device: BreakdownRow[];
+  };
   freshness: Freshness;
 }
 
@@ -127,10 +152,12 @@ export interface ContentAnalytics {
   companyId: string;
   rangeDays: number;
   totals: Record<string, number>;
-  byPath: BreakdownRow[];
-  byTitle: BreakdownRow[];
-  byChannel: BreakdownRow[];
-  byDevice: BreakdownRow[];
+  breakdowns: {
+    path: BreakdownRow[];
+    title: BreakdownRow[];
+    channel: BreakdownRow[];
+    device: BreakdownRow[];
+  };
   freshness: Freshness;
 }
 
@@ -533,6 +560,41 @@ class ApiClient {
     this.baseUrl = baseUrl.replace(/\/$/, "");
   }
 
+  /**
+   * Analytics read: the one place an analytics failure becomes an ApiError.
+   *
+   * Every analytics method goes through here, so status, server message and
+   * the rate-limit hint reach the caller the same way — and a new endpoint
+   * cannot invent its own error string.
+   */
+  private async analyticsRequest<T>(path: string): Promise<T> {
+    const res = await fetch(`${this.baseUrl}${path}`);
+    if (res.ok) return (await res.json()) as T;
+    let body: { error?: string; details?: unknown } | null = null;
+    try {
+      body = await res.json();
+    } catch {
+      /* not JSON */
+    }
+    const retryAfter = Number(res.headers.get("retry-after"));
+    const message =
+      body?.error ??
+      (res.status === 404 ? "Company not found" : `Analytics request failed: HTTP ${res.status}`);
+    throw new ApiError(
+      res.status,
+      res.status === 404
+        ? "not-found"
+        : res.status === 422
+          ? "invalid"
+          : res.status === 429
+            ? "rate-limited"
+            : "upstream",
+      message,
+      body?.details,
+      Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined
+    );
+  }
+
   /** Single fetch primitive for newer endpoints. Throws on non-2xx. */
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     const res = await fetch(`${this.baseUrl}${path}`, init);
@@ -688,54 +750,28 @@ class ApiClient {
    * Analytics endpoints (live measured metrics; same shapes as web mocks)
    */
   analytics = {
-    overview: async (
+    overview: (
       companyId: string,
       range: Range = "14d"
-    ): Promise<import("@/mocks/overview").OverviewMock> => {
-      const res = await fetch(
-        `${this.baseUrl}/api/analytics/overview?companyId=${encodeURIComponent(companyId)}&range=${range}`
-      );
-      if (res.status === 404) throw new Error("Company not found");
-      if (!res.ok) {
-        throw new Error(`Overview unavailable: HTTP ${res.status}`);
-      }
-      return res.json();
-    },
+    ): Promise<import("@/mocks/overview").OverviewMock> =>
+      this.analyticsRequest(
+        `/api/analytics/overview?companyId=${encodeURIComponent(companyId)}&range=${range}`
+      ),
 
-    website: async (companyId: string, range = "30d"): Promise<WebsiteAnalytics> => {
-      const res = await fetch(
-        `${this.baseUrl}/api/analytics/website?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
-      );
-      if (res.status === 404) throw new Error("Company not found");
-      if (!res.ok) {
-        throw new Error(`Website analytics unavailable: HTTP ${res.status}`);
-      }
-      return res.json();
-    },
+    website: (companyId: string, range = "30d"): Promise<WebsiteAnalytics> =>
+      this.analyticsRequest(
+        `/api/analytics/website?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      ),
 
-    conversions: async (companyId: string, range = "30d"): Promise<ConversionAnalytics> => {
-      const res = await fetch(
-        `${this.baseUrl}/api/analytics/conversions?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
-      );
-      if (res.status === 404) throw new Error("Company not found");
-      if (!res.ok) {
-        throw new Error(`Conversion analytics unavailable: HTTP ${res.status}`);
-      }
-      return res.json();
-    },
+    conversions: (companyId: string, range = "30d"): Promise<ConversionAnalytics> =>
+      this.analyticsRequest(
+        `/api/analytics/conversions?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      ),
 
-    realtime: async (companyId: string): Promise<RealtimeSnapshot> => {
-      const res = await fetch(
-        `${this.baseUrl}/api/analytics/realtime?companyId=${encodeURIComponent(companyId)}`
-      );
-      if (res.status === 404) throw new Error("Company not found");
-      if (!res.ok) {
-        throw new Error(`Realtime snapshot unavailable: HTTP ${res.status}`);
-      }
-      return res.json();
-    },
+    realtime: (companyId: string): Promise<RealtimeSnapshot> =>
+      this.analyticsRequest(`/api/analytics/realtime?companyId=${encodeURIComponent(companyId)}`),
 
-    acquisition: async (
+    acquisition: (
       companyId: string,
       range = "30d",
       opts?: { compare?: boolean; channels?: string[] }
@@ -743,47 +779,23 @@ class ApiClient {
       const q = new URLSearchParams({ companyId, range });
       if (opts?.compare) q.set("compare", "previous");
       if (opts?.channels?.length) q.set("channels", opts.channels.join(","));
-      const res = await fetch(`${this.baseUrl}/api/analytics/acquisition?${q.toString()}`);
-      if (res.status === 404) throw new Error("Company not found");
-      if (!res.ok) {
-        throw new Error(`Acquisition analytics unavailable: HTTP ${res.status}`);
-      }
-      return res.json();
+      return this.analyticsRequest(`/api/analytics/acquisition?${q.toString()}`);
     },
 
-    engagement: async (companyId: string, range = "30d"): Promise<EngagementAnalytics> => {
-      const res = await fetch(
-        `${this.baseUrl}/api/analytics/engagement?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
-      );
-      if (res.status === 404) throw new Error("Company not found");
-      if (!res.ok) {
-        throw new Error(`Engagement analytics unavailable: HTTP ${res.status}`);
-      }
-      return res.json();
-    },
+    engagement: (companyId: string, range = "30d"): Promise<EngagementAnalytics> =>
+      this.analyticsRequest(
+        `/api/analytics/engagement?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      ),
 
-    content: async (companyId: string, range = "30d"): Promise<ContentAnalytics> => {
-      const res = await fetch(
-        `${this.baseUrl}/api/analytics/content?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
-      );
-      if (res.status === 404) throw new Error("Company not found");
-      if (!res.ok) {
-        throw new Error(`Content analytics unavailable: HTTP ${res.status}`);
-      }
-      return res.json();
-    },
+    content: (companyId: string, range = "30d"): Promise<ContentAnalytics> =>
+      this.analyticsRequest(
+        `/api/analytics/content?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      ),
 
-    insights: async (companyId: string, range = "14d"): Promise<InsightsPayload> => {
-      const res = await fetch(
-        `${this.baseUrl}/api/analytics/insights?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
-      );
-      if (res.status === 404) throw new Error("Company not found");
-      if (!res.ok) {
-        throw new Error(`Insights unavailable: HTTP ${res.status}`);
-      }
-      return res.json();
-    },
-
+    insights: (companyId: string, range = "14d"): Promise<InsightsPayload> =>
+      this.analyticsRequest(
+        `/api/analytics/insights?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      ),
   };
 
   /**
