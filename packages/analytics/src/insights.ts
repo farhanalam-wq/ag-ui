@@ -10,9 +10,10 @@
  *   slices as context, never as proven causes).
  */
 
-import { db, pageViews, metricsDaily, sql, eq, and, desc, gte, lt } from "@ag-ui/database";
+import { db, metricsDaily, sql, eq, and, desc } from "@ag-ui/database";
 import { freshnessStub } from "./registry";
-import { attrCTEs, pageViewsWindow } from "./attribution";
+import { visitAttrCTEs } from "./attribution";
+import { engagedInteractionSql, engagedSessionSql, sessionIslands } from "./sessions";
 
 /** Sample-size / sensitivity gates (tuned constants, documented). */
 export const MIN_CHANNEL_SESSIONS = 5;
@@ -116,32 +117,30 @@ export interface InsightsReport {
   freshness: { computedAt: string; rollupLagMinutes: number; live: boolean; dataQuality: string[] };
 }
 
-const ENGAGED_IN = `('chat_open', 'chat_message', 'conversion', 'scroll', 'download', 'click')`;
-
 export async function getInsightsReport(companyId: string, rangeDays: number): Promise<InsightsReport> {
   const dataQuality = ["channel-overlap"];
   const to = new Date();
   const from = new Date(to.getTime() - rangeDays * 86_400_000);
 
   // ---- 1. quality matrix: per (channel, session) grain, then channel ----
-  const { a1, a2 } = attrCTEs(companyId, from, to);
+  const { v1, v2 } = visitAttrCTEs(companyId, from, to);
   const perCS = db
     .select({
-      channel: a2.channel,
-      sh: a2.sessionHash,
-      pv: sql<number>`COUNT(*) FILTER (WHERE ${a2.type} = 'pageview')::int`.as("pv"),
-      inter: sql<boolean>`BOOL_OR(${a2.type} IN ${sql.raw(ENGAGED_IN)})`.as("inter"),
+      channel: v2.channel,
+      vk: v2.visitKey,
+      pv: sql<number>`COUNT(*) FILTER (WHERE ${v2.type} = 'pageview')::int`.as("pv"),
+      inter: engagedInteractionSql(v2.type).as("inter"),
     })
-    .from(a2)
-    .groupBy(a2.channel, a2.sessionHash)
+    .from(v2)
+    .groupBy(v2.channel, v2.visitKey)
     .as("cs");
   const qRows = await db
-    .with(a1, a2)
+    .with(v1, v2)
     .select({
       channel: perCS.channel,
       sessions: sql<number>`COUNT(*)::int`.as("sessions"),
       pageviews: sql<number>`COALESCE(SUM(${perCS.pv}), 0)::int`.as("pageviews"),
-      bounce: sql<number>`COUNT(*) FILTER (WHERE ${perCS.pv} <= 1 AND NOT ${perCS.inter})::int`.as("bounce"),
+      bounce: sql<number>`COUNT(*) FILTER (WHERE NOT (${engagedSessionSql(perCS.pv, perCS.inter)}))::int`.as("bounce"),
       interacted: sql<number>`COUNT(*) FILTER (WHERE ${perCS.inter})::int`.as("interacted"),
     })
     .from(perCS)
@@ -166,37 +165,26 @@ export async function getInsightsReport(companyId: string, rangeDays: number): P
   });
 
   // ---- 2. opportunity map: entry sessions + their full-window pv totals ----
-  const sessPv = db
+  const isl = sessionIslands(companyId, from, to);
+  const perVisit = db
     .select({
-      sh: pageViews.sessionHash,
-      pv: sql<number>`COUNT(*) FILTER (WHERE ${pageViews.type} = 'pageview')::int`.as("pv"),
-      engaged: sql<boolean>`BOOL_OR(${pageViews.type} IN ${sql.raw(ENGAGED_IN)}) OR COUNT(*) FILTER (WHERE ${pageViews.type} = 'pageview') >= 2`.as("engaged"),
+      vk: isl.visitKey,
+      pv: sql<number>`COUNT(*) FILTER (WHERE ${isl.type} = 'pageview')::int`.as("pv"),
+      inter: engagedInteractionSql(isl.type).as("inter"),
+      entryPath: sql<string>`(array_agg(${isl.path} ORDER BY ${isl.createdAt}) FILTER (WHERE ${isl.type} = 'pageview'))[1]`.as("entry_path"),
     })
-    .from(pageViews)
-    .where(pageViewsWindow(companyId, from, to))
-    .groupBy(pageViews.sessionHash)
-    .as("sp");
-  const entry = db
-    .select({
-      sh: pageViews.sessionHash,
-      entryPath: sql<string>`(array_agg(${pageViews.path} ORDER BY ${pageViews.createdAt}))[1]`.as("entry_path"),
-    })
-    .from(pageViews)
-    .where(
-      and(pageViewsWindow(companyId, from, to), eq(pageViews.type, "pageview"))
-    )
-    .groupBy(pageViews.sessionHash)
-    .as("en");
+    .from(isl)
+    .groupBy(isl.visitKey)
+    .as("pv");
   const oppRows = await db
     .select({
-      path: entry.entryPath,
+      path: perVisit.entryPath,
       sessions: sql<number>`COUNT(*)::int`.as("sessions"),
-      single: sql<number>`COUNT(*) FILTER (WHERE ${sessPv.pv} <= 1)::int`.as("single"),
-      engaged: sql<number>`COUNT(*) FILTER (WHERE ${sessPv.engaged})::int`.as("engaged"),
+      single: sql<number>`COUNT(*) FILTER (WHERE ${perVisit.pv} <= 1)::int`.as("single"),
+      engaged: sql<number>`COUNT(*) FILTER (WHERE ${engagedSessionSql(perVisit.pv, perVisit.inter)})::int`.as("engaged"),
     })
-    .from(entry)
-    .innerJoin(sessPv, eq(entry.sh, sessPv.sh))
-    .groupBy(entry.entryPath)
+    .from(perVisit)
+    .groupBy(perVisit.entryPath)
     .orderBy(desc(sql`COUNT(*)`))
     .limit(10);
   const opportunityMap: OpportunityRow[] = oppRows
@@ -212,13 +200,13 @@ export async function getInsightsReport(companyId: string, rangeDays: number): P
   // ---- 3. journeys: entry -> second distinct path via LEAD ----
   const seq = db
     .select({
-      sh: pageViews.sessionHash,
-      path: pageViews.path,
-      nextPath: sql<string>`LEAD(${pageViews.path}) OVER (PARTITION BY ${pageViews.sessionHash} ORDER BY ${pageViews.createdAt})`.as("next_path"),
-      rn: sql<number>`ROW_NUMBER() OVER (PARTITION BY ${pageViews.sessionHash} ORDER BY ${pageViews.createdAt})::int`.as("rn"),
+      vk: isl.visitKey,
+      path: isl.path,
+      nextPath: sql<string>`LEAD(${isl.path}) OVER (PARTITION BY ${isl.visitKey} ORDER BY ${isl.createdAt})`.as("next_path"),
+      rn: sql<number>`ROW_NUMBER() OVER (PARTITION BY ${isl.visitKey} ORDER BY ${isl.createdAt})::int`.as("rn"),
     })
-    .from(pageViews)
-    .where(and(pageViewsWindow(companyId, from, to), eq(pageViews.type, "pageview")))
+    .from(isl)
+    .where(eq(isl.type, "pageview"))
     .as("seq");
   const pairRows = await db
     .select({
@@ -269,13 +257,13 @@ export async function getInsightsReport(companyId: string, rangeDays: number): P
       // Context slices for the flagged day (bounded single-day attr scan).
       const dayFrom = new Date(`${f.d}T00:00:00Z`);
       const dayTo = new Date(dayFrom.getTime() + 86_400_000);
-      const { a1: d1, a2: d2 } = attrCTEs(companyId, dayFrom, dayTo);
+      const { v1: d1, v2: d2 } = visitAttrCTEs(companyId, dayFrom, dayTo);
       const ctx = await db
         .with(d1, d2)
         .select({
           label: d2.channel,
           pageviews: sql<number>`COUNT(*) FILTER (WHERE ${d2.type} = 'pageview')::int`.as("pageviews"),
-          sessions: sql<number>`COUNT(DISTINCT ${d2.sessionHash})::int`.as("sessions"),
+          sessions: sql<number>`COUNT(DISTINCT ${d2.visitKey})::int`.as("sessions"),
         })
         .from(d2)
         .groupBy(d2.channel)

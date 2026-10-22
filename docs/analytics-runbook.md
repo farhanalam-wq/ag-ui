@@ -3,12 +3,14 @@
 ## Deploy order
 1. Postgres + Redis up (`docker-compose.yml`); verify `DATABASE_URL`, `REDIS_HOST/PORT`.
 2. Apply DDL — **`db:migrate` is the single path** (`bun run db:migrate`, root):
-   - Fresh database → `db:migrate` applies `0000..0007` in order.
+   - Fresh database → `db:migrate` applies `0000..0009` in order.
    - Existing database built with `drizzle-kit push` (no ledger) → baseline once,
      then migrate:
      `bun run db:baseline --through=0006_woozy_talos` → `bun run db:migrate`.
    `drizzle/0007_analytics.sql` owns the analytics tables (hand-written: `page_views`
-   is RANGE-partitioned, which drizzle-kit cannot express). Unrelated:
+   is RANGE-partitioned, which drizzle-kit cannot express).
+   `0009_analytics_sessions.sql` adds `sessions.engaged` and
+   `metrics_daily/metrics_hourly.engaged_sessions`. Unrelated:
    `migrate-task1-task2.ts`, `migrate-drop-pgvector.ts` (pre-existing, destructive-adjacent
    — see Rollback).
 3. Start API (`apps/api`), web (`apps/web`), and at least one worker
@@ -24,7 +26,9 @@ All rate paths fail open when Redis is down (by design — availability over pre
 
 ## Rollback
 - Analytics DDL is additive + rerunnable (`IF NOT EXISTS` / DO-blocks). Rollback =
-  forward-fix + recompute (`buildDailyRollup` is idempotent; rerun any day).
+  forward-fix + **rebuild** (see Recompute below). A plain rerun of
+  `buildDailyRollup` is *not* enough to repair a day: it upserts, and the orphan
+  session rows written by the pre-`0009` logic cannot be removed by an upsert.
 - Raw partitions: rollups preserve history; partition drops only remove raw
   detail older than the retain window (current + previous month never dropped).
 - `migrate-drop-pgvector.ts` is NOT analytics scope: drops `chunks.embedding`
@@ -33,6 +37,29 @@ All rate paths fail open when Redis is down (by design — availability over pre
   on this database: it would create `page_views` unpartitioned and fight the
   runtime partition children. `db:migrate` (or `db:baseline` → `db:migrate`)
   is the only supported path.
+
+## Recompute / repair
+`bun run rebuild:analytics --cwd workers/worker` rebuilds the session rows, the
+daily metrics and the unique-visitor HLL for a date range, straight from the raw
+events.
+
+```bash
+bun run --cwd workers/worker rebuild:analytics                 # last 30 days
+bun run --cwd workers/worker rebuild:analytics 2026-10-01 2026-10-07
+```
+
+Run it when:
+- upgrading from a build before `0009_analytics_sessions.sql` — historical
+  `sessions` rows are visits split at every hour boundary (one visit counted
+  twice) and `engaged_sessions` is 0 everywhere;
+- the rollup was stopped for a while and the backfill is missing days;
+- you need to drop bot traffic that reached the rollup before the `is_bot`
+  filter existed (the HLL is cleared and rebuilt, because `PFADD` cannot
+  subtract).
+
+It is idempotent and derived entirely from `page_views`, so it is safe to
+re-run. It only reaches back as far as the raw partitions that still exist
+(`ANALYTICS_RAW_RETAIN_MONTHS`, default 3).
 
 ## Health & monitoring (all built-in, no paid services)
 - `GET /health` (API liveness), `GET /api/analytics/cache-stats` (`hits/misses`).
@@ -58,6 +85,8 @@ All rate paths fail open when Redis is down (by design — availability over pre
   the only boundary today). The auth contract is `docs/auth-tenancy.md`; do not add a local guard.
 - Cold-report p95 ~0.85s on dev hardware (measured Phase 8); no production SLA claimed.
 - Channel attribution is referrer+UTM only (Direct/Unassigned for the unattributable).
-- `newUsers` metric still `planned`; engagement sessions are raw tab-sessions.
+- `newUsers` metric still `planned`. A "session" is a visit — activity with no
+  gap wider than 30 minutes — and every surface counts the same unit; the
+  rollup owns the per-visit `engaged` verdict and the reports read it back.
 - No CI and no feature-flag system in repo: release gate is `turbo run build` +
   `bun test` (both green at Phase 9); releases are branch-based.

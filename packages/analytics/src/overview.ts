@@ -283,14 +283,16 @@ export async function getCompanyOverview(
   const conversions = mRows
     .filter((r) => r.day.slice(0, 10) >= startISO.slice(0, 10))
     .reduce((a, r) => a + (r.cv ?? 0), 0);
-  const engaged = [...userCounts.values()].filter((n) => n >= 2).length;
-  const fCounts = [trackedSessions, chatOpens, cur.length, engaged, conversions];
-  // NOTE: mock shape has 6 stages; "Meaningful engagement" sits before conversion.
+  // "Meaningful conversation" is a conversation with 2+ user messages —
+  // not an engaged session. The two used to share the word "engaged".
+  const meaningfulConversations = [...userCounts.values()].filter((n) => n >= 2).length;
+  const fCounts = [trackedSessions, chatOpens, cur.length, meaningfulConversations, conversions];
+  // NOTE: mock shape has 6 stages; "Meaningful conversation" sits before conversion.
   const stages = [
     "Eligible sessions",
     "Widget opened",
     "Conversation started",
-    "Meaningful engagement",
+    "Meaningful conversation",
     "Recorded conversion",
   ];
   const counts5 = [fCounts[0], fCounts[1], fCounts[2], fCounts[3], fCounts[4]];
@@ -328,7 +330,7 @@ export async function getCompanyOverview(
   )) as Array<{ version: number; status: string; created_at: string }>;
   const snap = snaps[0];
   const [live] = (await client.unsafe(
-    `SELECT 1 AS ok FROM page_views WHERE company_id = $1 AND created_at >= now() - interval '24 hours' LIMIT 1;`,
+    `SELECT 1 AS ok FROM page_views WHERE company_id = $1 AND created_at >= now() - interval '24 hours' AND is_bot = false LIMIT 1;`,
     [companyId]
   )) as Array<{ ok: number }>;
 

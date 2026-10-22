@@ -6,9 +6,10 @@
  * from the shared attr CTEs with builder aggregation.
  */
 
-import { db, pageViews, metricsDaily, sql, eq, and, desc, gte, lt } from "@ag-ui/database";
+import { db, metricsDaily, sql, eq, and, desc } from "@ag-ui/database";
 import { freshnessStub, type BreakdownRow, type ContentReport } from "./registry";
-import { attrCTEs, deviceFragment } from "./attribution";
+import { deviceFragment, visitAttrCTEs } from "./attribution";
+import { sessionIslands } from "./sessions";
 
 export async function getContentReport(companyId: string, rangeDays: number): Promise<ContentReport> {
   const dataQuality: string[] = [];
@@ -26,48 +27,41 @@ export async function getContentReport(companyId: string, rangeDays: number): Pr
   const totals = { sessions: Number(t[0]?.se ?? 0), pageviews: Number(t[0]?.pv ?? 0) };
   if (totals.sessions === 0 && totals.pageviews === 0) dataQuality.push("tracking-off");
 
-  const { a1, a2 } = attrCTEs(companyId, from, to);
+  // Same window, same island rule as the rollup: a "session" here is a visit.
+  const { v1, v2 } = visitAttrCTEs(companyId, from, to);
   const split = async (labelFrag: ReturnType<typeof sql<string>>, groupFrag: ReturnType<typeof sql>): Promise<BreakdownRow[]> => {
     const rows = await db
-      .with(a1, a2)
+      .with(v1, v2)
       .select({
         label: sql<string>`${labelFrag}`.as("label"),
-        pageviews: sql<number>`COUNT(*) FILTER (WHERE ${a2.type} = 'pageview')::int`.as("pageviews"),
-        sessions: sql<number>`COUNT(DISTINCT ${a2.sessionHash})::int`.as("sessions"),
+        pageviews: sql<number>`COUNT(*) FILTER (WHERE ${v2.type} = 'pageview')::int`.as("pageviews"),
+        sessions: sql<number>`COUNT(DISTINCT ${v2.visitKey}) FILTER (WHERE ${v2.type} = 'pageview')::int`.as("sessions"),
       })
-      .from(a2)
+      .from(v2)
       .groupBy(sql`${groupFrag}`)
-      .orderBy(desc(sql`COUNT(*) FILTER (WHERE ${a2.type} = 'pageview')`))
+      .orderBy(desc(sql`COUNT(*) FILTER (WHERE ${v2.type} = 'pageview')`))
       .limit(10);
     return rows
       .filter((r) => (r.label ?? "").length > 0)
       .map((r) => ({ label: r.label, pageviews: Number(r.pageviews), sessions: Number(r.sessions) }));
   };
 
-  const devFrag = deviceFragment(a2.viewport);
-  const byPath = await split(sql<string>`${a2.path}`, sql`${a2.path}`);
-  const byChannel = await split(sql<string>`${a2.channel}`, sql`${a2.channel}`);
+  const devFrag = deviceFragment(v2.viewport);
+  const byPath = await split(sql<string>`${v2.path}`, sql`${v2.path}`);
+  const byChannel = await split(sql<string>`${v2.channel}`, sql`${v2.channel}`);
   const byDevice = await split(sql<string>`${devFrag}`, sql`${devFrag}`);
 
   // Page titles from pageview meta (tag-captured document.title).
-  const titleFrag = sql<string>`(${pageViews.meta}->>'title')`;
+  const isl = sessionIslands(companyId, from, to);
+  const titleFrag = sql<string>`(${isl.meta}->>'title')`;
   const titleRows = await db
     .select({
       label: sql<string>`${titleFrag}`.as("label"),
       pageviews: sql<number>`COUNT(*)::int`.as("pageviews"),
-      sessions: sql<number>`COUNT(DISTINCT ${pageViews.sessionHash})::int`.as("sessions"),
+      sessions: sql<number>`COUNT(DISTINCT ${isl.visitKey})::int`.as("sessions"),
     })
-    .from(pageViews)
-    .where(
-      and(
-        eq(pageViews.companyId, companyId),
-        gte(pageViews.createdAt, from),
-        lt(pageViews.createdAt, to),
-        eq(pageViews.type, "pageview"),
-        eq(pageViews.isBot, false),
-        sql`${titleFrag} IS NOT NULL AND ${titleFrag} <> ''`
-      )
-    )
+    .from(isl)
+    .where(and(eq(isl.type, "pageview"), sql`${titleFrag} IS NOT NULL AND ${titleFrag} <> ''`))
     .groupBy(sql`${titleFrag}`)
     .orderBy(desc(sql`COUNT(*)`))
     .limit(10);

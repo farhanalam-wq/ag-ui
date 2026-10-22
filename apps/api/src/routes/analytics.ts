@@ -417,7 +417,7 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
         dimensions: ["day", "path", "device"],
         rangeDays: days,
       });
-      const v2 = validateReportQuery({ metrics: ["engagementRate", "avgEngagementTime"], dimensions: ["day"], rangeDays: days });
+      const v2 = validateReportQuery({ metrics: ["engagementRate", "bounceRate", "pagesPerSession", "avgEngagementTime"], dimensions: ["day"], rangeDays: days });
       const errors = [...(!v1.ok ? v1.errors : []), ...(!v2.ok ? v2.errors : [])];
       if (errors.length > 0) {
         set.status = 400;
@@ -434,7 +434,7 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       query: t.Object({ companyId: t.String(), range: t.Optional(t.String()) }),
       detail: {
         summary: "Engagement analytics",
-        description: "Views, sessions, engaged sessions, engagement rate, paths, devices. First-party only.",
+        description: "Views, sessions, engaged sessions, engagement rate, bounce rate, pages per session, paths, devices. First-party only.",
       },
     }
   )

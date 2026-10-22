@@ -29,7 +29,7 @@
  *     "sessions" in the UI.
  */
 
-import { sql, type SQL, type SQLWrapper } from "@ag-ui/database";
+import { db, pageViews, sql, eq, and, gte, lt, type SQL, type SQLWrapper } from "@ag-ui/database";
 
 /** A visit ends after this much inactivity. */
 export const SESSION_GAP_MINUTES = 30;
@@ -117,4 +117,80 @@ export function pagesPerSession(pageviews: number, visits: number): number {
  */
 export function visitKeySql(sessionHash: SQLWrapper, island: SQLWrapper): SQL<string> {
   return sql<string>`${sessionHash} || '#' || ${island}`;
+}
+
+/**
+ * The event stream for a window, with the visit id attached.
+ *
+ * A `session_hash` is a page load, not a visit. This applies the same
+ * island rule the rollup uses — one gap of inactivity ends a visit — so a
+ * report that needs a per-path, per-channel or per-device session count
+ * counts visits, not page loads. Without it the same report shows a
+ * different "Sessions" number than the rollup that owns the metric.
+ *
+ * The scan starts one gap before the window so the first event inside the
+ * window is not mistaken for the start of a visit, which is exactly what
+ * the rollup does when it buckets a day. Those lookback events are used
+ * only to establish the island chain and are filtered out of the result,
+ * so the rows returned are the window's events and nothing else.
+ */
+export function sessionIslands(companyId: string, from: Date, to: Date) {
+  const lookback = new Date(from.getTime() - SESSION_GAP_MINUTES * 60_000);
+  const ev = db
+    .select({
+      sessionHash: pageViews.sessionHash,
+      createdAt: pageViews.createdAt,
+      type: pageViews.type,
+      path: pageViews.path,
+      viewport: pageViews.viewport,
+      url: pageViews.url,
+      referrer: pageViews.referrer,
+      value: pageViews.value,
+      meta: pageViews.meta,
+      prevAt: sql<Date | null>`LAG(${pageViews.createdAt}) OVER (PARTITION BY ${pageViews.sessionHash} ORDER BY ${pageViews.createdAt})`.as("prev_at"),
+    })
+    .from(pageViews)
+    .where(
+      and(
+        eq(pageViews.companyId, companyId),
+        gte(pageViews.createdAt, lookback),
+        lt(pageViews.createdAt, to),
+        eq(pageViews.isBot, false)
+      )
+    )
+    .as("ev");
+
+  const isl = db
+    .select({
+      sessionHash: ev.sessionHash,
+      createdAt: ev.createdAt,
+      type: ev.type,
+      path: ev.path,
+      viewport: ev.viewport,
+      url: ev.url,
+      referrer: ev.referrer,
+      value: ev.value,
+      meta: ev.meta,
+      island: sql<number>`SUM(${islandStartCase(ev.createdAt, ev.prevAt)}) OVER (PARTITION BY ${ev.sessionHash} ORDER BY ${ev.createdAt})`.as("island"),
+    })
+    .from(ev)
+    .as("isl");
+
+  return db
+    .select({
+      sessionHash: isl.sessionHash,
+      visitKey: sql<string>`${isl.sessionHash} || '#' || ${isl.island}`.as("visit_key"),
+      createdAt: isl.createdAt,
+      type: isl.type,
+      path: isl.path,
+      viewport: isl.viewport,
+      url: isl.url,
+      referrer: isl.referrer,
+      value: isl.value,
+      meta: isl.meta,
+      island: isl.island,
+    })
+    .from(isl)
+    .where(gte(isl.createdAt, from))
+    .as("visits");
 }

@@ -219,6 +219,44 @@ export async function rebuildDailyHll(
 }
 
 /**
+ * Rebuilds one UTC day from raw: session rows, daily metrics and the HLL.
+ *
+ * `buildDailyRollup` upserts, which is right for day-to-day operation but
+ * not for repair. Rows written by the old hourly-window logic are orphans
+ * — one visit crossing an hour boundary produced two rows, under two
+ * different keys — and an upsert cannot remove them. The day's session
+ * rows are therefore dropped first, and the HLL key is cleared because
+ * PFADD cannot subtract (bot hashes added before the filter existed).
+ *
+ * Safe to rerun: everything is derived from the raw events.
+ */
+export async function rebuildDay(redis: RollupRedis, dayISO: string): Promise<void> {
+  const day = dayISO.slice(0, 10);
+  const from = `${day}T00:00:00Z`;
+  const to = new Date(new Date(from).getTime() + 86_400_000).toISOString();
+  await client.unsafe(
+    `DELETE FROM sessions WHERE started_at >= $1::timestamptz AND started_at < $2::timestamptz;`,
+    [from, to]
+  );
+  const cos = (await client.unsafe(
+    `SELECT DISTINCT company_id FROM page_views WHERE created_at >= $1 AND created_at < $2;`,
+    [from, to]
+  )) as Array<{ company_id: string }>;
+  for (const { company_id } of cos) await redis.del(dailyUniquesKey(company_id, day));
+  await buildDailyRollup(dayISO);
+  await rebuildDailyHll(redis, dayISO);
+}
+
+/** Rebuilds every day in [fromDay, toDay] inclusive. */
+export async function rebuildDays(redis: RollupRedis, fromDay: string, toDay: string): Promise<void> {
+  const start = new Date(`${fromDay.slice(0, 10)}T00:00:00Z`).getTime();
+  const end = new Date(`${toDay.slice(0, 10)}T00:00:00Z`).getTime();
+  for (let t = start; t <= end; t += 86_400_000) {
+    await rebuildDay(redis, new Date(t).toISOString());
+  }
+}
+
+/**
  * Drops monthly raw partitions older than retainMonths (default 3),
  * never the current or previous month. Also clears their HLL day-keys.
  * Returns dropped partition names.

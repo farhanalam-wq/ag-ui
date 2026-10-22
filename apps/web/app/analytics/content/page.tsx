@@ -152,8 +152,8 @@ export default function ContentAnalyticsPage() {
 
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <ListBullets className="size-3.5" aria-hidden="true" />
-            Humans only — bot traffic is filtered at write time. Totals refresh
-            on the 15-minute rollup.
+            Humans only — bot traffic is flagged at write time and excluded
+            from every report. Totals refresh on the 15-minute rollup.
           </p>
         </div>
       )}

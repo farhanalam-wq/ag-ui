@@ -63,8 +63,8 @@ export default function EngagementAnalyticsPage() {
             Engagement
           </h1>
           <p className="text-sm text-muted-foreground mt-1 max-w-[65ch]">
-            How visitors interact once they arrive: engaged sessions, active
-            time, scrolls, downloads, and configured clicks.
+            How visitors interact once they arrive: engaged sessions, bounce
+            rate, active time, scrolls, downloads, and configured clicks.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -123,6 +123,8 @@ export default function EngagementAnalyticsPage() {
               { label: "Sessions", value: Number(t.sessions ?? 0).toLocaleString() },
               { label: "Engaged sessions", value: Number(t.engagedSessions ?? 0).toLocaleString() },
               { label: "Engagement rate", value: `${Number(t.engagementRate ?? 0)}%` },
+              { label: "Bounce rate", value: `${Number(t.bounceRate ?? 0)}%` },
+              { label: "Pages per session", value: String(Number(t.pagesPerSession ?? 0)) },
               { label: "Avg. active time", value: `${Number(t.avgEngagementTime ?? 0)}s` },
               { label: "Scrolls", value: Number(t.scrolls ?? 0).toLocaleString() },
               { label: "Downloads", value: Number(t.downloads ?? 0).toLocaleString() },
@@ -204,9 +206,11 @@ export default function EngagementAnalyticsPage() {
 
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Smiley className="size-3.5" aria-hidden="true" />
-            Engaged means 2+ pageviews or any chat interaction. Active time
-            comes from 15s heartbeats while the tab is visible and the visitor
-            is active. Totals refresh on the 15-minute rollup.
+            A session is a visit — activity with no gap wider than 30 minutes.
+            Engaged means 2+ pageviews or any interaction (chat, scroll,
+            download, click, conversion). Active time comes from 15s
+            heartbeats while the tab is visible and the visitor is active.
+            Totals refresh on the 15-minute rollup.
           </p>
         </div>
       )}
