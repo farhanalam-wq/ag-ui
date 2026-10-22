@@ -5,11 +5,14 @@
  * idempotent (INSERT ... ON CONFLICT DO UPDATE), so overlapping ticks or
  * multi-replica runs converge instead of corrupting.
  *
- * - sessions: gap-and-island over bounded windows (30-min inactivity splits
- *   one tab-session into two sessions). Keyed (company, session_hash,
- *   started_at) — see drizzle/0007_analytics.sql.
+ * - sessions: gap-and-island visits (SESSION_GAP_MINUTES of inactivity splits
+ *   a tab-session into two visits). Each bucket scans one gap *before* its
+ *   own window, so a visit that straddles an hour boundary is the same visit
+ *   in the hourly and daily passes and is written under the same key. Only
+ *   visits that *start* inside the bucket are written (F-22).
  * - metrics_hourly / metrics_daily: dashboard read path. Dashboards never
- *   touch raw page_views.
+ *   touch raw page_views. Both filter is_bot — the flag is set at write time
+ *   and every read path must honour it (F-21).
  * - HLL uniques: rebuilt per company-day from raw (bounded scan), read via
  *   PFMERGE in Phase 5. Raw IP never involved — hashes only.
  */
@@ -18,8 +21,13 @@ import { randomUUID } from "node:crypto";
 import { client } from "@ag-ui/database";
 import { dailyUniquesKey } from "./identity";
 import type { CacheRedis } from "./cache";
+import {
+  ENGAGEMENT_TYPES_SQL,
+  HEARTBEAT_SECONDS,
+  MAX_ACTIVE_SECONDS_PER_VISIT,
+  SESSION_GAP_MINUTES,
+} from "./sessions";
 
-export const SESSION_GAP_MINUTES = 30;
 export const HLL_TTL_SECONDS = 30 * 86_400;
 
 /** Minimal Redis surface (kept structural so tests can stub it). */
@@ -33,16 +41,29 @@ export interface RollupRedis extends CacheRedis {
 const ISLAND_CASE = `CASE WHEN prev IS NULL OR created_at - prev > interval '${SESSION_GAP_MINUTES} minutes' THEN 1 ELSE 0 END`;
 
 /**
- * Upserts session rows for [fromISO, toISO). Returns island count.
+ * Upserts session (visit) rows for [fromISO, toISO). Returns island count.
  * Safe to rerun: same islands produce the same keys.
+ *
+ * Two details keep the hourly and daily passes agreeing on one visit:
+ *
+ * 1. The scan starts one gap before the bucket, so the LAG sees the event
+ *    that opened a visit which began in the previous bucket. Without it every
+ *    bucket's first event looks like a new visit.
+ * 2. Only visits whose `started_at` falls inside the bucket are written. With
+ *    the lookback both passes derive the same `started_at` for the same
+ *    visit, so the ON CONFLICT key matches instead of creating an orphan row.
  */
 export async function upsertSessions(fromISO: string, toISO: string): Promise<number> {
+  const scanFrom = new Date(
+    new Date(fromISO).getTime() - SESSION_GAP_MINUTES * 60_000
+  ).toISOString();
   const rows = (await client.unsafe(
     `
     WITH ev AS (
       SELECT company_id, session_hash, created_at, type, value,
              LAG(created_at) OVER (PARTITION BY company_id, session_hash ORDER BY created_at) AS prev
-      FROM page_views WHERE created_at >= $1 AND created_at < $2
+      FROM page_views
+      WHERE created_at >= $1 AND created_at < $2 AND is_bot = false
     ),
     islands AS (
       SELECT company_id, session_hash, created_at, type, value,
@@ -53,28 +74,35 @@ export async function upsertSessions(fromISO: string, toISO: string): Promise<nu
       SELECT company_id, session_hash,
              MIN(created_at) AS started_at, MAX(created_at) AS ended_at,
              COUNT(*) FILTER (WHERE type = 'pageview')::int AS pageviews,
-             -- Heartbeat-derived active time: 15s per beat, capped at 30min/island.
-             LEAST(COUNT(*) FILTER (WHERE type = 'heartbeat') * 15, 1800)::int AS active_seconds,
+             -- Heartbeat-derived active time: 15s per beat, capped at 30min/visit.
+             LEAST(COUNT(*) FILTER (WHERE type = 'heartbeat') * ${HEARTBEAT_SECONDS}, ${MAX_ACTIVE_SECONDS_PER_VISIT})::int AS active_seconds,
              BOOL_OR(type = 'conversion') AS converted,
-             COALESCE(SUM(value) FILTER (WHERE type = 'conversion'), 0) AS revenue
+             COALESCE(SUM(value) FILTER (WHERE type = 'conversion'), 0) AS revenue,
+             -- Engaged = 2+ pageviews or any interaction event. The same rule
+             -- lives in sessions.ts and is what the reports read back.
+             (COUNT(*) FILTER (WHERE type = 'pageview') >= 2
+               OR BOOL_OR(type IN (${ENGAGEMENT_TYPES_SQL}))) AS engaged
       FROM islands GROUP BY company_id, session_hash, island
     )
-    INSERT INTO sessions (company_id, session_hash, started_at, ended_at, pageview_count, active_seconds, converted, revenue)
-    SELECT company_id, session_hash, started_at, ended_at, pageviews, active_seconds, converted, revenue FROM sess
+    INSERT INTO sessions (company_id, session_hash, started_at, ended_at, pageview_count, active_seconds, converted, revenue, engaged)
+    SELECT company_id, session_hash, started_at, ended_at, pageviews, active_seconds, converted, revenue, engaged FROM sess
+    WHERE started_at >= $3 AND started_at < $2
     ON CONFLICT (company_id, session_hash, started_at) DO UPDATE SET
       ended_at = EXCLUDED.ended_at,
       pageview_count = EXCLUDED.pageview_count,
       active_seconds = EXCLUDED.active_seconds,
       converted = EXCLUDED.converted,
-      revenue = EXCLUDED.revenue
+      revenue = EXCLUDED.revenue,
+      engaged = EXCLUDED.engaged
     RETURNING id;`,
-    [fromISO, toISO]
+    [scanFrom, toISO, fromISO]
   )) as unknown[];
   return rows.length;
 }
 
-const METRIC_COLS = "pageviews, sessions, conversions, revenue, chat_opens, messages, scrolls, downloads, clicks, heartbeats";
+const METRIC_COLS = "pageviews, sessions, engaged_sessions, conversions, revenue, chat_opens, messages, scrolls, downloads, clicks, heartbeats";
 const METRIC_UPDATE = `pageviews = EXCLUDED.pageviews, sessions = EXCLUDED.sessions,
+  engaged_sessions = EXCLUDED.engaged_sessions,
   conversions = EXCLUDED.conversions, revenue = EXCLUDED.revenue,
   chat_opens = EXCLUDED.chat_opens, messages = EXCLUDED.messages,
   scrolls = EXCLUDED.scrolls, downloads = EXCLUDED.downloads,
@@ -102,14 +130,16 @@ export async function buildHourlyRollup(hourISO: string): Promise<number> {
         COUNT(*) FILTER (WHERE type = 'chat_open')::int AS chat_opens,
         COUNT(*) FILTER (WHERE type = 'chat_message')::int AS messages,
         ${ENGAGEMENT_CTE}
-      FROM page_views WHERE created_at >= $1 AND created_at < $2 GROUP BY company_id
+      FROM page_views WHERE created_at >= $1 AND created_at < $2 AND is_bot = false GROUP BY company_id
     ),
     ss AS (
-      SELECT company_id, COUNT(*)::int AS sessions FROM sessions
+      SELECT company_id, COUNT(*)::int AS sessions,
+             COUNT(*) FILTER (WHERE engaged)::int AS engaged_sessions
+      FROM sessions
       WHERE started_at >= $1 AND started_at < $2 GROUP BY company_id
     )
     INSERT INTO metrics_hourly (company_id, hour, ${METRIC_COLS})
-    SELECT pv.company_id, $1::timestamptz, pv.pageviews, COALESCE(ss.sessions, 0),
+    SELECT pv.company_id, $1::timestamptz, pv.pageviews, COALESCE(ss.sessions, 0), COALESCE(ss.engaged_sessions, 0),
       pv.conversions, pv.revenue, pv.chat_opens, pv.messages,
       pv.scrolls, pv.downloads, pv.clicks, pv.heartbeats
     FROM pv LEFT JOIN ss ON ss.company_id = pv.company_id
@@ -136,14 +166,16 @@ export async function buildDailyRollup(dayISO: string): Promise<number> {
         COUNT(*) FILTER (WHERE type = 'chat_open')::int AS chat_opens,
         COUNT(*) FILTER (WHERE type = 'chat_message')::int AS messages,
         ${ENGAGEMENT_CTE}
-      FROM page_views WHERE created_at >= $1 AND created_at < $2 GROUP BY company_id
+      FROM page_views WHERE created_at >= $1 AND created_at < $2 AND is_bot = false GROUP BY company_id
     ),
     ss AS (
-      SELECT company_id, COUNT(*)::int AS sessions FROM sessions
+      SELECT company_id, COUNT(*)::int AS sessions,
+             COUNT(*) FILTER (WHERE engaged)::int AS engaged_sessions
+      FROM sessions
       WHERE started_at >= $1 AND started_at < $2 GROUP BY company_id
     )
     INSERT INTO metrics_daily (company_id, day, ${METRIC_COLS})
-    SELECT pv.company_id, $1::date, pv.pageviews, COALESCE(ss.sessions, 0),
+    SELECT pv.company_id, $1::date, pv.pageviews, COALESCE(ss.sessions, 0), COALESCE(ss.engaged_sessions, 0),
       pv.conversions, pv.revenue, pv.chat_opens, pv.messages,
       pv.scrolls, pv.downloads, pv.clicks, pv.heartbeats
     FROM pv LEFT JOIN ss ON ss.company_id = pv.company_id
@@ -166,13 +198,13 @@ export async function rebuildDailyHll(
   const from = `${day}T00:00:00Z`;
   const to = new Date(new Date(from).getTime() + 86_400_000).toISOString();
   const cos = (await client.unsafe(
-    `SELECT DISTINCT company_id FROM page_views WHERE created_at >= $1 AND created_at < $2;`,
+    `SELECT DISTINCT company_id FROM page_views WHERE created_at >= $1 AND created_at < $2 AND is_bot = false;`,
     [from, to]
   )) as Array<{ company_id: string }>;
   const out: Record<string, { added: number; estimate: number }> = {};
   for (const { company_id } of cos) {
     const hashes = (await client.unsafe(
-      `SELECT visitor_hash FROM page_views WHERE company_id = $1 AND created_at >= $2 AND created_at < $3;`,
+      `SELECT visitor_hash FROM page_views WHERE company_id = $1 AND created_at >= $2 AND created_at < $3 AND is_bot = false;`,
       [company_id, from, to]
     )) as Array<{ visitor_hash: string }>;
     const key = dailyUniquesKey(company_id, day);

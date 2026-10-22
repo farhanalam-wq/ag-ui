@@ -1,6 +1,7 @@
 export * from "./events";
 export * from "./identity";
 export * from "./bots";
+export * from "./sessions";
 export * from "./rollup";
 export * from "./overview";
 export * from "./website";

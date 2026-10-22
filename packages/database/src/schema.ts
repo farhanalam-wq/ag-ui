@@ -304,6 +304,7 @@ export const sessions = pgTable(
     activeSeconds: integer("active_seconds").default(0).notNull(),
     converted: boolean("converted").default(false).notNull(),
     revenue: numeric("revenue").default("0").notNull(),
+    engaged: boolean("engaged").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [unique("sessions_company_session_started_unique").on(t.companyId, t.sessionHash, t.startedAt)]
@@ -318,6 +319,7 @@ export const metricsDaily = pgTable(
     day: date("day").notNull(),
     pageviews: integer("pageviews").default(0).notNull(),
     sessions: integer("sessions").default(0).notNull(),
+    engagedSessions: integer("engaged_sessions").default(0).notNull(),
     conversions: integer("conversions").default(0).notNull(),
     revenue: numeric("revenue").default("0").notNull(),
     chatOpens: integer("chat_opens").default(0).notNull(),
@@ -339,6 +341,7 @@ export const metricsHourly = pgTable(
     hour: timestamp("hour", { withTimezone: true }).notNull(),
     pageviews: integer("pageviews").default(0).notNull(),
     sessions: integer("sessions").default(0).notNull(),
+    engagedSessions: integer("engaged_sessions").default(0).notNull(),
     conversions: integer("conversions").default(0).notNull(),
     revenue: numeric("revenue").default("0").notNull(),
     chatOpens: integer("chat_opens").default(0).notNull(),
