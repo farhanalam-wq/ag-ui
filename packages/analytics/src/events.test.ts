@@ -40,3 +40,55 @@ describe("phase 3 event types", () => {
     if (hb.ok) expect(hb.event.value).toBeNull();
   });
 });
+
+describe("voice events are counts only (O-3)", () => {
+  test("voice_start and voice_end are known types", () => {
+    expect(TRACK_EVENT_TYPES).toContain("voice_start");
+    expect(TRACK_EVENT_TYPES).toContain("voice_end");
+  });
+
+  test("voice_start carries no meta at all", () => {
+    const r = validateTrackEvent({
+      ...base,
+      event_id: "e-vstart",
+      type: "voice_start",
+      meta: { transcript: "hello" },
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.event.meta).toEqual({});
+  });
+
+  test("voice_end rebuilds meta from three primitives and drops everything else", () => {
+    // A malicious or careless client posts a transcript. The validator keeps
+    // the counts and nothing else — O-3 is enforced here, not trusted.
+    const r = validateTrackEvent({
+      ...base,
+      event_id: "e-vend",
+      type: "voice_end",
+      meta: { durationSec: 92.6, turns: 4, abandoned: false, transcript: "my card is 4111 1111" },
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.event.meta).toEqual({ durationSec: 93, turns: 4, abandoned: false });
+      expect(JSON.stringify(r.event.meta)).not.toContain("4111");
+    }
+  });
+
+  test("voice_end caps runaway values and coerces junk", () => {
+    const r = validateTrackEvent({
+      ...base,
+      event_id: "e-vcap",
+      type: "voice_end",
+      meta: { durationSec: 999_999, turns: -5, abandoned: "yes" },
+    });
+    expect(r.ok).toBe(true);
+    // turns clamps to 0, and abandonment is derived from turns — never reported.
+    if (r.ok) expect(r.event.meta).toEqual({ durationSec: 14400, turns: 0, abandoned: true });
+  });
+
+  test("a voice_end with no meta still produces a usable row", () => {
+    const r = validateTrackEvent({ ...base, event_id: "e-vnone", type: "voice_end" });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.event.meta).toEqual({ durationSec: 0, turns: 0, abandoned: true });
+  });
+});

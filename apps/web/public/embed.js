@@ -324,6 +324,50 @@
     var lastTrackedUrl = null;
     var pageviewSent = false;
     var scrollFired = {};
+
+    // --- Agent events reported by our own iframe ----------------------------
+    // The panel is a cross-origin iframe, so it cannot see the host page path.
+    // It sends counts over postMessage and the parent emits the event here,
+    // with the real page context (url, referrer, viewport, tz). The iframe
+    // never emits analytics itself, and never sends anything the visitor said.
+    var AGENT_EVENTS = ["voice_start", "voice_end"];
+    // Server-side caps (events.ts -> voiceEventMeta); mirrored so a runaway
+    // tab cannot post an absurd value even before validation.
+    var MAX_VOICE_DURATION_SEC = 14400;
+    var MAX_VOICE_TURNS = 500;
+
+    function intInRange(v, min, max) {
+      var n = typeof v === "number" ? v : Number(v);
+      if (!isFinite(n)) return min;
+      n = Math.round(n);
+      if (n < min) return min;
+      if (n > max) return max;
+      return n;
+    }
+
+    window.addEventListener("message", function (ev) {
+      try {
+        // Only our own frame, only our own message type.
+        if (!frame || !frame.contentWindow || ev.source !== frame.contentWindow) return;
+        var d = ev.data;
+        if (!d || d.type !== "ag-ui/agent-event") return;
+        var name = typeof d.event === "string" ? d.event : "";
+        if (AGENT_EVENTS.indexOf(name) === -1) return;
+        var extra = {};
+        if (name === "voice_end") {
+          // Rebuilt field by field: nothing from the iframe is trusted as-is.
+          // Abandonment is not reported — the collector derives it from turns.
+          extra.meta = {
+            durationSec: intInRange(d.durationSec, 0, MAX_VOICE_DURATION_SEC),
+            turns: intInRange(d.turns, 0, MAX_VOICE_TURNS),
+          };
+        }
+        send(name, extra);
+      } catch (e) {
+        /* a malformed agent event must never break the page */
+      }
+    });
+
     function trackPageview() {
       var href = String(window.location.href);
       if (href === lastTrackedUrl) return;

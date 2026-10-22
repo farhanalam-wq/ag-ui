@@ -13,6 +13,7 @@ export * from "./acquisition";
 export * from "./engagement";
 export * from "./content";
 export * from "./audience";
+export * from "./voice";
 export * from "./widgets";
 export * from "./insights";
 export * from "./copilot";

@@ -16,7 +16,9 @@ export type TrackEventType =
   | "scroll"
   | "download"
   | "click"
-  | "heartbeat";
+  | "heartbeat"
+  | "voice_start"
+  | "voice_end";
 
 export const TRACK_EVENT_TYPES: readonly TrackEventType[] = [
   "pageview",
@@ -27,7 +29,12 @@ export const TRACK_EVENT_TYPES: readonly TrackEventType[] = [
   "download",
   "click",
   "heartbeat",
+  "voice_start",
+  "voice_end",
 ] as const;
+
+/** Events that describe a voice call. They carry counts, never content. */
+export const VOICE_EVENT_TYPES: readonly TrackEventType[] = ["voice_start", "voice_end"] as const;
 
 /** Raw payload as submitted by the snippet / collector. */
 export interface RawTrackEvent {
@@ -120,6 +127,46 @@ function optStr(v: unknown, max: number): string {
   return v.trim().slice(0, max);
 }
 
+/** Voice calls longer than this are a stuck tab, not a conversation. */
+const MAX_VOICE_DURATION_SEC = 4 * 60 * 60;
+/** A turn is one visitor utterance; more than this is not a real call. */
+const MAX_VOICE_TURNS = 500;
+
+/**
+ * The counts a voice call may report.
+ *
+ * O-3 is a counts-only decision: voice is measurable, but not one word the
+ * visitor said is stored. That is enforced here rather than trusted to the
+ * client — the meta object is **rebuilt** from two numbers, so a snippet that
+ * posts a transcript in `meta` has it dropped before the row exists. A future
+ * change that wants transcripts has to change this function, which is exactly
+ * the conversation the decision deserves.
+ */
+export function voiceEventMeta(
+  type: TrackEventType,
+  rawMeta: Record<string, unknown> | null
+): Record<string, unknown> | null {
+  if (type === "voice_start") return {}; // a call started; nothing else to say
+  if (type !== "voice_end") return rawMeta;
+
+  const m = rawMeta ?? {};
+  const duration = typeof m.durationSec === "number" ? m.durationSec : Number(m.durationSec);
+  const turns = typeof m.turns === "number" ? m.turns : Number(m.turns);
+  const safeTurns = Number.isFinite(turns)
+    ? Math.min(MAX_VOICE_TURNS, Math.max(0, Math.round(turns)))
+    : 0;
+  return {
+    durationSec: Number.isFinite(duration)
+      ? Math.min(MAX_VOICE_DURATION_SEC, Math.max(0, Math.round(duration)))
+      : 0,
+    turns: safeTurns,
+    // Derived, not reported: a call where the visitor never spoke is a
+    // silent call. One definition, at the gate, so the report and the
+    // product cannot disagree about what abandonment means.
+    abandoned: safeTurns === 0,
+  };
+}
+
 function derivePath(url: string, explicit: unknown): string {
   if (typeof explicit === "string" && explicit.trim().length > 0) {
     return explicit.trim().slice(0, MAX_PATH_LEN);
@@ -194,6 +241,9 @@ export function validateTrackEvent(
       return { ok: false, reason: "bad-meta" };
     }
   }
+
+  // Voice events keep their counts and nothing else — see voiceEventMeta.
+  if (type === "voice_start" || type === "voice_end") meta = voiceEventMeta(type, meta);
 
   return {
     ok: true,

@@ -67,6 +67,14 @@ export interface VoiceSessionProps {
   metadata?: { customer?: { name?: string } };
   /** Called once per ended call with finalized utterances (no live transcript UI v1). */
   onFinalLines?: (lines: VoiceLine[]) => void;
+  /** Called when the room connects: the call is now real (and countable). */
+  onCallStart?: () => void;
+  /**
+   * Called once per connected call when it ends. Counts only — duration,
+   * visitor turns, and whether the call was silent — so a caller can report
+   * voice usage without ever touching what was said (O-3).
+   */
+  onCallEnd?: (summary: { durationSec: number; turns: number; abandoned: boolean }) => void;
   children: (controller: VoiceController) => React.ReactNode;
 }
 
@@ -81,6 +89,8 @@ export function VoiceSession({
   apiBase,
   metadata,
   onFinalLines,
+  onCallStart,
+  onCallEnd,
   children,
 }: VoiceSessionProps) {
   const [mounted, setMounted] = useState(false);
@@ -99,6 +109,12 @@ export function VoiceSession({
   const intentionalStopRef = useRef(false);
   const onFinalLinesRef = useRef(onFinalLines);
   onFinalLinesRef.current = onFinalLines;
+  const onCallStartRef = useRef(onCallStart);
+  onCallStartRef.current = onCallStart;
+  const onCallEndRef = useRef(onCallEnd);
+  onCallEndRef.current = onCallEnd;
+  /** When the room connected — the start of the billable/measurable call. */
+  const connectedAtRef = useRef<number | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -109,7 +125,8 @@ export function VoiceSession({
     return () => abortRef.current?.abort();
   }, []);
 
-  const finalize = useCallback(() => {    if (finalizedRef.current) return;
+  const finalize = useCallback(() => {
+    if (finalizedRef.current) return;
     finalizedRef.current = true;
     // Pass every buffered stream (including empty final markers) so segment
     // groups pick up their final flag; coalescing drops textless groups.
@@ -117,6 +134,18 @@ export function VoiceSession({
       .map((id) => linesRef.current.get(id))
       .filter((l): l is VoiceLine => !!l);
     const lines = coalesceVoiceLines(raw);
+    // Analytics gets the counts and nothing else: no line ever leaves this
+    // component (O-3). A call that never connected reports nothing at all.
+    const startedAt = connectedAtRef.current;
+    connectedAtRef.current = null;
+    if (startedAt !== null) {
+      const turns = lines.filter((l) => l.speaker === "you").length;
+      onCallEndRef.current?.({
+        durationSec: Math.max(0, Math.round((Date.now() - startedAt) / 1000)),
+        turns,
+        abandoned: turns === 0,
+      });
+    }
     linesRef.current.clear();
     orderRef.current = [];
     setToken(null);
@@ -126,6 +155,13 @@ export function VoiceSession({
     setStatus("idle");
     if (lines.length > 0) onFinalLinesRef.current?.(lines);
   }, []);
+
+  // A call that ends because the panel goes away is still a call: report it
+  // rather than losing the only record we would ever have of it. finalize is
+  // idempotent, so a normal stop/disconnect makes this a no-op.
+  const finalizeRef = useRef(finalize);
+  finalizeRef.current = finalize;
+  useEffect(() => () => finalizeRef.current(), []);
 
   const stop = useCallback(() => {
     // Mark intentional so late LiveKit onError events (e.g. DATA_TRACK_LOSSY
@@ -170,6 +206,7 @@ export function VoiceSession({
     orderRef.current = [];
     finalizedRef.current = false;
     intentionalStopRef.current = false;
+    connectedAtRef.current = null;
     roomRef.current = null;
     setError(null);
     setStatus("fetching");
@@ -223,7 +260,9 @@ export function VoiceSession({
           onConnected={() => {
             // Fresh connect clears any prior intentional-stop flag.
             intentionalStopRef.current = false;
+            connectedAtRef.current = Date.now();
             setStatus("live");
+            onCallStartRef.current?.();
           }}
           onDisconnected={finalize}
           onError={(err: Error) => {

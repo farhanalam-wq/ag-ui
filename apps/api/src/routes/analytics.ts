@@ -18,6 +18,7 @@ import {
   getEngagementReport,
   getContentReport,
   getAudienceReport,
+  getVoiceReport,
   validateReportQuery,
   REPORTS,
   withAnalyticsCache,
@@ -510,6 +511,37 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       detail: {
         summary: "Content analytics",
         description: "Views/sessions by page path, channel, and device. First-party only.",
+      },
+    }
+  )
+  .get(
+    "/voice",
+    async ({ query, set }) => {
+      const company = await tenant(query.companyId, set);
+      if (!company) return { error: "Company not found" };
+      const days = parseWindowDays(query.range);
+      if (days === null) {
+        set.status = 422;
+        return { error: RANGE_ERROR };
+      }
+      const v1 = validateReportQuery({ metrics: REPORTS.agent.voice.metrics, dimensions: REPORTS.agent.voice.dimensions, rangeDays: days });
+      if (!v1.ok) {
+        set.status = 422;
+        return { error: "Invalid voice query", details: v1.errors };
+      }
+      return report(set, company, {
+        label: "Voice",
+        errorMessage: "Voice analytics unavailable - try again shortly",
+        cacheKey: `ana:v1:voice:${company.id}:${days}d`,
+        compute: () => getVoiceReport(company.id, days),
+      });
+    },
+    {
+      query: t.Object({ companyId: t.String(), range: t.Optional(t.String()) }),
+      detail: {
+        summary: "Voice analytics",
+        description:
+          "Voice calls, turns, duration and silent-call rate. Counts only: no transcript or speech content is stored.",
       },
     }
   );

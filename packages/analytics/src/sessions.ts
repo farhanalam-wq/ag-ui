@@ -45,6 +45,9 @@ export const ENGAGEMENT_EVENT_TYPES = [
   "scroll",
   "download",
   "click",
+  // A voice call is the strongest interaction there is.
+  "voice_start",
+  "voice_end",
 ] as const;
 
 export type EngagementEventType = (typeof ENGAGEMENT_EVENT_TYPES)[number];

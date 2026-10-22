@@ -60,6 +60,30 @@ const CONFIG_POLL_MS = 5000;
 const CONFIG_POLL_MAX = 40;
 
 /**
+ * Tell the host page about an agent event.
+ *
+ * The iframe never emits analytics itself: the parent owns the page context
+ * (path, referrer, timezone) and validates the message source before trusting
+ * it. Only counts cross this boundary — never a transcript line (O-3).
+ *
+ * `targetOrigin` must be `"*"`: the host page is a different origin, so a
+ * concrete origin would silently drop every message. The security boundary is
+ * the parent's `event.source === frame.contentWindow` check, not this value.
+ */
+function postAgentEvent(event: "voice_start" | "voice_end", payload?: Record<string, unknown>) {
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage(
+        { type: "ag-ui/agent-event", event, ...(payload ?? {}) },
+        "*"
+      );
+    }
+  } catch {
+    // No parent, or a sandbox that forbids it — analytics is best-effort.
+  }
+}
+
+/**
  * How the chat UI identifies its company. Raw-key identity serves the public
  * widget; company identity serves first-party surfaces (playground-style
  * chat, studio preview) with no key in the URL. Both render the same UI from
@@ -695,6 +719,12 @@ function EmbedChatInner({
               companyId={identity.kind === "company" ? identity.companyId : undefined}
               apiBase={apiBase}
               onFinalLines={appendVoiceTranscript}
+              onCallStart={() => postAgentEvent("voice_start")}
+              onCallEnd={({ durationSec, turns }) =>
+                // Abandonment is derived at the collector from turns; the
+                // iframe sends counts only.
+                postAgentEvent("voice_end", { durationSec, turns })
+              }
             >
               {() => (
               <PromptInput

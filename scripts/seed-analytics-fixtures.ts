@@ -232,6 +232,20 @@ function dayEvents(
     }
     if (!isBot && rand() < 0.22) push("chat_open", firstPath, new Date(start + 30_000));
     if (!isBot && rand() < 0.15) push("chat_message", firstPath, new Date(start + 40_000));
+    // Voice: a small share of visits talk to the agent out loud. Counts only
+    // (O-3) — the fixture writes the same two-event shape the snippet sends,
+    // and a zero-turn call is the "silent call" the Voice tab reports.
+    if (!isBot && rand() < (busy ? 0.07 : 0.02)) {
+      const voiceStart = new Date(start + 50_000);
+      const turns = Math.floor(rand() * 5);
+      const durationSec = turns === 0 ? 3 + Math.floor(rand() * 10) : 20 + Math.floor(rand() * 160);
+      push("voice_start", firstPath, voiceStart);
+      push("voice_end", firstPath, new Date(voiceStart.getTime() + durationSec * 1000), null, {
+        durationSec,
+        turns,
+        abandoned: turns === 0,
+      });
+    }
     if (!isBot && rand() < 0.05) {
       push("conversion", firstPath, new Date(start + 120_000), String(49 + Math.floor(rand() * 450)));
     }

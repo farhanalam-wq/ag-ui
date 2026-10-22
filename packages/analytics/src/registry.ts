@@ -308,6 +308,20 @@ export interface AudienceReport {
 }
 
 /**
+ * Voice is counts-only by decision (O-3): calls, turns, duration and
+ * abandonment. There is deliberately no question list and no transcript —
+ * the events carry no content at all.
+ */
+export interface VoiceReport {
+  kind: "voice";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  trend: TrendPoint[];
+  freshness: Freshness;
+}
+
+/**
  * The freshness envelope every report carries.
  *
  * The rollup lag is **measured, not assumed**: the rollup tick stamps the

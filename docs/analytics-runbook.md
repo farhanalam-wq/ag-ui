@@ -96,6 +96,50 @@ this landed have no profile at all (`dimensions-unavailable`).
 Country is **not** collected: the GeoIP source is still an open decision
 (`docs/analytics-rebuild.md` D12). The raw IP is never stored either way.
 
+## Voice (counts only)
+
+Voice is measured from two events and **never stores what was said** (decision
+O-3, option V-B in `docs/analytics-rebuild.md`):
+
+| Event | When | `meta` |
+|---|---|---|
+| `voice_start` | the LiveKit room connects | `{}` |
+| `voice_end` | the call ends | `{ durationSec, turns }` |
+
+`abandoned` is **derived at the collector** (`turns === 0`), not reported. The
+validator rebuilds `meta` from those two numbers, so a client that posts a
+transcript has it dropped before the row is written.
+
+How the event reaches us: the call runs in the chat iframe, which cannot see the
+host page. It posts `{ type: "ag-ui/agent-event", event, durationSec, turns }`
+to `window.parent`; `embed.js` accepts it only from its own iframe
+(`event.source === frame.contentWindow`), rebuilds the fields and emits the
+track event with the real page context. The iframe never posts analytics
+directly.
+
+There is **no migration and no conversation row** for voice — the report reads
+the raw `page_views` slice (one event per call). `GET /api/analytics/voice`
+returns calls, ended calls, turns, average/max duration, silent calls and
+silent-call rate. A visit with a voice call counts as engaged.
+
+Verifying by hand:
+
+```sql
+SELECT type, meta FROM page_views
+WHERE company_id = '<company>' AND type IN ('voice_start','voice_end')
+ORDER BY created_at DESC LIMIT 10;
+```
+
+If voice numbers stay at zero while the site has traffic:
+- the host page runs an older `embed.js` (the bridge is new) — re-paste the snippet;
+- `data-track="on"` is missing (all analytics, not just voice, are off);
+- the call never connected (a token or microphone failure produces no `voice_start`).
+
+The text-vs-voice split is **not** shipped. The text side would be the
+`conversations` table, which today mixes widget and dashboard conversations and
+has no `source_path`, so the ratio would be a made-up number. It arrives with the
+chat instrumentation (`chat_open` / `chat_message` / `chat_close`).
+
 ## Recompute / repair
 `bun run rebuild:analytics --cwd workers/worker` rebuilds the session rows, the
 daily metrics and the unique-visitor HLL for a date range, straight from the raw
