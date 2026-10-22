@@ -68,5 +68,6 @@ sitemap-tests/
 
 # Local implementation plans (session-agnostic context, never commit)
 docs/auth-tenancy.md
+docs/analytics-rebuild.md
 docs/operations-error-sink.md
 docs/operations-error-activity.md
