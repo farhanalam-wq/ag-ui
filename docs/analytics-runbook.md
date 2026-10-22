@@ -20,7 +20,8 @@
    one `pageview` via a tracked page appears in realtime within ~1 min.
 
 ## Env (see .env.example → Analytics section)
-`TRACK_RATE_PER_MIN/DAY`, `TRACK_QUOTA_PER_DAY`, `ANALYTICS_READ_PER_MIN/DAY`,
+`TRACK_RATE_PER_MIN/DAY`, `TRACK_QUOTA_PER_DAY`, `ANALYTICS_READ_COMPANY_PER_MIN/DAY`
+(the per-tenant read budget), `ANALYTICS_READ_PER_MIN/DAY` (the per-IP backstop),
 `ANALYTICS_ROLLUP_MS` (default 15 min), `ANALYTICS_RAW_RETAIN_MONTHS` (default 3).
 All rate paths fail open when Redis is down (by design — availability over precision).
 

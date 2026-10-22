@@ -16,7 +16,7 @@
  */
 
 import { db, sessions as sessionsTable, metricsDaily, sql, eq, and, gte, lt, desc } from "@ag-ui/database";
-import { freshnessStub, type EngagementReport } from "./registry";
+import { reportFreshness, type EngagementReport } from "./registry";
 import { deviceFragment } from "./attribution";
 import { bounceRate, engagementRate, pagesPerSession, sessionIslands } from "./sessions";
 
@@ -136,6 +136,6 @@ export async function getEngagementReport(
     byDevice: devices
       .filter((r) => Number(r.pageviews ?? 0) > 0)
       .map((r) => ({ label: r.label, pageviews: Number(r.pageviews), sessions: Number(r.sessions) })),
-    freshness: freshnessStub(false, dataQuality),
+    freshness: await reportFreshness(false, dataQuality),
   };
 }

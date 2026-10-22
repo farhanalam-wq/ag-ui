@@ -11,7 +11,7 @@
  */
 
 import { db, metricsDaily, sql, eq, and, gte, lte, desc, count } from "@ag-ui/database";
-import { freshnessStub } from "./registry";
+import { reportFreshness } from "./registry";
 import { visitAttrCTEs } from "./attribution";
 import { engagedInteractionSql, engagedSessionSql, sessionIslands } from "./sessions";
 
@@ -85,18 +85,21 @@ export interface Anomaly {
   note: string;
 }
 
-/** Z-score flags over a baseline series. Pure — the unit-test surface. */
+/**
+ * Z-score flags over a baseline series. Pure — the unit-test surface.
+ *
+ * The baseline window is described by the caller, not here: this function
+ * only knows two series (F-16 — the label used to be a dead argument).
+ */
 export function detectAnomalies(
   baseline: number[],
-  current: { d: string; v: number }[],
-  baselineLabel: string
+  current: { d: string; v: number }[]
 ): Array<{ d: string; observed: number; expected: number; z: number }> {
   const vals = baseline.filter((v) => Number.isFinite(v));
   if (vals.length < 3) return [];
   const mean = vals.reduce((a, v) => a + v, 0) / vals.length;
   const sd = Math.sqrt(vals.reduce((a, v) => a + (v - mean) ** 2, 0) / vals.length);
   if (!(sd > 0) || mean < ANOMALY_MIN_DAILY) return [];
-  void baselineLabel;
   const out = [];
   for (const c of current) {
     const z = (c.v - mean) / sd;
@@ -185,10 +188,15 @@ export async function getInsightsReport(companyId: string, rangeDays: number): P
     })
     .from(perVisit)
     .groupBy(perVisit.entryPath)
-    .orderBy(desc(count()))
-    .limit(10);
+    .orderBy(desc(count()));
+  // Every entry path, not just the top ten: the journey share is measured
+  // against the full entry volume, so a journey out of a page outside the
+  // top ten reported 0% while still showing a count (F-11).
+  const entryVol = new Map<string, number>();
+  for (const o of oppRows) entryVol.set(String(o.path), Number(o.sessions));
   const opportunityMap: OpportunityRow[] = oppRows
     .filter((r) => (r.path ?? "").length > 0)
+    .slice(0, 10)
     .map((r) => {
       const se = Number(r.sessions);
       const sv = se > 0 ? Number(r.single) / se : 0;
@@ -219,8 +227,6 @@ export async function getInsightsReport(companyId: string, rangeDays: number): P
     .groupBy(seq.path, seq.nextPath)
     .orderBy(desc(count()))
     .limit(15);
-  const entryVol = new Map<string, number>();
-  for (const o of opportunityMap) entryVol.set(o.path, o.sessions);
   const journeys: JourneyEdge[] = pairRows
     .filter((r) => r.journeys >= MIN_JOURNEY_COUNT)
     .map((r) => ({
@@ -230,10 +236,14 @@ export async function getInsightsReport(companyId: string, rangeDays: number): P
       shareOfEntry: (entryVol.get(String(r.fromPath)) ?? 0) > 0 ? Math.round((Number(r.journeys) / (entryVol.get(String(r.fromPath)) as number)) * 1000) / 10 / 100 : 0,
     }));
 
-  // ---- 4. anomalies: current 7d vs prior 7d on rollups ----
-  const half = 7;
-  const cur0 = new Date(to.getTime() - half * 86_400_000).toISOString().slice(0, 10);
-  const prev0 = new Date(to.getTime() - half * 2 * 86_400_000).toISOString().slice(0, 10);
+  // ---- 4. anomalies: the selected window vs the window before it ----
+  //
+  // The window used to be hardcoded to 7 days vs 7 days, so the range
+  // control was partly cosmetic: picking 30 days still measured 7 (F-10).
+  // The current window is the selected range; the baseline is the same
+  // length immediately before it.
+  const cur0 = new Date(to.getTime() - rangeDays * 86_400_000).toISOString().slice(0, 10);
+  const prev0 = new Date(to.getTime() - rangeDays * 2 * 86_400_000).toISOString().slice(0, 10);
   const todayStr = to.toISOString().slice(0, 10);
   const dRows = await db
     .select({
@@ -250,8 +260,7 @@ export async function getInsightsReport(companyId: string, rangeDays: number): P
   for (const metric of ["pv", "se"] as const) {
     const flags = detectAnomalies(
       base.map((r) => Number(r[metric])),
-      curr.map((r) => ({ d: r.day.slice(0, 10), v: Number(r[metric]) })),
-      `${prev0}..${cur0}`
+      curr.map((r) => ({ d: r.day.slice(0, 10), v: Number(r[metric]) }))
     );
     for (const f of flags) {
       // Context slices for the flagged day (bounded single-day attr scan).
@@ -298,6 +307,6 @@ export async function getInsightsReport(companyId: string, rangeDays: number): P
       anomalyMinDaily: ANOMALY_MIN_DAILY,
       anomalyZ: ANOMALY_Z,
     },
-    freshness: freshnessStub(false, dataQuality),
+    freshness: await reportFreshness(false, dataQuality),
   };
 }

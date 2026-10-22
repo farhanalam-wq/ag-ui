@@ -31,7 +31,12 @@ import {
 } from "@ag-ui/database";
 import { detectQueryIntents } from "@ag-ui/shared";
 
-export type OverviewRangeDays = 7 | 14 | 30;
+/**
+ * The overview accepts the same window as every other report: Nd, 1..90.
+ * It used to be a 7/14/30 union with a silent clamp to 14 for anything
+ * else, so `range=90d` quietly answered a different question (F-04).
+ */
+export type OverviewRangeDays = number;
 
 const INTENT_LABELS: Record<string, string> = {
   pricing: "Pricing Evaluation",
@@ -179,12 +184,24 @@ export async function getCompanyOverview(
     userCounts.set(cid, users);
   }
 
+  // The first user message of every conversation, in one pass.
+  //
+  // The previous window used to be walked with `messages.find(...)` per
+  // conversation — an O(conversations × messages) scan, up to ~400M
+  // comparisons at the 20k message cap (F-12). One map, one pass.
+  const firstUserMessage = new Map<string, MsgRow>();
+  for (const m of messages) {
+    if (m.role === "user" && !firstUserMessage.has(m.conversation_id)) {
+      firstUserMessage.set(m.conversation_id, m);
+    }
+  }
+
   // Intent per conversation from its first user message.
   const convoIntent = new Map<string, string>();
   for (const [cid, text] of firstUserText) convoIntent.set(cid, intentOf(text));
   const prevIntents = new Map<string, number>();
   for (const c of prev) {
-    const first = messages.find((m) => m.conversation_id === c.id && m.role === "user");
+    const first = firstUserMessage.get(c.id);
     const label = first ? intentOf(first.content) : "General";
     prevIntents.set(label, (prevIntents.get(label) ?? 0) + 1);
   }
@@ -336,8 +353,11 @@ export async function getCompanyOverview(
   const funnel = stages.map((stage, i) => ({
     stage,
     count: counts5[i] ?? 0,
+    // Share of everyone who entered the funnel.
     pctOfTop: counts5[0]! > 0 ? r1(((counts5[i] ?? 0) / counts5[0]!) * 100) : 0,
-    stageConversion:
+    // Share of everyone who reached the previous step. Named for what it
+    // measures, so it stops reading as a duplicate of pctOfTop (R-12).
+    stepConversion:
       i === 0
         ? null
         : counts5[i - 1]! > 0
@@ -348,9 +368,9 @@ export async function getCompanyOverview(
   if (funnel[0]!.count > 0) {
     let idx = 1;
     for (let i = 2; i < funnel.length; i++) {
-      if ((funnel[i]?.stageConversion ?? 100) < (funnel[idx]?.stageConversion ?? 100)) idx = i;
+      if ((funnel[i]?.stepConversion ?? 100) < (funnel[idx]?.stepConversion ?? 100)) idx = i;
     }
-    funnelDropout = `${funnel[idx - 1]?.stage} → ${funnel[idx]?.stage} (${funnel[idx]?.stageConversion}%)`;
+    funnelDropout = `${funnel[idx - 1]?.stage} → ${funnel[idx]?.stage} (${funnel[idx]?.stepConversion}%)`;
   }
 
   // Trust.
@@ -452,7 +472,8 @@ export async function getCompanyOverview(
       fallbackRate,
       latencyP50: Math.round(quantile(sortedLat, 0.5)),
       latencyP95: Math.round(quantile(sortedLat, 0.95)),
-      citationCtr: 0,
+      // No citationCtr: it read 0 by construction, not by measurement, so it
+      // was a number that looked like a measurement (R-11).
     },
     health: {
       snapshotVersion: snap ? `v${snap.version}` : "—",

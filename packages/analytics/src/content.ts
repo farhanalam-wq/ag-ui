@@ -10,7 +10,7 @@ import { db, metricsDaily, sql, eq, and, gte, desc, count, type SQL, type PgColu
 
 /** What `groupBy`/`orderBy` accept: a column, a SQL fragment, or an aliased fragment. */
 type Groupable = SQL | PgColumn | SQL.Aliased;
-import { freshnessStub, type BreakdownRow, type ContentReport } from "./registry";
+import { reportFreshness, type BreakdownRow, type ContentReport } from "./registry";
 import { deviceFragment, visitAttrCTEs } from "./attribution";
 import { sessionIslands } from "./sessions";
 
@@ -83,6 +83,6 @@ export async function getContentReport(companyId: string, rangeDays: number): Pr
     byTitle,
     byChannel,
     byDevice,
-    freshness: freshnessStub(false, dataQuality),
+    freshness: await reportFreshness(false, dataQuality),
   };
 }

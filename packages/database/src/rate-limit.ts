@@ -119,19 +119,33 @@ export async function checkTrackRateLimit(
 }
 
 /**
- * Analytics read rate limit: generous per-IP backstop so one scraper
- * cannot stampede the rollup queries past the cache. Fail-open on Redis
- * outage (same policy as the write path). Limits are env-tunable.
+ * Analytics read rate limit: a per-tenant budget plus a per-IP backstop.
+ *
+ * The budget used to be per IP only, so one NAT'd office shared a single
+ * 300/min allowance across every tenant and every dashboard behind it
+ * (F-09). Now each tenant gets its own allowance (keyed by company + IP, so
+ * one noisy user still cannot spend a colleague's), and the per-IP bucket
+ * stays as a generous scraper backstop rather than a tenant-sharing
+ * mechanism. Fail-open on Redis outage (same policy as the write path).
  */
 export async function checkAnalyticsReadLimit(
-  ip: string
+  ip: string,
+  companyId?: string
 ): Promise<EmbedRateLimitResult> {
-  const perMin = rateLimitEnv("ANALYTICS_READ_PER_MIN", 300);
-  const perDay = rateLimitEnv("ANALYTICS_READ_PER_DAY", 10000);
+  const perMin = rateLimitEnv("ANALYTICS_READ_PER_MIN", 1200);
+  const perDay = rateLimitEnv("ANALYTICS_READ_PER_DAY", 50000);
+  const perCompanyPerMin = rateLimitEnv("ANALYTICS_READ_COMPANY_PER_MIN", 240);
+  const perCompanyPerDay = rateLimitEnv("ANALYTICS_READ_COMPANY_PER_DAY", 5000);
   const r = await getRedisClient();
   if (!r) return { allowed: true, retryAfterSec: 0 };
 
   try {
+    if (companyId) {
+      const coMin = await checkBucket(r, bucketKey("ana-read-co", "min", companyId, ip), perCompanyPerMin, 60);
+      if (!coMin.allowed) return coMin;
+      const coDay = await checkBucket(r, bucketKey("ana-read-co", "day", companyId, ip), perCompanyPerDay, 86400);
+      if (!coDay.allowed) return coDay;
+    }
     const min = await checkBucket(r, bucketKey("ana-read", "min", "global", ip), perMin, 60);
     if (!min.allowed) return min;
     const day = await checkBucket(r, bucketKey("ana-read", "day", "global", ip), perDay, 86400);

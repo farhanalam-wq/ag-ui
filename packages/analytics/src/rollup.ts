@@ -15,6 +15,11 @@
  *   and every read path must honour it (F-21).
  * - HLL uniques: rebuilt per company-day from raw (bounded scan), read via
  *   PFMERGE in Phase 5. Raw IP never involved — hashes only.
+ *
+ * TODO(analytics): this file is the last raw-SQL holdout (R-16). It stays
+ * raw because the visit computation needs window functions, FILTER
+ * aggregates and monthly partition DDL, none of which the typed builder
+ * expresses. Everything else in the module is on the Drizzle builder.
  */
 
 import { randomUUID } from "node:crypto";
@@ -27,6 +32,7 @@ import {
   MAX_ACTIVE_SECONDS_PER_VISIT,
   SESSION_GAP_MINUTES,
 } from "./sessions";
+import { ROLLUP_LAST_KEY } from "./registry";
 
 export const HLL_TTL_SECONDS = 30 * 86_400;
 
@@ -330,6 +336,9 @@ export async function runRollupMaintenance(redis: RollupRedis): Promise<void> {
   await rebuildDailyHll(redis, yesterday);
   const retain = parseInt(process.env.ANALYTICS_RAW_RETAIN_MONTHS || "3", 10);
   await dropOldPartitions(redis, Number.isFinite(retain) && retain > 0 ? retain : 3);
+  // Stamp the tick so the reports can measure how stale their numbers are
+  // instead of claiming a hardcoded lag (F-15).
+  await redis.set(ROLLUP_LAST_KEY, String(Date.now())).catch(() => {});
 }
 
 /** Starts the periodic tick (worker calls once). Unref'd — never holds exit. */

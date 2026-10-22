@@ -45,6 +45,7 @@ import {
 import { useSelectedCompany } from "@/stores/use-company-store";
 import type { OverviewMock } from "@/mocks/overview";
 import { apiClient } from "@/lib/api-client";
+import type { Range } from "@/lib/analytics";
 
 const INTENT_COLORS = [
   "hsl(var(--chart-1))",
@@ -108,7 +109,7 @@ const IntentRadarChart = dynamic(
 export default function OverviewPage() {
   const router = useRouter();
   const company = useSelectedCompany();
-  const [range, setRange] = useState<"7" | "14">("14");
+  const [range, setRange] = useState<Range>("14d");
   const [refreshKey, setRefreshKey] = useState(0);
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   // Live measured overview (Phase 4). No mock fallback: a failed fetch is an
@@ -126,7 +127,7 @@ export default function OverviewPage() {
     setLoading(true);
     setLoadError(null);
     apiClient.analytics
-      .overview(company.id, range === "7" ? "7d" : "14d")
+      .overview(company.id, range)
       .then((d) => {
         if (!cancelled) {
           setData(d);
@@ -144,19 +145,18 @@ export default function OverviewPage() {
     };
   }, [company?.id, range, refreshKey]);
 
-  const rangeLabel = range === "7" ? "last 7 days" : "last 14 days";
+  const rangeLabel = range === "7d" ? "last 7 days" : "last 14 days";
 
   const demand = useMemo(() => {
     if (!data) return [];
-    return range === "7" ? data.demandTrend.slice(-7) : data.demandTrend;
+    return range === "7d" ? data.demandTrend.slice(-7) : data.demandTrend;
   }, [data, range]);
 
   const leakStage = useMemo(() => {
     if (!data) return null;
     let worst = data.funnel[1];
     for (const s of data.funnel.slice(1, -1)) {
-      if ((s.stageConversion ?? 100) < (worst?.stageConversion ?? 100))
-        worst = s;
+      if ((s.stepConversion ?? 100) < (worst?.stepConversion ?? 100)) worst = s;
     }
     return worst?.stage ?? null;
   }, [data]);
@@ -222,14 +222,12 @@ export default function OverviewPage() {
                   Range
                   <select
                     value={range}
-                    onChange={(e) =>
-                      setRange(e.target.value as "7" | "14")
-                    }
+                    onChange={(e) => setRange(e.target.value as Range)}
                     aria-label="Date range for all metrics"
                     className="ml-2 h-full bg-transparent pr-1 text-[13px] text-foreground focus:outline-none"
                   >
-                    <option value="14">Last 14 days</option>
-                    <option value="7">Last 7 days</option>
+                    <option value="14d">Last 14 days</option>
+                    <option value="7d">Last 7 days</option>
                     <option value="custom" disabled>
                       Custom (live analytics)
                     </option>
@@ -791,9 +789,9 @@ export default function OverviewPage() {
                             />
                           </div>
                           <span className="font-sans text-xs tabular-nums text-muted-foreground">
-                            {stage.stageConversion === null
+                            {stage.stepConversion === null
                               ? "100%"
-                              : `${stage.stageConversion}%`}
+                              : `${stage.stepConversion}%`}
                           </span>
                         </div>
                       );

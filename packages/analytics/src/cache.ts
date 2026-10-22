@@ -13,8 +13,16 @@ import { logger } from "@ag-ui/shared";
 
 export const SLOW_COMPUTE_MS = 2000;
 
+/** How long a background refresh may hold the lock before it is up for grabs. */
+export const REFRESH_LOCK_SECS = 30;
+
 export interface CacheRedis {
   get(key: string): Promise<string | null>;
+  /**
+   * `SET key val EX seconds NX` — returns "OK" when the key was taken, null
+   * when it was already held. This is the single-flight primitive.
+   */
+  set(key: string, val: string, ...args: unknown[]): Promise<unknown>;
   setex(key: string, secs: number, val: string): Promise<unknown>;
   incr(key: string): Promise<number>;
   pfmerge(dest: string, ...sources: string[]): Promise<unknown>;
@@ -26,6 +34,46 @@ export interface CacheRedis {
 interface Entry {
   v: unknown;
   t: number;
+}
+
+/**
+ * In-flight computes, per key, per process.
+ *
+ * A cold key hit by ten concurrent requests must not run ten queries: the
+ * first caller starts the compute and the others wait on the same promise.
+ */
+const inFlight = new Map<string, Promise<unknown>>();
+
+/**
+ * Refreshes a stale entry in the background — at most one refresh per key.
+ *
+ * Without the lock, every request inside the stale-while-revalidate window
+ * started its own recompute, so a burst multiplied the database load by the
+ * number of requests (F-06). The lock lives in Redis so it holds across
+ * replicas, and it is released when the compute finishes.
+ */
+async function refreshInBackground<T>(
+  redis: CacheRedis,
+  key: string,
+  ttlSecs: number,
+  compute: () => Promise<T>
+): Promise<void> {
+  const lockKey = `ana:lock:${key}`;
+  let acquired: unknown;
+  try {
+    acquired = await redis.set(lockKey, "1", "EX", REFRESH_LOCK_SECS, "NX");
+  } catch {
+    acquired = "OK"; // Redis wobble: refresh rather than serve stale.
+  }
+  if (acquired === null || acquired === undefined) return; // someone else is refreshing
+  try {
+    const v = await compute();
+    await redis.setex(key, ttlSecs, JSON.stringify({ v, t: Date.now() })).catch(() => {});
+  } catch {
+    // Errors stay silent; the next request retries.
+  } finally {
+    await redis.del(lockKey).catch(() => {});
+  }
 }
 
 export async function withAnalyticsCache<T>(
@@ -47,15 +95,10 @@ export async function withAnalyticsCache<T>(
         return { data: entry.v as T, cached: true };
       }
       if (age < freshSecs + swrSecs) {
-        // Serve stale, refresh in background. Errors stay silent.
+        // Serve stale, refresh in background — one refresh per key. Errors
+        // stay silent.
         await redis.incr("ana:hits").catch(() => {});
-        compute()
-          .then((v) =>
-            redis
-              .setex(key, freshSecs + swrSecs, JSON.stringify({ v, t: Date.now() }))
-              .catch(() => {})
-          )
-          .catch(() => {});
+        void refreshInBackground(redis, key, freshSecs + swrSecs, compute);
         return { data: entry.v as T, cached: true };
       }
     }
@@ -63,8 +106,17 @@ export async function withAnalyticsCache<T>(
     // Corrupt entry or Redis wobble: fall through to compute.
   }
   await redis.incr("ana:misses").catch(() => {});
+
+  // One compute per key in this process; concurrent callers share it.
+  const pending = inFlight.get(key);
+  if (pending) return { data: (await pending) as T, cached: false };
+
   const t0 = Date.now();
-  const data = await compute();
+  const running = compute().finally(() => {
+    inFlight.delete(key);
+  });
+  inFlight.set(key, running);
+  const data = await running;
   const tookMs = Date.now() - t0;
   if (tookMs >= SLOW_COMPUTE_MS) {
     try {

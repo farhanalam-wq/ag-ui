@@ -7,6 +7,7 @@ export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 import type { WidgetThemeOverride } from "@ag-ui/shared/client";
+import type { Range } from "@/lib/analytics";
 
 export interface CompanySummary {
   id: string;
@@ -674,7 +675,7 @@ class ApiClient {
   analytics = {
     overview: async (
       companyId: string,
-      range: "7d" | "14d" | "30d" = "14d"
+      range: Range = "14d"
     ): Promise<import("@/mocks/overview").OverviewMock> => {
       const res = await fetch(
         `${this.baseUrl}/api/analytics/overview?companyId=${encodeURIComponent(companyId)}&range=${range}`
@@ -772,7 +773,14 @@ class ApiClient {
       companyId: string,
       question: string
     ): Promise<
-      | { ok: true; answer: { summary: string[]; supporting: { label: string; value: string }[]; widgetSpec?: { component: string } } }
+      | {
+          ok: true;
+          answer: {
+            summary: string[];
+            supporting: { label: string; value: string }[];
+            widgetSpec?: { component: string; props: Record<string, unknown> };
+          };
+        }
       | { ok: false; rejection: { code: string; message: string; examples: string[] } }
     > => {
       const res = await fetch(

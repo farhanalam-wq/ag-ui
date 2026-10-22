@@ -216,6 +216,18 @@ export interface Freshness {
   dataQuality: string[];
 }
 
+/** Where the rollup tick stamps the time of its last run. */
+export const ROLLUP_LAST_KEY = "ana:rollup:last";
+
+/**
+ * The configured rollup interval, in minutes — the worst-case age of a
+ * rollup-bound number when the tick stamp is unavailable.
+ */
+export function configuredRollupLagMinutes(): number {
+  const ms = parseInt(process.env.ANALYTICS_ROLLUP_MS || "900000", 10);
+  return Number.isFinite(ms) && ms > 0 ? Math.max(1, Math.round(ms / 60000)) : 15;
+}
+
 export interface ReportError {
   code: QueryError["code"] | "backend-error";
   message: string;
@@ -269,6 +281,36 @@ export interface ContentReport {
   freshness: Freshness;
 }
 
-export function freshnessStub(live: boolean, dataQuality: string[] = []): Freshness {
-  return { computedAt: new Date().toISOString(), rollupLagMinutes: 15, live, dataQuality };
+/**
+ * The freshness envelope every report carries.
+ *
+ * The rollup lag is **measured, not assumed**: the rollup tick stamps the
+ * time of its last run into Redis (`ana:rollup:last`) and the lag is the age
+ * of that stamp (F-15). The previous implementation hardcoded 15 minutes on
+ * every report, including reports that are not rollup-bound, so "last
+ * updated" was a number the product made up.
+ *
+ * Without Redis — or before the first tick — the configured tick interval is
+ * the honest worst case.
+ */
+export async function reportFreshness(
+  live: boolean,
+  dataQuality: string[] = []
+): Promise<Freshness> {
+  const computedAt = new Date();
+  let lagMinutes = configuredRollupLagMinutes();
+  try {
+    const { getRedisClient } = await import("@ag-ui/database");
+    const redis = await getRedisClient();
+    if (redis) {
+      const raw = await redis.get(ROLLUP_LAST_KEY);
+      const last = raw ? parseInt(raw, 10) : NaN;
+      if (Number.isFinite(last) && last > 0) {
+        lagMinutes = Math.max(0, Math.round((computedAt.getTime() - last) / 60000));
+      }
+    }
+  } catch {
+    // Redis down: the configured interval is the honest worst case.
+  }
+  return { computedAt: computedAt.toISOString(), rollupLagMinutes: lagMinutes, live, dataQuality };
 }

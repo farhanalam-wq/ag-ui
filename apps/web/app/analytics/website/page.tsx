@@ -83,10 +83,15 @@ export default function WebsiteAnalyticsPage() {
   // would only burn DB for identical numbers.
   useEffect(() => {
     if (!company) return;
+    let cancelled = false;
     const id = window.setInterval(() => {
       apiClient.analytics
         .realtime(company.id)
         .then((r) => {
+          // The in-flight fetch is not cancelled by the interval being
+          // cleared, so without this guard the state updates after the
+          // component is gone (F-14).
+          if (cancelled) return;
           setLive(r);
           setLiveAt(new Date().toLocaleTimeString());
         })
@@ -94,7 +99,10 @@ export default function WebsiteAnalyticsPage() {
           /* transient — next tick retries, strip keeps last values */
         });
     }, 30_000);
-    return () => window.clearInterval(id);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
   }, [company?.id]);
 
   const demand = useMemo(

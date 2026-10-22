@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { createHash } from "node:crypto";
 import {
   db,
   companies,
@@ -20,21 +21,15 @@ import {
   REPORTS,
   withAnalyticsCache,
   cacheCounters,
-  type OverviewRangeDays,
   type Channel,
   buildWidgetSpec,
   getInsightsReport,
   answerQuestion,
+  isCopilotFailure,
 } from "@ag-ui/analytics";
 import { logger } from "@ag-ui/shared";
 
-function parseRange(raw: string | undefined): OverviewRangeDays {
-  if (raw === "7d") return 7;
-  if (raw === "30d") return 30;
-  return 14;
-}
-
-/** Website/conversions ranges: Nd, 1..90. Anything else is a 400. */
+/** Website/conversions ranges: Nd, 1..90. Anything else is a 422. */
 function parseWindowDays(raw: string | undefined): number | null {
   const m = /^(1?\d?\d)d$/.exec((raw ?? "14d").trim());
   if (!m) return null;
@@ -123,17 +118,23 @@ interface GuardContext {
 }
 
 export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
-  // Instance-wide guard: malformed tenant ids fail fast (400, never a
-  // uuid-syntax 500 from Postgres), then a generous per-IP read budget
+  // Instance-wide guard: malformed tenant ids fail fast (422, never a
+  // uuid-syntax 500 from Postgres), then a generous read budget
   // (429 + Retry-After, fail-open when Redis is down).
+  //
+  // Status contract: every analytics route answers a bad request with
+  // **422** and `{ error }` — the same shape and status the rest of the API
+  // uses (see apps/api/src/routes/operations.ts). 400 is not used here
+  // (F-04, F-05).
   .onBeforeHandle(async (ctx) => {
     const { query, set, request } = ctx as unknown as GuardContext;
     const companyId = query?.companyId;
     if (typeof companyId === "string" && !UUID_RE.test(companyId)) {
-      set.status = 400;
+      set.status = 422;
       return { error: "companyId must be a UUID" };
     }
-    const limit = await checkAnalyticsReadLimit(getClientIp(request));
+    // Per-tenant budget first, then the per-IP backstop (F-09).
+    const limit = await checkAnalyticsReadLimit(getClientIp(request), companyId);
     if (!limit.allowed) {
       set.status = 429;
       set.headers["retry-after"] = String(limit.retryAfterSec);
@@ -145,11 +146,19 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
     async ({ query, set }) => {
       const company = await tenant(query.companyId, set);
       if (!company) return { error: "Company not found" };
+      // Same range contract as every sibling endpoint: Nd, 1..90. An
+      // unrecognised range used to be silently clamped to 14 days, so
+      // "range=90d" quietly answered a different question (F-04).
+      const days = parseWindowDays(query.range);
+      if (days === null) {
+        set.status = 422;
+        return { error: RANGE_ERROR };
+      }
       return report(set, company, {
         label: "Overview",
         errorMessage: "Overview unavailable - try again shortly",
-        cacheKey: `ana:v1:overview:${company.id}:${query.range ?? "14d"}`,
-        compute: () => getCompanyOverview(company.id, company.name, parseRange(query.range)),
+        cacheKey: `ana:v1:overview:${company.id}:${days}d`,
+        compute: () => getCompanyOverview(company.id, company.name, days),
       });
     },
     {
@@ -170,7 +179,7 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       if (!company) return { error: "Company not found" };
       const days = parseWindowDays(query.range);
       if (days === null) {
-        set.status = 400;
+        set.status = 422;
         return { error: RANGE_ERROR };
       }
       return report(set, company, {
@@ -198,7 +207,7 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       if (!company) return { error: "Company not found" };
       const days = parseWindowDays(query.range);
       if (days === null) {
-        set.status = 400;
+        set.status = 422;
         return { error: RANGE_ERROR };
       }
       return report(set, company, {
@@ -249,7 +258,7 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       if (!company) return { error: "Company not found" };
       const days = parseWindowDays(query.range);
       if (days === null) {
-        set.status = 400;
+        set.status = 422;
         return { error: RANGE_ERROR };
       }
       return report(set, company, {
@@ -273,18 +282,27 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       const company = await tenant(query.companyId, set);
       if (!company) return { error: "Company not found" };
       if (!query.question || !query.question.trim()) {
-        set.status = 400;
+        set.status = 422;
         return { error: "question is required" };
       }
+      // The cache key and the executed question are the same string. The key
+      // used to be the first 200 characters while the query ran on the first
+      // 500, so two questions sharing a 200-character prefix were answered
+      // with each other's numbers (F-03).
+      const question = query.question.trim().slice(0, 500);
+      const questionHash = createHash("sha256").update(question).digest("hex").slice(0, 32);
       return report(set, company, {
         label: "Copilot",
         errorMessage: "Copilot unavailable - try again shortly",
-        cacheKey: `ana:v1:copilot:${company.id}:${query.question.trim().slice(0, 200)}`,
+        cacheKey: `ana:v1:copilot:${company.id}:${questionHash}`,
         compute: async (redis) => {
-          const out = await answerQuestion(redis, company.id, query.question.trim().slice(0, 500));
-          // Rejections are expected outcomes (unsupported question), not
-          // failures: 200 envelope so the UI renders limitations, not errors.
-          if (!out.ok && "error" in out) throw new Error(out.error);
+          const out = await answerQuestion(redis, company.id, question);
+          // A rejection is an expected outcome — the question cannot be
+          // answered — so it travels as a 200 envelope and the UI renders the
+          // limitation. Only a genuine failure throws, and the wrapper turns
+          // that into a 500. The distinction is a typed guard, not a string
+          // comparison (F-18).
+          if (isCopilotFailure(out)) throw new Error(out.error);
           return out;
         },
       });
@@ -304,7 +322,7 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       if (!company) return { error: "Company not found" };
       const days = parseWindowDays(query.range);
       if (days === null) {
-        set.status = 400;
+        set.status = 422;
         return { error: RANGE_ERROR };
       }
       const channels = (query.channels ?? "").split(",").map((c) => c.trim()).filter(Boolean);
@@ -364,7 +382,7 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       if (!company) return { error: "Company not found" };
       const days = parseWindowDays(query.range);
       if (days === null) {
-        set.status = 400;
+        set.status = 422;
         return { error: RANGE_ERROR };
       }
       const channels = (query.channels ?? "").split(",").map((c) => c.trim()).filter(Boolean);
@@ -375,7 +393,7 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       const v2 = validateReportQuery({ metrics: REPORTS.acquisition.uniques.metrics, dimensions: REPORTS.acquisition.uniques.dimensions, rangeDays: days });
       const errors = [...(!v1.ok ? v1.errors : []), ...(!v2.ok ? v2.errors : [])];
       if (errors.length > 0) {
-        set.status = 400;
+        set.status = 422;
         return { error: "Invalid acquisition query", details: errors };
       }
       const compare = query.compare === "previous";
@@ -406,14 +424,14 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       if (!company) return { error: "Company not found" };
       const days = parseWindowDays(query.range);
       if (days === null) {
-        set.status = 400;
+        set.status = 422;
         return { error: RANGE_ERROR };
       }
       const v1 = validateReportQuery({ metrics: REPORTS.engagement.activity.metrics, dimensions: REPORTS.engagement.activity.dimensions, rangeDays: days });
       const v2 = validateReportQuery({ metrics: REPORTS.engagement.quality.metrics, dimensions: REPORTS.engagement.quality.dimensions, rangeDays: days });
       const errors = [...(!v1.ok ? v1.errors : []), ...(!v2.ok ? v2.errors : [])];
       if (errors.length > 0) {
-        set.status = 400;
+        set.status = 422;
         return { error: "Invalid engagement query", details: errors };
       }
       return report(set, company, {
@@ -438,14 +456,14 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       if (!company) return { error: "Company not found" };
       const days = parseWindowDays(query.range);
       if (days === null) {
-        set.status = 400;
+        set.status = 422;
         return { error: RANGE_ERROR };
       }
       const v1 = validateReportQuery({ metrics: REPORTS.content.pages.metrics, dimensions: REPORTS.content.pages.dimensions, rangeDays: days });
       const v2 = validateReportQuery({ metrics: REPORTS.content.titles.metrics, dimensions: REPORTS.content.titles.dimensions, rangeDays: days });
       const errors = [...(!v1.ok ? v1.errors : []), ...(!v2.ok ? v2.errors : [])];
       if (errors.length > 0) {
-        set.status = 400;
+        set.status = 422;
         return { error: "Invalid content query", details: errors };
       }
       return report(set, company, {

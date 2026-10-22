@@ -17,7 +17,7 @@ import { getEngagementReport } from "./engagement";
 import { getContentReport } from "./content";
 import { getInsightsReport } from "./insights";
 import { buildWidgetSpec, type WidgetKind } from "./widgets";
-import { GROUPS } from "./catalogue";
+import { REPORTS } from "./catalogue";
 import type { Channel } from "./registry";
 
 export interface QueryPlan {
@@ -35,9 +35,32 @@ export interface QueryPlan {
 }
 
 export interface PlanRejection {
-  code: "conversion-scope-excluded" | "unsupported-forecast" | "unparseable";
+  code: "conversion-scope-excluded" | "unsupported-forecast" | "unparseable" | "mixed-metrics";
   message: string;
   examples: string[];
+}
+
+/**
+ * The three outcomes of a question.
+ *
+ * A **rejection** is an expected outcome — the question cannot be answered
+ * from measured data — and travels as a success. An **error** is a genuine
+ * failure. Callers must tell them apart with the guards below, never by
+ * looking for a string (F-18).
+ */
+export type CopilotOutcome =
+  | { ok: true; answer: CopilotAnswer }
+  | { ok: false; rejection: PlanRejection }
+  | { ok: false; error: string };
+
+export function isCopilotRejection(
+  out: CopilotOutcome
+): out is { ok: false; rejection: PlanRejection } {
+  return !out.ok && "rejection" in out;
+}
+
+export function isCopilotFailure(out: CopilotOutcome): out is { ok: false; error: string } {
+  return !out.ok && "error" in out;
 }
 
 const EXAMPLES = [
@@ -67,6 +90,15 @@ export const METRIC_KEYWORDS: ReadonlyArray<{ pattern: RegExp; metrics: string[]
   { pattern: /\bdownload/, metrics: ["downloads"] },
   { pattern: /\bclicks?\b/, metrics: ["clicks"] },
 ];
+
+/** The reports the copilot can answer from, in preference order. */
+const REPORT_ORDER = ["acquisition", "engagement", "content"] as const;
+type ReportId = (typeof REPORT_ORDER)[number];
+
+/** Every metric a report can serve — straight from the catalogue. */
+function reportMetrics(report: ReportId): string[] {
+  return Object.values(REPORTS[report]).flatMap((group) => [...group.metrics]);
+}
 
 function findChannels(text: string): Channel[] {
   const t = ` ${text.toLowerCase()} `;
@@ -147,15 +179,34 @@ export function parseQuestion(text: string): { ok: true; plan: QueryPlan } | { o
     }
   }
 
-  // Report routing.
-  const engagementOnly = metrics.every((m) => (GROUPS.engagement as readonly string[]).includes(m));
+  // Which breakdown the question is really about.
   const wantsTitle = /\btitle\b|\btitles\b/.test(t);
   const wantsPath = /\bpages?\b|\bpaths?\b|\blanding\b/.test(t);
   const wantsChannelDim = /\bchannels?\b|\bsources?\b|\bmedium\b|\bcampaigns?\b/.test(t);
-  let report: "acquisition" | "engagement" | "content" = "acquisition";
-  if (engagementOnly) report = "engagement";
-  else if (wantsTitle || (wantsPath && wantsChannelDim)) report = "content";
-  else if (wantsPath && !wantsChannelDim) report = "engagement";
+
+  // Report routing.
+  //
+  // The report has to be able to serve EVERY metric the question asked for.
+  // The old rule ("are all of these engagement-shaped?") answered "sessions
+  // and downloads" from the acquisition report and never mentioned downloads
+  // — a silently wrong answer (F-02). Now the plan is the union of the
+  // requested metrics: the report that covers all of them wins, and a
+  // question that spans two reports is refused explicitly.
+  const covers = (r: ReportId) => metrics.every((m) => reportMetrics(r).includes(m));
+  const dimensionPick: ReportId | null =
+    wantsTitle || (wantsPath && wantsChannelDim) ? "content" : wantsPath ? "engagement" : null;
+  const report = dimensionPick && covers(dimensionPick) ? dimensionPick : REPORT_ORDER.find(covers);
+  if (!report) {
+    return {
+      ok: false,
+      rejection: {
+        code: "mixed-metrics",
+        message:
+          "That question asks for metrics that live in two different reports. Ask about one report at a time — for example “sessions and views” or “scrolls and downloads”.",
+        examples: EXAMPLES,
+      },
+    };
+  }
 
   if (wantsWidget) {
     const isTrend = /\btrend\b|\bover time\b|\bchart\b|\bgraph\b/.test(t);
@@ -198,7 +249,7 @@ export async function answerQuestion(
   redis: CacheRedis | null,
   companyId: string,
   question: string
-): Promise<{ ok: true; answer: CopilotAnswer } | { ok: false; rejection: PlanRejection } | { ok: false; error: string }> {
+): Promise<CopilotOutcome> {
   const parsed = parseQuestion(question);
   if (!parsed.ok) return parsed;
   const plan = parsed.plan;

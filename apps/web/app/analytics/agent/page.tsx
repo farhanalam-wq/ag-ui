@@ -15,14 +15,14 @@ import {
 } from "@/components/ui/card";
 import { useSelectedCompany } from "@/stores/use-company-store";
 import { apiClient } from "@/lib/api-client";
-import { useCompanyReport } from "@/lib/analytics";
+import { useCompanyReport, type Range } from "@/lib/analytics";
 
 export default function AgentAnalyticsPage() {
   const company = useSelectedCompany();
-  const [range, setRange] = useState<"7" | "14">("14");
+  const [range, setRange] = useState<Range>("14d");
   const { data, loading, loadError } = useCompanyReport(
     company,
-    (companyId) => apiClient.analytics.overview(companyId, range === "7" ? "7d" : "14d"),
+    (companyId) => apiClient.analytics.overview(companyId, range),
     [range]
   );
 
@@ -53,12 +53,12 @@ export default function AgentAnalyticsPage() {
             Range
             <select
               value={range}
-              onChange={(e) => setRange(e.target.value as "7" | "14")}
+              onChange={(e) => setRange(e.target.value as Range)}
               aria-label="Date range"
               className="ml-2 h-full bg-transparent pr-1 text-[13px] text-foreground focus:outline-none"
             >
-              <option value="14">Last 14 days</option>
-              <option value="7">Last 7 days</option>
+              <option value="14d">Last 14 days</option>
+              <option value="7d">Last 7 days</option>
             </select>
           </label>
         </div>

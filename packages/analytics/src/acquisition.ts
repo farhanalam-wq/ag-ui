@@ -15,7 +15,7 @@ import { db, metricsDaily, sql, eq, and, or, gte, lt, desc, count } from "@ag-ui
 import type { CacheRedis } from "./cache";
 import { dailyUniquesKey } from "./identity";
 import {
-  freshnessStub,
+  reportFreshness,
   type AcquisitionReport,
   type BreakdownRow,
   type Channel,
@@ -198,6 +198,6 @@ export async function getAcquisitionReport(
     bySourceMedium,
     byCampaign,
     byLandingPage,
-    freshness: freshnessStub(false, dataQuality),
+    freshness: await reportFreshness(false, dataQuality),
   };
 }

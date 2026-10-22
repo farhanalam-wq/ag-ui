@@ -59,4 +59,24 @@ describe("copilot parser", () => {
     expect(!g.ok && (g.rejection as { code: string }).code).toBe("unparseable");
     if (!g.ok && "examples" in g.rejection) expect(g.rejection.examples.length).toBeGreaterThan(0);
   });
+
+  test("a mixed question is answered by the report that covers every metric", () => {
+    // "sessions and downloads" used to route to acquisition, which never
+    // mentions downloads — a silently wrong answer (F-02).
+    const r = parseQuestion("sessions and downloads last 7 days");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.plan.report).toBe("engagement");
+    expect(r.plan.metrics).toEqual(["sessions", "downloads"]);
+  });
+
+  test("a question that spans two reports is refused explicitly", () => {
+    // uniques live in the acquisition report, downloads in the engagement
+    // one: no single report can answer both, so the copilot says so.
+    const r = parseQuestion("unique visitors and downloads last 7 days");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.rejection.code).toBe("mixed-metrics");
+    expect(r.rejection.message.length).toBeGreaterThan(0);
+  });
 });
