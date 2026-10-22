@@ -12,9 +12,9 @@
  * bundle (exported from `./client`).
  *
  * Before this file, `METRICS` was imported by exactly one module — its own
- * test — while the metric vocabulary was duplicated in five places: the
- * registry, the copilot, the API routes, the widget builder and the web
- * pages. This module is the single source the rest of the module reads.
+ * test — while the metric vocabulary was duplicated in several places: the
+ * registry, the API routes and the web pages. This module is the single
+ * source the rest of the module reads.
  *
  * The rules it holds itself to (`catalogue.test.ts`):
  *
@@ -268,8 +268,7 @@ export type CaveatId = keyof typeof CAVEATS;
 
 /**
  * Named groups of metrics, for code that reasons about a family rather
- * than a single metric (the copilot routes a question to the report that
- * owns the metrics it asked for).
+ * than a single metric (the API's report groups, the surfaces' KPI rows).
  */
 export const GROUPS = {
   engagement: [
@@ -739,7 +738,7 @@ export const METRICS: Record<string, MetricDef> = {
     source: { kind: "column", table: "metrics_daily", column: "conversions" },
     definition: "Recorded conversion events.",
     status: "excluded",
-    note: "Served only by the parked Conversions surface; excluded from the report framework, so the copilot refuses it.",
+    note: "Served only by the parked Conversions surface; excluded from the report framework.",
   },
   revenue: {
     id: "revenue",
@@ -755,7 +754,7 @@ export const METRICS: Record<string, MetricDef> = {
     source: { kind: "column", table: "metrics_daily", column: "revenue" },
     definition: "Sum of conversion values.",
     status: "excluded",
-    note: "Served only by the parked Conversions surface; excluded from the report framework, so the copilot refuses it.",
+    note: "Served only by the parked Conversions surface; excluded from the report framework.",
   },
 };
 

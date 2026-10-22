@@ -784,29 +784,6 @@ class ApiClient {
       return res.json();
     },
 
-    copilot: async (
-      companyId: string,
-      question: string
-    ): Promise<
-      | {
-          ok: true;
-          answer: {
-            summary: string[];
-            supporting: { label: string; value: string }[];
-            widgetSpec?: { component: string; props: Record<string, unknown> };
-          };
-        }
-      | { ok: false; rejection: { code: string; message: string; examples: string[] } }
-    > => {
-      const res = await fetch(
-        `${this.baseUrl}/api/analytics/copilot?companyId=${encodeURIComponent(companyId)}&question=${encodeURIComponent(question)}`
-      );
-      if (res.status === 404) throw new Error("Company not found");
-      if (!res.ok) {
-        throw new Error(`Copilot unavailable: HTTP ${res.status}`);
-      }
-      return res.json();
-    },
   };
 
   /**

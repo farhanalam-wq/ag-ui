@@ -43,15 +43,6 @@ export default function InsightsPage() {
     (companyId) => apiClient.analytics.insights(companyId, range),
     [range]
   );
-  const [question, setQuestion] = useState("");
-  const [asking, setAsking] = useState(false);
-  const [askError, setAskError] = useState<string | null>(null);
-  const [copilot, setCopilot] = useState<Extract<
-    Awaited<ReturnType<typeof apiClient.analytics.copilot>>,
-    { ok: true }
-  >["answer"] | null>(null);
-  const [copilotRejection, setCopilotRejection] = useState<{ message: string; examples: string[] } | null>(null);
-
   return (
     <StudioShell crumbs={[{ label: "Analytics" }, { label: "Insights" }]}>
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -106,99 +97,6 @@ export default function InsightsPage() {
         )
       ) : (
         <div className="mt-6 min-w-0 space-y-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-[15px]">Ask your analytics</CardTitle>
-              <CardDescription className="text-xs">
-                Plain-English questions answered from measured data only — no
-                model, no guessing. Try “sessions by channel last 7 days”.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <form
-                className="flex flex-wrap gap-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (!company || !question.trim() || asking) return;
-                  setAsking(true);
-                  setAskError(null);
-                  setCopilot(null);
-                  setCopilotRejection(null);
-                  apiClient.analytics
-                    .copilot(company.id, question.trim().slice(0, 500))
-                    .then((r) => {
-                      if (r.ok) setCopilot(r.answer);
-                      else setCopilotRejection(r.rejection);
-                      setAsking(false);
-                    })
-                    .catch((err: unknown) => {
-                      // Copilot failure is isolated: the rest of the page
-                      // keeps working; only this card shows the error.
-                      setAskError(err instanceof Error ? err.message : String(err));
-                      setAsking(false);
-                    });
-                }}
-              >
-                <input
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  placeholder="e.g. top landing pages vs previous period"
-                  aria-label="Ask your analytics"
-                  className="h-9 min-w-[220px] flex-1 rounded-md border bg-transparent px-3 text-sm focus:outline-none"
-                />
-                <Button type="submit" size="sm" className="h-9 text-xs" disabled={asking || !question.trim()}>
-                  {asking ? "Asking…" : "Ask"}
-                </Button>
-              </form>
-              {askError && (
-                <p role="alert" className="mt-3 font-mono text-xs text-destructive">
-                  Copilot failed (page data above is unaffected): {askError}
-                </p>
-              )}
-              {copilotRejection && (
-                <div className="mt-3 rounded-md border p-3">
-                  <p className="text-sm">{copilotRejection.message}</p>
-                  <p className="mt-2 text-xs text-muted-foreground">Try one of these:</p>
-                  <ul className="mt-1 list-disc pl-5 text-xs text-muted-foreground">
-                    {copilotRejection.examples.map((ex) => (
-                      <li key={ex}>
-                        <button
-                          type="button"
-                          className="underline underline-offset-2 hover:text-foreground"
-                          onClick={() => setQuestion(ex)}
-                        >
-                          {ex}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {copilot && (
-                <div className="mt-3 space-y-2">
-                  {copilot.summary.map((s, i) => (
-                    <p key={i} className="text-sm">
-                      {s}
-                    </p>
-                  ))}
-                  {copilot.supporting.length > 0 && (
-                    <ul className="list-disc pl-5 font-mono text-xs text-muted-foreground">
-                      {copilot.supporting.slice(0, 5).map((s) => (
-                        <li key={s.label}>
-                          {s.label}: {s.value}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {copilot.widgetSpec && (
-                    <p className="text-xs text-muted-foreground">
-                      Widget ready for Widget Studio: {copilot.widgetSpec.component}.
-                    </p>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
           {data.anomalies.length > 0 && (
             <div className="space-y-3">
               {data.anomalies.map((a, i) => (

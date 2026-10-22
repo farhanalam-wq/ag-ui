@@ -1,5 +1,4 @@
 import { Elysia, t } from "elysia";
-import { createHash } from "node:crypto";
 import {
   db,
   companies,
@@ -25,10 +24,7 @@ import {
   withAnalyticsCache,
   cacheCounters,
   type Channel,
-  buildWidgetSpec,
   getInsightsReport,
-  answerQuestion,
-  isCopilotFailure,
 } from "@ag-ui/analytics";
 import { logger } from "@ag-ui/shared";
 
@@ -78,7 +74,7 @@ async function tenant(companyId: string, set: StatusSetter): Promise<Company | n
 /**
  * Shared read path for report endpoints: cache (60s fresh / 240s SWR unless
  * overridden) around a compute fn, with one fail-500 logger and a re-throw path
- * for deliberate 4xx (e.g. widget-spec's invalid-config 400). Keeps every
+ * for deliberate 4xx. Keeps every
  * handler a handful of lines instead of ~20 of copy-paste.
  */
 async function report<T>(
@@ -276,100 +272,6 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       detail: {
         summary: "Differentiating analytics",
         description: "Quality matrix, opportunity map, journey explorer, anomaly investigation. First-party only; correlations, not causes.",
-      },
-    }
-  )
-  .get(
-    "/copilot",
-    async ({ query, set }) => {
-      const company = await tenant(query.companyId, set);
-      if (!company) return { error: "Company not found" };
-      if (!query.question || !query.question.trim()) {
-        set.status = 422;
-        return { error: "question is required" };
-      }
-      // The cache key and the executed question are the same string. The key
-      // used to be the first 200 characters while the query ran on the first
-      // 500, so two questions sharing a 200-character prefix were answered
-      // with each other's numbers (F-03).
-      const question = query.question.trim().slice(0, 500);
-      const questionHash = createHash("sha256").update(question).digest("hex").slice(0, 32);
-      return report(set, company, {
-        label: "Copilot",
-        errorMessage: "Copilot unavailable - try again shortly",
-        cacheKey: `ana:v1:copilot:${company.id}:${questionHash}`,
-        compute: async (redis) => {
-          const out = await answerQuestion(redis, company.id, question);
-          // A rejection is an expected outcome — the question cannot be
-          // answered — so it travels as a 200 envelope and the UI renders the
-          // limitation. Only a genuine failure throws, and the wrapper turns
-          // that into a 500. The distinction is a typed guard, not a string
-          // comparison (F-18).
-          if (isCopilotFailure(out)) throw new Error(out.error);
-          return out;
-        },
-      });
-    },
-    {
-      query: t.Object({ companyId: t.String(), question: t.String() }),
-      detail: {
-        summary: "Deterministic analytics copilot",
-        description: "Rule-based NL questions answered from measured data only. No LLM, no invented numbers.",
-      },
-    }
-  )
-  .get(
-    "/widget-spec",
-    async ({ query, set }) => {
-      const company = await tenant(query.companyId, set);
-      if (!company) return { error: "Company not found" };
-      const days = parseWindowDays(query.range);
-      if (days === null) {
-        set.status = 422;
-        return { error: RANGE_ERROR };
-      }
-      const channels = (query.channels ?? "").split(",").map((c) => c.trim()).filter(Boolean);
-      const config = {
-        kind: query.kind,
-        report: query.report || undefined,
-        table: query.table || undefined,
-        rangeDays: days,
-        variant: query.variant || "line",
-        trendMetric: query.trendMetric || "pageviews",
-        channels,
-        compare: query.compare === "previous",
-      };
-      return report(set, company, {
-        label: "Widget-spec",
-        errorMessage: "Widget spec unavailable - try again shortly",
-        cacheKey: `ana:v1:widget:${company.id}:${JSON.stringify(config)}`,
-        compute: async (redis) => {
-          const built = await buildWidgetSpec(redis, company.id, config);
-          if (!built.ok) {
-            const err = new Error("Invalid widget config") as Error & { status?: number; details?: unknown };
-            err.status = 400;
-            err.details = built.errors;
-            throw err;
-          }
-          return built.spec;
-        },
-      });
-    },
-    {
-      query: t.Object({
-        companyId: t.String(),
-        kind: t.String(),
-        report: t.Optional(t.String()),
-        table: t.Optional(t.String()),
-        range: t.Optional(t.String()),
-        variant: t.Optional(t.String()),
-        trendMetric: t.Optional(t.String()),
-        channels: t.Optional(t.String()),
-        compare: t.Optional(t.String()),
-      }),
-      detail: {
-        summary: "Validated analytics widget spec",
-        description: "Renderer-ready {component, props} for Widget Studio; props conform to the genui zod schemas. First-party only.",
       },
     }
   )

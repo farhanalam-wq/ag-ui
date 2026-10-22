@@ -34,8 +34,6 @@ import {
   type SurfaceId,
 } from "./catalogue";
 import { validateReportQuery } from "./registry";
-import { METRIC_KEYWORDS } from "./copilot";
-import { WIDGET_TREND_METRICS } from "./widgets";
 
 /** The schema tables a metric or dimension may point at, by table name. */
 const TABLES: Record<string, Record<string, unknown>> = {
@@ -259,25 +257,9 @@ describe("the catalogue and the code that uses it", () => {
     }
   });
 
-  test("the copilot only asks for metrics that exist and are available", () => {
-    for (const { metrics } of METRIC_KEYWORDS) {
-      for (const id of metrics) {
-        expect(METRICS[id]).toBeDefined();
-        expect(METRICS[id].status).toBe("available");
-      }
-    }
-  });
-
   test("the groups only contain metrics that exist", () => {
     for (const members of Object.values(GROUPS)) {
       for (const id of members) expect(METRICS[id]).toBeDefined();
-    }
-  });
-
-  test("the widget trends plot catalogue metrics", () => {
-    for (const id of WIDGET_TREND_METRICS) {
-      expect(METRICS[id]).toBeDefined();
-      expect(METRICS[id].status).toBe("available");
     }
   });
 
