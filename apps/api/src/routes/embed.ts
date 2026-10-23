@@ -201,14 +201,15 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
         set.status = 404;
         return { error: "Widget key not found" };
       }
-      const actor = request.headers.get("x-actor")?.trim().slice(0, 64) || null;
+      // TODO(auth): replace with the session user id once the auth plugin lands.
+      // `x-actor` is client-supplied and must never be trusted for created_by.
       try {
         const domain = await addDomain({
           keyId: params.keyId,
           origin: body.origin,
           includePaths: body.includePaths,
           excludePaths: body.excludePaths,
-          createdBy: actor,
+          createdBy: null,
           createdIp: getClientIp(request),
         });
         set.status = 201;

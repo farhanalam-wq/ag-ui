@@ -53,13 +53,34 @@ export const authSessions = pgTable(
   ]
 );
 
-export const companies = pgTable("companies", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  domain: text("domain").notNull().unique(),
-  name: text("name").notNull(),
-  url: text("url").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const companies = pgTable(
+  "companies",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    ownerId: uuid("owner_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      // Transitional guard until A4 passes the authenticated owner at every
+      // insert site. The database column is NOT NULL; this makes the omission a
+      // clear runtime error instead of a fake owner. Remove once all callers
+      // supply the session user id (docs/auth-tenancy.md §5.1, §12.1).
+      .$defaultFn(() => {
+        throw new Error(
+          "companies.ownerId is required: pass the authenticated user id (docs/auth-tenancy.md §5)"
+        );
+      })
+      .notNull(),
+    // Unique per owner, not globally: two users may own the same domain and
+    // stay completely separate. See docs/auth-tenancy.md §5.1.
+    domain: text("domain").notNull(),
+    name: text("name").notNull(),
+    url: text("url").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("companies_owner_domain_unique").on(table.ownerId, table.domain),
+    index("companies_owner_idx").on(table.ownerId),
+  ]
+);
 
 export const companySnapshots = pgTable("company_snapshots", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -177,27 +198,37 @@ export const messages = pgTable("messages", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const crawlJobs = pgTable("crawl_jobs", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  companyId: uuid("company_id")
-    .references(() => companies.id, { onDelete: "cascade" })
-    .notNull(),
-  snapshotId: uuid("snapshot_id").references(() => companySnapshots.id, {
-    onDelete: "set null",
-  }),
-  owner: text("owner"), // nullable, reserved for later auth
-  selectionHash: text("selection_hash").notNull(),
-  idempotencyKey: text("idempotency_key").notNull().unique(),
-  status: text("status").default("QUEUED").notNull(), // 'QUEUED' | 'DISCOVERING' | 'CRAWLING' | 'PARSING' | 'EMBEDDING' | 'READY' | 'FAILED' | 'CANCELLED'
-  selected: integer("selected").default(0).notNull(),
-  crawled: integer("crawled").default(0).notNull(),
-  docs: integer("docs").default(0).notNull(),
-  failed: integer("failed").default(0).notNull(),
-  priority: integer("priority").default(0).notNull(),
-  errorSample: jsonb("error_sample"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+export const crawlJobs = pgTable(
+  "crawl_jobs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    snapshotId: uuid("snapshot_id").references(() => companySnapshots.id, {
+      onDelete: "set null",
+    }),
+    selectionHash: text("selection_hash").notNull(),
+    // Scoped to the company: the same selection under two tenants must not
+    // collide. See docs/auth-tenancy.md §12.1.
+    idempotencyKey: text("idempotency_key").notNull(),
+    status: text("status").default("QUEUED").notNull(), // 'QUEUED' | 'DISCOVERING' | 'CRAWLING' | 'PARSING' | 'EMBEDDING' | 'READY' | 'FAILED' | 'CANCELLED'
+    selected: integer("selected").default(0).notNull(),
+    crawled: integer("crawled").default(0).notNull(),
+    docs: integer("docs").default(0).notNull(),
+    failed: integer("failed").default(0).notNull(),
+    priority: integer("priority").default(0).notNull(),
+    errorSample: jsonb("error_sample"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("crawl_jobs_company_idempotency_unique").on(
+      table.companyId,
+      table.idempotencyKey
+    ),
+  ]
+);
 
 export const enrichmentBatches = pgTable(
   "enrichment_batches",
@@ -283,7 +314,9 @@ export const widgetKeyDomains = pgTable(
       .array()
       .notNull()
       .$defaultFn(() => []),
-    createdBy: text("created_by"),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     createdIp: text("created_ip"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },

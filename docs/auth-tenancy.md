@@ -535,38 +535,58 @@ CREATE INDEX auth_sessions_expires_idx ON auth_sessions (expires_at);
 ### 8.2 `0013_company_ownership.sql`
 
 ```sql
-ALTER TABLE companies
-  ADD COLUMN owner_id uuid REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE companies DROP CONSTRAINT companies_domain_unique;
+ALTER TABLE crawl_jobs DROP CONSTRAINT crawl_jobs_idempotency_key_unique;
+
+ALTER TABLE widget_key_domains
+  ALTER COLUMN created_by SET DATA TYPE uuid USING created_by::uuid;
 
 -- No backfill: the development database was wiped before this migration.
-ALTER TABLE companies ALTER COLUMN owner_id SET NOT NULL;
+ALTER TABLE companies ADD COLUMN owner_id uuid NOT NULL;
+ALTER TABLE companies
+  ADD CONSTRAINT companies_owner_id_users_id_fk
+  FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE;
 
-ALTER TABLE companies DROP CONSTRAINT companies_domain_unique;
+ALTER TABLE widget_key_domains
+  ADD CONSTRAINT widget_key_domains_created_by_users_id_fk
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL;
+
+-- Deleting a user cascades users -> companies -> widget_keys -> widget_key_domains,
+-- while widget_key_domains.created_by is SET NULL. Without deferral the SET NULL
+-- update re-checks key_id after the parent key is already cascade-deleted and fails.
+ALTER TABLE widget_key_domains
+  DROP CONSTRAINT widget_key_domains_key_id_widget_keys_id_fk;
+ALTER TABLE widget_key_domains
+  ADD CONSTRAINT widget_key_domains_key_id_widget_keys_id_fk
+  FOREIGN KEY (key_id) REFERENCES widget_keys(id)
+  ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED;
+
 CREATE UNIQUE INDEX companies_owner_domain_unique ON companies (owner_id, domain);
 CREATE INDEX companies_owner_idx ON companies (owner_id);
 
 ALTER TABLE crawl_jobs DROP COLUMN owner;
-ALTER TABLE crawl_jobs DROP CONSTRAINT crawl_jobs_idempotency_key_unique;
 ALTER TABLE crawl_jobs
   ADD CONSTRAINT crawl_jobs_company_idempotency_unique UNIQUE (company_id, idempotency_key);
-
-ALTER TABLE widget_key_domains
-  ALTER COLUMN created_by TYPE uuid USING created_by::uuid;
-ALTER TABLE widget_key_domains
-  ADD CONSTRAINT widget_key_domains_created_by_users_fk
-  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL;
 ```
 
 No `0014` and no bootstrap script. If a future deployment has existing companies, it must
 add its own backfill step before applying the `NOT NULL`; this branch does not.
 
+The deferred `key_id` FK is deliberate. Drizzle 0.39 cannot express deferrability, so the
+Drizzle schema and snapshot describe the normal cascade; the hand-written migration adds the
+deferral. Do not "fix" it away in a later generate — the behavioral test in §14.3 depends on
+deleting a user who created a domain on their own key.
+
 ### 8.3 Drizzle schema updates
 
 - Add `users`, `authSessions` to `packages/database/src/schema.ts`.
-- Add `ownerId` to `companies`.
-- Remove `owner` from `crawlJobs`.
-- Change `widgetKeyDomains.createdBy` to `uuid`.
+- Add `ownerId` to `companies` (`uuid NOT NULL`, FK to `users` on delete cascade).
+- Remove `owner` from `crawlJobs`; scope idempotency uniqueness to `(companyId, idempotencyKey)`.
+- Change `widgetKeyDomains.createdBy` to `uuid` with an FK to `users` on delete set null.
 - Keep `pageViews` as the read definition over the hand-maintained partitioned table.
+- Until A4 passes the session owner at every insert site, `companies.ownerId` carries a
+  temporary runtime guard: omitting it throws instead of writing an ownerless company. The
+  database column is `NOT NULL` regardless. A4 removes the guard.
 
 ### 8.4 Table ownership map
 
@@ -1039,6 +1059,9 @@ Also assert the payload contains zero rows from the other company (not just a 40
 - Cookie flags: httpOnly, SameSite=Lax, Secure in production.
 - Google: state mismatch, missing state, reused state, bad nonce, `email_verified=false`,
   linking by verified email, and `google_sub` conflict.
+- Deleting a user cascades to their companies and all company-owned rows. A
+  `widget_key_domains` row that the user created on another tenant's key survives with
+  `created_by = NULL` (requires the deferred `key_id` FK from §8.2).
 
 ### 14.4 Embed and origin tests
 
