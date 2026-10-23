@@ -164,13 +164,29 @@ ranked excerpts with scores, `--json` pipes through `jq`.
 - ETag storage: persist response `etag` and `last-modified` headers onto the new document rows whenever the server sends them; servers that send neither simply fall back to full body hash comparison.
 - Acceptance: re ingest of resend with no site changes issues fewer than 5 percent of the OpenAI calls of the full run, snapshot flips to READY, retrieval scoped to the new snapshot returns the same best documents as the old snapshot on the parity query set, and one edited page produces new vectors only for its own chunks.
 
-## 18. Per user rate limits, ownership checks, queue priority (P3) (Deferred, no demo impact)
+## 18. Ownership, auth, and per-user limits — SUPERSEDED
 
-- Files: `apps/api/src/routes/companies.ts` (or the ingest submitter that replaces it), progress plus cancel plus query endpoints, `crawl_jobs` `owner` and `priority` columns which already exist from task 2 and stay untouched here.
-- Ownership: job creation accepts `owner` (session or user id from the caller, never trust client free text in the deployed version, derive it server side). Progress, cancel, and query endpoints require `owner` match or an admin bypass flag; mismatch returns 403 with the job id and no data. CLI passes `--owner` explicitly in this task for testing, defaulting to `local-ceo`.
-- Quotas per owner: `max_concurrent_jobs` counted over live rows filtered by `owner` (default 2), `max_pages` per job by owner tier (default 1000, overridable per owner row when a tier table exists, otherwise a static map in config), ingest submit rate limit of 5 submits per hour per owner via Redis sliding window key `rl:ingest:{owner}` (sorted set of timestamps, 1 hour window, reject with 429 plus `Retry-After`).
-- Priority scheduling: `priority` integer, 0 normal, 1 demo or preview jump. The picker always takes the oldest live job with the highest priority first. Starvation guard: any P0 job waiting longer than 10 minutes is treated as P1 for ordering only (column value unchanged, ordering key computed at pick time). Cap P1 jobs at 1 concurrent pick so bulk backfills can never fully starve normal jobs.
-- Acceptance: two owners submitting simultaneously each hit their own live job cap independently; a P1 demo job submitted after a P0 bulk job is picked first; a third owner reading another owner's job id gets 403; the rate limiter rejects the 6th submit inside the hour with 429.
+> **Superseded by `docs/auth-tenancy.md` (v2, 2026-10-23).** Do not implement the old
+> contract; this section records why it changed.
+
+The earlier draft of this task conflicted with the canonical plan in four ways:
+
+- It kept `crawl_jobs.owner`. The canonical plan drops that column; ownership is
+  `companies.owner_id`, and `crawl_jobs` inherits through `company_id`.
+- It accepted an owner from the caller for testing. The canonical plan derives the owner
+  from the server session only; operator CLIs must pass an explicit `--owner` that resolves
+  to a real user.
+- It returned `403` on a foreign job and allowed an admin bypass. The canonical plan returns
+  `404` for both missing and foreign resources, with no bypass.
+- It left crawl idempotency global. The canonical plan scopes it to the company.
+
+What remains deferred, and is **not** part of the auth pass:
+
+- Per-owner crawl quotas (`max_concurrent_jobs`, `max_pages` tiers).
+- Priority scheduling and the P0/P1 starvation guard.
+- Ingest submit rate limiting beyond the auth/endpoint limits in the canonical doc.
+
+Read `docs/auth-tenancy.md` §5, §9, and §12.1 before touching crawl ownership or limits.
 
 ## 19. ✅ Manual sitemap plus URL list input (P0) (Pipeline impact #16)
 

@@ -67,7 +67,7 @@ plan.md
 sitemap-tests/
 
 # Local implementation plans (session-agnostic context, never commit)
-docs/auth-tenancy.md
+# docs/auth-tenancy.md is tracked: it is the canonical auth/tenancy source of truth.
 docs/analytics-rebuild.md
 docs/operations-error-sink.md
 docs/operations-error-activity.md

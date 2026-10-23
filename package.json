@@ -18,9 +18,7 @@
     "crawl": "bun packages/crawler/cli.ts",
     "ingest": "bun ingest-cli.ts",
     "chat": "bun cli.ts",
-    "cli": "bun cli.ts",
-    "fixtures:analytics": "bun scripts/seed-analytics-fixtures.ts",
-    "fixtures:analytics:clear": "bun scripts/seed-analytics-fixtures.ts --clear"
+    "cli": "bun cli.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.4.2",
