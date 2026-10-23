@@ -1,4 +1,57 @@
-import { pgTable, uuid, text, timestamp, jsonb, integer, index, boolean, unique, numeric, date, primaryKey, smallint } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, integer, index, uniqueIndex, boolean, unique, numeric, date, primaryKey, smallint } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+
+/**
+ * Auth identities. `email` is stored trimmed + lowercased at the boundary and
+ * uniqueness is enforced on `lower(email)`; `password_hash` is Argon2id and
+ * NULL for Google-only accounts. See docs/auth-tenancy.md §3.
+ */
+export const users = pgTable(
+  "users",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    email: text("email").notNull(),
+    passwordHash: text("password_hash"),
+    googleSub: text("google_sub"),
+    name: text("name"),
+    avatarUrl: text("avatar_url"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("users_email_lower_unique").on(sql`lower(${table.email})`),
+    uniqueIndex("users_google_sub_unique")
+      .on(table.googleSub)
+      .where(sql`${table.googleSub} is not null`),
+  ]
+);
+
+/**
+ * Opaque, revocable sessions. The raw token lives only in an httpOnly cookie;
+ * the database stores `sha256(token)` in `token_hash`. See docs/auth-tenancy.md §4.
+ *
+ * Not to be confused with the analytics `sessions` table.
+ */
+export const authSessions = pgTable(
+  "auth_sessions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+  },
+  (table) => [
+    index("auth_sessions_user_idx").on(table.userId),
+    index("auth_sessions_expires_idx").on(table.expiresAt),
+  ]
+);
 
 export const companies = pgTable("companies", {
   id: uuid("id").defaultRandom().primaryKey(),
