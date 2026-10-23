@@ -25,7 +25,7 @@ export function EmbedSnippet({ result }: EmbedSnippetProps) {
   const [apiBase] = useState<string>(() => defaultApiBase());
   const [copied, setCopied] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [track, setTrack] = useState(false);
+  const [track, setTrack] = useState(true);
   const rotateToastArmed = useRef(false);
 
   useEffect(() => setMounted(true), []);
@@ -179,7 +179,7 @@ export function EmbedSnippet({ result }: EmbedSnippetProps) {
               onChange={(e) => setTrack(e.target.checked)}
               className="size-3.5 accent-primary"
             />
-            Track page visits (cookieless pageviews + conversions)
+            Track visits and assistant events (cookieless)
           </label>
         </>
       )}
