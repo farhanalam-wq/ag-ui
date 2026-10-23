@@ -24,10 +24,13 @@ export function ContentTab({ data }: { data: ContentAnalytics }) {
   return (
     <div className="space-y-4">
       <MetricGrid
-        columns={2}
+        columns={3}
         items={[
           { id: "pageviews", value: data.totals.pageviews },
           { id: "sessions", value: data.totals.sessions },
+          { id: "scrolls", value: data.totals.scrolls },
+          { id: "downloads", value: data.totals.downloads },
+          { id: "clicks", value: data.totals.clicks },
         ]}
       />
 
@@ -72,7 +75,9 @@ export function ContentTab({ data }: { data: ContentAnalytics }) {
         />
       </div>
 
-      <MetricStory metrics={["pageviews", "sessions"]} />
+      <MetricStory
+        metrics={["pageviews", "sessions", "scrolls", "downloads", "clicks"]}
+      />
       <DataQualityNote notes={data.freshness.notes} />
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <ListBullets className="size-3.5" aria-hidden="true" />

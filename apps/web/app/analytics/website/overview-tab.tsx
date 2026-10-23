@@ -61,7 +61,7 @@ export function OverviewTab({
       <RealtimeStrip companyId={companyId} />
 
       <MetricGrid
-        columns={6}
+        columns={4}
         items={[
           { id: "sessions", value: data.totals.sessions },
           {
@@ -70,9 +70,11 @@ export function OverviewTab({
             hint: uniquesMissing ? "Not computable for this range." : undefined,
           },
           { id: "pageviews", value: data.totals.pageviews },
+          { id: "engagedSessions", value: data.totals.engagedSessions },
           { id: "engagementRate", value: data.totals.engagementRate },
-          { id: "avgEngagementTime", value: data.totals.avgEngagementTime },
           { id: "bounceRate", value: data.totals.bounceRate },
+          { id: "pagesPerSession", value: data.totals.pagesPerSession },
+          { id: "avgEngagementTime", value: data.totals.avgEngagementTime },
         ]}
       />
 
@@ -121,9 +123,11 @@ export function OverviewTab({
           "sessions",
           "uniques",
           "pageviews",
+          "engagedSessions",
           "engagementRate",
-          "avgEngagementTime",
           "bounceRate",
+          "pagesPerSession",
+          "avgEngagementTime",
         ]}
       />
       <DataQualityNote notes={data.freshness.notes} />

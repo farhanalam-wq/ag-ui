@@ -31,10 +31,19 @@ export async function getContentReport(companyId: string, rangeDays: number): Pr
     .select({
       pv: sql<number>`COALESCE(SUM(${metricsDaily.pageviews}), 0)::int`.as("pv"),
       se: sql<number>`COALESCE(SUM(${metricsDaily.sessions}), 0)::int`.as("se"),
+      sc: sql<number>`COALESCE(SUM(${metricsDaily.scrolls}), 0)::int`.as("sc"),
+      dl: sql<number>`COALESCE(SUM(${metricsDaily.downloads}), 0)::int`.as("dl"),
+      cl: sql<number>`COALESCE(SUM(${metricsDaily.clicks}), 0)::int`.as("cl"),
     })
     .from(metricsDaily)
     .where(and(eq(metricsDaily.companyId, companyId), gte(metricsDaily.day, fromDay)));
-  const totals = { sessions: Number(t[0]?.se ?? 0), pageviews: Number(t[0]?.pv ?? 0) };
+  const totals = {
+    sessions: Number(t[0]?.se ?? 0),
+    pageviews: Number(t[0]?.pv ?? 0),
+    scrolls: Number(t[0]?.sc ?? 0),
+    downloads: Number(t[0]?.dl ?? 0),
+    clicks: Number(t[0]?.cl ?? 0),
+  };
   if (totals.sessions === 0 && totals.pageviews === 0) dataQuality.push("tracking-off");
 
   // Same window, same island rule as the rollup: a "session" here is a visit.
