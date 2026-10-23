@@ -6,7 +6,7 @@ export interface SnippetInput {
   apiBase: string;
   companyName: string;
   position?: "bottom-right" | "bottom-left";
-  /** Opt-in cookieless traffic tracking (pageviews + conversions). Default off. */
+  /** Opt-in cookieless traffic tracking (pageviews + conversions). */
   track?: boolean;
 }
 

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, integer, index, boolean, unique, numeric, date, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, integer, index, boolean, unique, numeric, date, primaryKey, smallint } from "drizzle-orm/pg-core";
 
 export const companies = pgTable("companies", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -103,6 +103,12 @@ export const conversations = pgTable("conversations", {
     .references(() => companies.id, { onDelete: "cascade" })
     .notNull(),
   title: text("title").default("New Conversation").notNull(),
+  /**
+   * Host page the conversation started on, normalised like `page_views.path`.
+   * Null when unknown (older rows, the playground). Never visitor content:
+   * it is the page they were reading, not what they asked.
+   */
+  path: text("path"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -282,6 +288,12 @@ export const pageViews = pgTable(
     referrer: text("referrer").default("").notNull(),
     viewport: text("viewport").default("").notNull(),
     userAgent: text("user_agent").default("").notNull(),
+    // Visitor profile, derived once at the collector and stored so a report
+    // never re-parses a user agent (and never disagrees with another one).
+    browser: text("browser"),
+    os: text("os"),
+    /** Minutes east of UTC, from the visitor's own timezone. Null when unknown. */
+    tzOffset: smallint("tz_offset"),
     isBot: boolean("is_bot").default(false).notNull(),
     value: numeric("value"),
     meta: jsonb("meta"),
@@ -302,8 +314,17 @@ export const sessions = pgTable(
     endedAt: timestamp("ended_at", { withTimezone: true }),
     pageviewCount: integer("pageview_count").default(0).notNull(),
     activeSeconds: integer("active_seconds").default(0).notNull(),
+    // The visit's visitor profile, copied from the event that opened it. One
+    // row per visit, so a breakdown by these is a breakdown of visits — the
+    // same unit every "Sessions" figure counts.
+    device: text("device"),
+    browser: text("browser"),
+    os: text("os"),
+    /** Minutes east of UTC, from the visitor's own timezone. Null when unknown. */
+    tzOffset: smallint("tz_offset"),
     converted: boolean("converted").default(false).notNull(),
     revenue: numeric("revenue").default("0").notNull(),
+    engaged: boolean("engaged").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [unique("sessions_company_session_started_unique").on(t.companyId, t.sessionHash, t.startedAt)]
@@ -318,6 +339,7 @@ export const metricsDaily = pgTable(
     day: date("day").notNull(),
     pageviews: integer("pageviews").default(0).notNull(),
     sessions: integer("sessions").default(0).notNull(),
+    engagedSessions: integer("engaged_sessions").default(0).notNull(),
     conversions: integer("conversions").default(0).notNull(),
     revenue: numeric("revenue").default("0").notNull(),
     chatOpens: integer("chat_opens").default(0).notNull(),
@@ -339,6 +361,7 @@ export const metricsHourly = pgTable(
     hour: timestamp("hour", { withTimezone: true }).notNull(),
     pageviews: integer("pageviews").default(0).notNull(),
     sessions: integer("sessions").default(0).notNull(),
+    engagedSessions: integer("engaged_sessions").default(0).notNull(),
     conversions: integer("conversions").default(0).notNull(),
     revenue: numeric("revenue").default("0").notNull(),
     chatOpens: integer("chat_opens").default(0).notNull(),

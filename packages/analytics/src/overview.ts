@@ -14,10 +14,30 @@
  *   capped (latest 20k) with a `sampled` note when hit.
  */
 
-import { client } from "@ag-ui/database";
+import {
+  db,
+  metricsDaily,
+  conversations,
+  messages as messagesTable,
+  companySnapshots,
+  pageViews,
+  sql,
+  eq,
+  and,
+  gte,
+  inArray,
+  asc,
+  desc,
+} from "@ag-ui/database";
 import { detectQueryIntents } from "@ag-ui/shared";
+import { reportFreshness } from "./registry";
 
-export type OverviewRangeDays = 7 | 14 | 30;
+/**
+ * The overview accepts the same window as every other report: Nd, 1..90.
+ * It used to be a 7/14/30 union with a silent clamp to 14 for anything
+ * else, so `range=90d` quietly answered a different question (F-04).
+ */
+export type OverviewRangeDays = number;
 
 const INTENT_LABELS: Record<string, string> = {
   pricing: "Pricing Evaluation",
@@ -31,14 +51,15 @@ const MAX_MESSAGES = 20_000;
 
 interface ConvoRow {
   id: string;
-  created_at: string;
+  /** Timestamp columns come back as Date objects from the driver. */
+  created_at: Date;
 }
 interface MsgRow {
   conversation_id: string;
   role: string;
   content: string;
   evidence: unknown;
-  created_at: string;
+  created_at: Date;
 }
 
 function dayKey(d: Date): string {
@@ -95,12 +116,13 @@ export async function getCompanyOverview(
   const startISO = start.toISOString();
   const prevISO = prevStart.toISOString();
 
-  const convos = (await client.unsafe(
-    `SELECT id, created_at FROM conversations WHERE company_id = $1 AND created_at >= $2 ORDER BY created_at ASC;`,
-    [companyId, prevISO]
-  )) as ConvoRow[];
-  const cur = convos.filter((c) => c.created_at >= startISO);
-  const prev = convos.filter((c) => c.created_at < startISO);
+  const convos = (await db
+    .select({ id: conversations.id, created_at: conversations.createdAt })
+    .from(conversations)
+    .where(and(eq(conversations.companyId, companyId), gte(conversations.createdAt, prevStart)))
+    .orderBy(asc(conversations.createdAt))) as ConvoRow[];
+  const cur = convos.filter((c) => c.created_at >= start);
+  const prev = convos.filter((c) => c.created_at < start);
   const curIds = new Set(cur.map((c) => c.id));
 
   let messages: MsgRow[] = [];
@@ -109,11 +131,17 @@ export async function getCompanyOverview(
     // Chunked to stay under parameter limits on heavy tenants.
     for (let i = 0; i < ids.length; i += 500) {
       const slice = ids.slice(i, i + 500);
-      const placeholders = slice.map((_, k) => `$${k + 1}`).join(",");
-      const rows = (await client.unsafe(
-        `SELECT conversation_id, role, content, evidence, created_at FROM messages WHERE conversation_id IN (${placeholders}) ORDER BY created_at ASC;`,
-        slice
-      )) as MsgRow[];
+      const rows = (await db
+        .select({
+          conversation_id: messagesTable.conversationId,
+          role: messagesTable.role,
+          content: messagesTable.content,
+          evidence: messagesTable.evidence,
+          created_at: messagesTable.createdAt,
+        })
+        .from(messagesTable)
+        .where(inArray(messagesTable.conversationId, slice))
+        .orderBy(asc(messagesTable.createdAt))) as MsgRow[];
       messages = messages.concat(rows);
       if (messages.length >= MAX_MESSAGES) {
         messages = messages.slice(-MAX_MESSAGES);
@@ -157,24 +185,51 @@ export async function getCompanyOverview(
     userCounts.set(cid, users);
   }
 
+  // The first user message of every conversation, in one pass.
+  //
+  // The previous window used to be walked with `messages.find(...)` per
+  // conversation — an O(conversations × messages) scan, up to ~400M
+  // comparisons at the 20k message cap (F-12). One map, one pass.
+  const firstUserMessage = new Map<string, MsgRow>();
+  for (const m of messages) {
+    if (m.role === "user" && !firstUserMessage.has(m.conversation_id)) {
+      firstUserMessage.set(m.conversation_id, m);
+    }
+  }
+
   // Intent per conversation from its first user message.
   const convoIntent = new Map<string, string>();
   for (const [cid, text] of firstUserText) convoIntent.set(cid, intentOf(text));
   const prevIntents = new Map<string, number>();
   for (const c of prev) {
-    const first = messages.find((m) => m.conversation_id === c.id && m.role === "user");
+    const first = firstUserMessage.get(c.id);
     const label = first ? intentOf(first.content) : "General";
     prevIntents.set(label, (prevIntents.get(label) ?? 0) + 1);
   }
 
   // Metrics rollups, current + prior windows.
-  const mRows = (await client.unsafe(
-    `SELECT day::text AS day, SUM(pageviews)::int AS pv, SUM(sessions)::int AS se,
-      SUM(conversions)::int AS cv, SUM(revenue)::float AS rev,
-      SUM(chat_opens)::int AS co, SUM(messages)::int AS me
-      FROM metrics_daily WHERE company_id = $1 AND day >= ($2::date - $3::int) GROUP BY day;`,
-    [companyId, startISO.slice(0, 10), rangeDays]
-  )) as Array<{ day: string; pv: number; se: number; cv: number; rev: number; co: number; me: number }>;
+  const mRows = (await db
+    .select({
+      day: sql<string>`${metricsDaily.day}::text`.as("day"),
+      pv: sql<number>`COALESCE(SUM(${metricsDaily.pageviews}), 0)::int`.as("pv"),
+      se: sql<number>`COALESCE(SUM(${metricsDaily.sessions}), 0)::int`.as("se"),
+      cv: sql<number>`COALESCE(SUM(${metricsDaily.conversions}), 0)::int`.as("cv"),
+      rev: sql<number>`COALESCE(SUM(${metricsDaily.revenue}), 0)::float`.as("rev"),
+      co: sql<number>`COALESCE(SUM(${metricsDaily.chatOpens}), 0)::int`.as("co"),
+      me: sql<number>`COALESCE(SUM(${metricsDaily.messages}), 0)::int`.as("me"),
+    })
+    .from(metricsDaily)
+    .where(and(eq(metricsDaily.companyId, companyId), gte(metricsDaily.day, prevISO.slice(0, 10))))
+    .groupBy(metricsDaily.day)
+    .orderBy(metricsDaily.day)) as Array<{
+    day: string;
+    pv: number;
+    se: number;
+    cv: number;
+    rev: number;
+    co: number;
+    me: number;
+  }>;
   const mByDay = new Map(mRows.map((r) => [r.day.slice(0, 10), r]));
   const trackedSessions = mRows
     .filter((r) => r.day.slice(0, 10) >= startISO.slice(0, 10))
@@ -188,14 +243,14 @@ export async function getCompanyOverview(
   }
   const convosByDay = new Map<string, number>();
   for (const c of cur) {
-    const d = c.created_at.slice(0, 10);
+    const d = dayKey(c.created_at);
     convosByDay.set(d, (convosByDay.get(d) ?? 0) + 1);
   }
   const dailyConvos = days.map((d) => convosByDay.get(d) ?? 0);
   const dailyMatched: number[] = days.map((d) => {
     let n = 0;
     for (const c of cur) {
-      if (c.created_at.slice(0, 10) !== d) continue;
+      if (dayKey(c.created_at) !== d) continue;
       const label = convoIntent.get(c.id) ?? "General";
       if (label !== "General") n++;
     }
@@ -283,22 +338,27 @@ export async function getCompanyOverview(
   const conversions = mRows
     .filter((r) => r.day.slice(0, 10) >= startISO.slice(0, 10))
     .reduce((a, r) => a + (r.cv ?? 0), 0);
-  const engaged = [...userCounts.values()].filter((n) => n >= 2).length;
-  const fCounts = [trackedSessions, chatOpens, cur.length, engaged, conversions];
-  // NOTE: mock shape has 6 stages; "Meaningful engagement" sits before conversion.
+  // "Meaningful conversation" is a conversation with 2+ user messages —
+  // not an engaged session. The two used to share the word "engaged".
+  const meaningfulConversations = [...userCounts.values()].filter((n) => n >= 2).length;
+  const fCounts = [trackedSessions, chatOpens, cur.length, meaningfulConversations, conversions];
+  // NOTE: mock shape has 6 stages; "Meaningful conversation" sits before conversion.
   const stages = [
     "Eligible sessions",
     "Widget opened",
     "Conversation started",
-    "Meaningful engagement",
+    "Meaningful conversation",
     "Recorded conversion",
   ];
   const counts5 = [fCounts[0], fCounts[1], fCounts[2], fCounts[3], fCounts[4]];
   const funnel = stages.map((stage, i) => ({
     stage,
     count: counts5[i] ?? 0,
+    // Share of everyone who entered the funnel.
     pctOfTop: counts5[0]! > 0 ? r1(((counts5[i] ?? 0) / counts5[0]!) * 100) : 0,
-    stageConversion:
+    // Share of everyone who reached the previous step. Named for what it
+    // measures, so it stops reading as a duplicate of pctOfTop (R-12).
+    stepConversion:
       i === 0
         ? null
         : counts5[i - 1]! > 0
@@ -309,9 +369,9 @@ export async function getCompanyOverview(
   if (funnel[0]!.count > 0) {
     let idx = 1;
     for (let i = 2; i < funnel.length; i++) {
-      if ((funnel[i]?.stageConversion ?? 100) < (funnel[idx]?.stageConversion ?? 100)) idx = i;
+      if ((funnel[i]?.stepConversion ?? 100) < (funnel[idx]?.stepConversion ?? 100)) idx = i;
     }
-    funnelDropout = `${funnel[idx - 1]?.stage} → ${funnel[idx]?.stage} (${funnel[idx]?.stageConversion}%)`;
+    funnelDropout = `${funnel[idx - 1]?.stage} → ${funnel[idx]?.stage} (${funnel[idx]?.stepConversion}%)`;
   }
 
   // Trust.
@@ -322,15 +382,28 @@ export async function getCompanyOverview(
   const sortedLat = [...latencies].sort((a, b) => a - b);
 
   // Health.
-  const snaps = (await client.unsafe(
-    `SELECT version, status, created_at FROM company_snapshots WHERE company_id = $1 ORDER BY version DESC LIMIT 1;`,
-    [companyId]
-  )) as Array<{ version: number; status: string; created_at: string }>;
+  const snaps = (await db
+    .select({
+      version: companySnapshots.version,
+      status: companySnapshots.status,
+      created_at: companySnapshots.createdAt,
+    })
+    .from(companySnapshots)
+    .where(eq(companySnapshots.companyId, companyId))
+    .orderBy(desc(companySnapshots.version))
+    .limit(1)) as Array<{ version: number; status: string; created_at: Date }>;
   const snap = snaps[0];
-  const [live] = (await client.unsafe(
-    `SELECT 1 AS ok FROM page_views WHERE company_id = $1 AND created_at >= now() - interval '24 hours' LIMIT 1;`,
-    [companyId]
-  )) as Array<{ ok: number }>;
+  const [live] = (await db
+    .select({ ok: sql<number>`1`.as("ok") })
+    .from(pageViews)
+    .where(
+      and(
+        eq(pageViews.companyId, companyId),
+        eq(pageViews.isBot, false),
+        gte(pageViews.createdAt, sql`now() - interval '24 hours'`)
+      )
+    )
+    .limit(1)) as Array<{ ok: number }>;
 
   const blindDelta = `${blindRate > prevBlindRate ? "+" : blindRate < prevBlindRate ? "-" : ""}${r1(Math.abs(blindRate - prevBlindRate))}pp WoW`;
 
@@ -339,6 +412,7 @@ export async function getCompanyOverview(
     companyName,
     isMock: false,
     dataQuality,
+    freshness: await reportFreshness(false, dataQuality),
     hero: {
       assistedRate,
       baselineRate,
@@ -378,7 +452,7 @@ export async function getCompanyOverview(
         delta: pctChange(depth, prevDepth),
         deltaGood: depth >= prevDepth,
         spark: days.map((d) => {
-          const dayConvos = cur.filter((c) => c.created_at.slice(0, 10) === d);
+          const dayConvos = cur.filter((c) => dayKey(c.created_at) === d);
           if (dayConvos.length === 0) return 0;
           const u = dayConvos.reduce((a, c) => a + (userCounts.get(c.id) ?? 0), 0);
           return r1(u / dayConvos.length);
@@ -400,7 +474,8 @@ export async function getCompanyOverview(
       fallbackRate,
       latencyP50: Math.round(quantile(sortedLat, 0.5)),
       latencyP95: Math.round(quantile(sortedLat, 0.95)),
-      citationCtr: 0,
+      // No citationCtr: it read 0 by construction, not by measurement, so it
+      // was a number that looked like a measurement (R-11).
     },
     health: {
       snapshotVersion: snap ? `v${snap.version}` : "—",

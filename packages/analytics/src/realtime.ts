@@ -5,9 +5,12 @@
  * (company_id, created_at) partition index — bounded and cheap, no extra
  * write-path state required. Thundering-herd protection comes from the
  * 15s endpoint cache, not from this query.
+ *
+ * ORM-first: Drizzle builder. The window lower bound stays database-side
+ * (`now() - interval`) so the clock is the database's, not the API's.
  */
 
-import { client } from "@ag-ui/database";
+import { db, pageViews, sql, eq, and, gte, desc, count, countDistinct } from "@ag-ui/database";
 
 export async function getRealtimeSnapshot(companyId: string): Promise<{
   companyId: string;
@@ -16,18 +19,35 @@ export async function getRealtimeSnapshot(companyId: string): Promise<{
   sessions: number;
   topPaths: Array<{ path: string; views: number }>;
 }> {
-  const [agg] = (await client.unsafe(
-    `SELECT COUNT(*)::int AS views, COUNT(DISTINCT session_hash)::int AS sessions
-     FROM page_views WHERE company_id = $1 AND created_at >= now() - interval '30 minutes';`,
-    [companyId]
-  )) as Array<{ views: number; sessions: number }>;
-  const paths = (await client.unsafe(
-    `SELECT path, COUNT(*)::int AS views FROM page_views
-     WHERE company_id = $1 AND type = 'pageview' AND is_bot = false
-     AND created_at >= now() - interval '30 minutes'
-     GROUP BY path ORDER BY views DESC LIMIT 5;`,
-    [companyId]
-  )) as Array<{ path: string; views: number }>;
+  const [agg] = await db
+    .select({
+      views: count(),
+      sessions: countDistinct(pageViews.sessionHash),
+    })
+    .from(pageViews)
+    .where(
+      and(
+        eq(pageViews.companyId, companyId),
+        gte(pageViews.createdAt, sql`now() - interval '30 minutes'`)
+      )
+    );
+  const paths = await db
+    .select({
+      path: pageViews.path,
+      views: sql<number>`COUNT(*)::int`.as("views"),
+    })
+    .from(pageViews)
+    .where(
+      and(
+        eq(pageViews.companyId, companyId),
+        eq(pageViews.type, "pageview"),
+        eq(pageViews.isBot, false),
+        gte(pageViews.createdAt, sql`now() - interval '30 minutes'`)
+      )
+    )
+    .groupBy(pageViews.path)
+    .orderBy(desc(sql`COUNT(*)`))
+    .limit(5);
   return {
     companyId,
     windowMinutes: 30,

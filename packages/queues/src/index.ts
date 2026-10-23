@@ -41,7 +41,15 @@ export interface AnalyticsTrackJobData {
   /** Single validated track event; the worker buffers + batch-inserts. */
   event: {
     event_id: string;
-    type: "pageview" | "chat_open" | "chat_message" | "conversion";
+    type:
+      | "pageview"
+      | "chat_open"
+      | "chat_message"
+      | "conversion"
+      | "scroll"
+      | "download"
+      | "click"
+      | "heartbeat";
     company_id: string;
     widget_key_id: string | null;
     url: string;
@@ -49,6 +57,11 @@ export interface AnalyticsTrackJobData {
     referrer: string;
     viewport: string;
     user_agent: string;
+    /** The visitor profile, derived at the collector. Null when unknown. */
+    browser: string | null;
+    os: string | null;
+    /** Minutes east of UTC, from the visitor's reported timezone. */
+    tz_offset: number | null;
     session_hash: string;
     visitor_hash: string;
     value: number | null;

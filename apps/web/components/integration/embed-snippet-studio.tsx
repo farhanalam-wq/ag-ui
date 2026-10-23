@@ -61,12 +61,12 @@ export function EmbedSnippetStudio({ companyId, companyName, brandColor }: Embed
   // API base is fixed from env (NEXT_PUBLIC_API_URL), not user-editable.
   const [apiBase] = useState<string>(() => defaultApiBase());
   const [position, setPosition] = useState<"bottom-right" | "bottom-left">("bottom-right");
+  const [track, setTrack] = useState(true);
   const [framework, setFramework] = useState<FrameworkId>("html");
   const [copied, setCopied] = useState(false);
   const [lastHandshake, setLastHandshake] = useState<number | null>(null);
   const [checkError, setCheckError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
-  const [previewLoaded, setPreviewLoaded] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [rotateOpen, setRotateOpen] = useState(false);
   const rotateToastArmed = useRef(false);
@@ -76,7 +76,9 @@ export function EmbedSnippetStudio({ companyId, companyName, brandColor }: Embed
   const webOrigin = mounted && typeof window !== "undefined" ? window.location.origin : "";
   const raw = phase.kind === "ready" ? phase.raw : null;
 
-  const snippet = raw ? buildSnippet({ webOrigin, raw, apiBase, companyName, position }) : null;
+  const snippet = raw
+    ? buildSnippet({ webOrigin, raw, apiBase, companyName, position, track })
+    : null;
 
   const verify = useCallback(async () => {
     if (!raw || checking) return;
@@ -95,7 +97,6 @@ export function EmbedSnippetStudio({ companyId, companyName, brandColor }: Embed
 
   useEffect(() => {
     if (!raw) return;
-    setPreviewLoaded(false);
     setCheckError(null);
     void verify();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -239,7 +240,7 @@ export function EmbedSnippetStudio({ companyId, companyName, brandColor }: Embed
         </Card>
       </div>
 
-      {/* Right: snippet + ping + preview */}
+      {/* Right: snippet + verify */}
       <div className="min-w-0 space-y-4 lg:col-span-7 lg:sticky lg:top-20 lg:self-start">
         <Card className="min-w-0 overflow-hidden">
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0 border-b border-border px-3 py-2">
@@ -268,6 +269,15 @@ export function EmbedSnippetStudio({ companyId, companyName, brandColor }: Embed
                 {snippet ?? "Snippet unavailable - issue a key first."}
               </pre>
             )}
+            <label className="flex cursor-pointer items-center gap-2 border-t border-border px-3 py-2.5 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={track}
+                onChange={(e) => setTrack(e.target.checked)}
+                className="size-3.5 accent-primary"
+              />
+              Track visits and assistant events (cookieless)
+            </label>
           </CardContent>
         </Card>
 
@@ -319,37 +329,6 @@ export function EmbedSnippetStudio({ companyId, companyName, brandColor }: Embed
             Strict CSP sites may need <code>frame-src {webOrigin || "..."}</code>
           </p>
         </div>
-
-        <Card className="min-w-0 overflow-hidden">
-          <CardHeader className="space-y-2 border-b border-border px-3 py-2">
-            <span className="font-mono text-[11px] text-muted-foreground">
-              Preview
-            </span>
-            <p className="text-[11px] text-muted-foreground">
-              {previewLoaded
-                ? "Live frame loaded. This shows the real route, not a handshake."
-                : "Live frame for the real route. Loading it is not a handshake, use Verify above."}
-            </p>
-          </CardHeader>
-          <CardContent className="bg-muted/40 p-3">
-            {raw ? (
-              <div className="flex justify-center">
-                <iframe
-                  title={`${companyName} chatbot preview`}
-                  src={`${webOrigin}/embed/${encodeURIComponent(raw)}?api=${encodeURIComponent(apiBase.trim())}`}
-                  width={360}
-                  height={520}
-                  onLoad={() => setPreviewLoaded(true)}
-                  className="h-[520px] w-full max-w-[360px] rounded-lg border border-border bg-background"
-                />
-              </div>
-            ) : (
-              <p className="font-mono text-[11px] text-muted-foreground">
-                Issue a key first, then the live frame appears here.
-              </p>
-            )}
-          </CardContent>
-        </Card>
       </div>
       <AlertDialog
         open={rotateOpen}

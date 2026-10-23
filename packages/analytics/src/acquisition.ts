@@ -11,16 +11,17 @@
  * and uniques report null honestly.
  */
 
-import { db, pageViews, metricsDaily, sql, eq, and, or, desc, gte, lt } from "@ag-ui/database";
+import { db, metricsDaily, sql, eq, and, or, gte, lt, desc, count } from "@ag-ui/database";
 import type { CacheRedis } from "./cache";
 import { dailyUniquesKey } from "./identity";
 import {
-  freshnessStub,
+  reportFreshness,
   type AcquisitionReport,
   type BreakdownRow,
   type Channel,
 } from "./registry";
-import { attrCTEs } from "./attribution";
+import { visitAttrCTEs } from "./attribution";
+import { sessionIslands } from "./sessions";
 
 async function mergeUniques(redis: CacheRedis | null, companyId: string, days: string[]): Promise<number | null> {
   if (!redis || days.length === 0) return null;
@@ -41,23 +42,49 @@ async function breakdown(
   from: Date,
   to: Date,
   channels: Channel[],
-  label: (a2: ReturnType<typeof attrCTEs>["a2"]) => ReturnType<typeof sql<string>>
+  label: (a2: ReturnType<typeof visitAttrCTEs>["v2"]) => ReturnType<typeof sql<string>>
 ): Promise<BreakdownRow[]> {
-  const { a1, a2 } = attrCTEs(companyId, from, to);
-  const pvCount = sql<number>`COUNT(*) FILTER (WHERE ${a2.type} = 'pageview')::int`;
-  const sessCount = sql<number>`COUNT(DISTINCT ${a2.sessionHash})::int`;
-  const labelFrag = label(a2);
+  const { v1, v2 } = visitAttrCTEs(companyId, from, to);
+  const pvCount = sql<number>`COUNT(*) FILTER (WHERE ${v2.type} = 'pageview')::int`;
+  const sessCount = sql<number>`COUNT(DISTINCT ${v2.visitKey}) FILTER (WHERE ${v2.type} = 'pageview')::int`;
+  const labelFrag = label(v2);
   const rows = await db
-    .with(a1, a2)
+    .with(v1, v2)
     .select({ label: sql<string>`${labelFrag}`.as("label"), pageviews: pvCount.as("pageviews"), sessions: sessCount.as("sessions") })
-    .from(a2)
-    .where(channels.length > 0 ? or(...channels.map((c) => eq(a2.channel, c))) : undefined)
+    .from(v2)
+    .where(channels.length > 0 ? or(...channels.map((c) => eq(v2.channel, c))) : undefined)
     .groupBy(sql`${labelFrag}`)
-    .orderBy(desc(sql`COUNT(*) FILTER (WHERE ${a2.type} = 'pageview')`))
+    .orderBy(desc(sql`COUNT(*) FILTER (WHERE ${v2.type} = 'pageview')`))
     .limit(10);
   return rows
     .filter((r) => (r.label ?? "").length > 0)
     .map((r) => ({ label: r.label, pageviews: Number(r.pageviews ?? 0), sessions: Number(r.sessions ?? 0) }));
+}
+
+/**
+ * Totals for a channel filter, in the same unit as the unfiltered totals.
+ *
+ * The rollup cannot split by channel, so a filtered total has to come from
+ * the scan. It counts visits that touched any selected channel exactly once
+ * — not the sum of the per-channel rows, which would count a visit that
+ * spans two channels twice (F-13).
+ */
+async function filteredTotals(
+  companyId: string,
+  from: Date,
+  to: Date,
+  channels: Channel[]
+): Promise<{ sessions: number; pageviews: number }> {
+  const { v1, v2 } = visitAttrCTEs(companyId, from, to);
+  const rows = await db
+    .with(v1, v2)
+    .select({
+      sessions: sql<number>`COUNT(DISTINCT ${v2.visitKey}) FILTER (WHERE ${v2.type} = 'pageview')::int`.as("sessions"),
+      pageviews: sql<number>`COUNT(*) FILTER (WHERE ${v2.type} = 'pageview')::int`.as("pageviews"),
+    })
+    .from(v2)
+    .where(or(...channels.map((c) => eq(v2.channel, c))));
+  return { sessions: Number(rows[0]?.sessions ?? 0), pageviews: Number(rows[0]?.pageviews ?? 0) };
 }
 
 export async function getAcquisitionReport(
@@ -89,7 +116,7 @@ export async function getAcquisitionReport(
       se: metricsDaily.sessions,
     })
     .from(metricsDaily)
-    .where(and(eq(metricsDaily.companyId, companyId), sql`${metricsDaily.day} >= ${fromDay}::date`))
+    .where(and(eq(metricsDaily.companyId, companyId), gte(metricsDaily.day, fromDay)))
     .orderBy(metricsDaily.day);
   const byDay = new Map(tRows.map((r) => [r.day.slice(0, 10), r]));
   const days = dayList(new Date(nowMs + 86_400_000).toISOString().slice(0, 10), rangeDays);
@@ -111,8 +138,8 @@ export async function getAcquisitionReport(
       .where(
         and(
           eq(metricsDaily.companyId, companyId),
-          sql`${metricsDaily.day} >= ${prevFrom.toISOString().slice(0, 10)}::date`,
-          sql`${metricsDaily.day} < ${fromDay}::date`
+          gte(metricsDaily.day, prevFrom.toISOString().slice(0, 10)),
+          lt(metricsDaily.day, fromDay)
         )
       );
     previousTotals = { sessions: Number(pr[0]?.se ?? 0), pageviews: Number(pr[0]?.pv ?? 0) };
@@ -124,33 +151,26 @@ export async function getAcquisitionReport(
   const bySourceMedium = await breakdown(companyId, from, to, channels, (a2) => sql<string>`${a2.source} || ' / ' || ${a2.medium}`);
   const byCampaign = await breakdown(companyId, from, to, channels, (a2) => sql<string>`${a2.campaign}`);
 
-  // Landing pages: entry path per session via ordered array_agg (builder + one aggregate fragment).
-  const entry = db
+  // Landing pages: entry path per visit via ordered array_agg (builder + one aggregate fragment).
+  const isl = sessionIslands(companyId, from, to);
+  const perVisit = db
     .select({
-      sh: pageViews.sessionHash,
-      entryPath: sql<string>`(array_agg(${pageViews.path} ORDER BY ${pageViews.createdAt}))[1]`.as("entry_path"),
+      vk: isl.visitKey,
+      pv: sql<number>`COUNT(*) FILTER (WHERE ${isl.type} = 'pageview')::int`.as("pv"),
+      entryPath: sql<string>`(array_agg(${isl.path} ORDER BY ${isl.createdAt}) FILTER (WHERE ${isl.type} = 'pageview'))[1]`.as("entry_path"),
     })
-    .from(pageViews)
-    .where(
-      and(
-        eq(pageViews.companyId, companyId),
-        gte(pageViews.createdAt, from),
-        lt(pageViews.createdAt, to),
-        eq(pageViews.type, "pageview"),
-        eq(pageViews.isBot, false)
-      )
-    )
-    .groupBy(pageViews.sessionHash)
+    .from(isl)
+    .groupBy(isl.visitKey)
     .as("entry");
   const landing = await db
     .select({
-      label: entry.entryPath,
+      label: perVisit.entryPath,
       sessions: sql<number>`COUNT(*)::int`.as("sessions"),
-      pageviews: sql<number>`COUNT(*)::int`.as("pageviews"),
+      pageviews: sql<number>`COALESCE(SUM(${perVisit.pv}), 0)::int`.as("pageviews"),
     })
-    .from(entry)
-    .groupBy(entry.entryPath)
-    .orderBy(desc(sql`COUNT(*)`))
+    .from(perVisit)
+    .groupBy(perVisit.entryPath)
+    .orderBy(desc(count()))
     .limit(10);
   const byLandingPage: BreakdownRow[] = landing
     .filter((r) => (r.label ?? "").length > 0)
@@ -160,10 +180,8 @@ export async function getAcquisitionReport(
   let outTotals: Record<string, number> = { ...totals };
   let outUniques: number | null = uniques;
   if (channels.length > 0) {
-    outTotals = {
-      sessions: byChannel.reduce((a, r) => a + Number(r.sessions), 0),
-      pageviews: byChannel.reduce((a, r) => a + Number(r.pageviews), 0),
-    };
+    const filtered = await filteredTotals(companyId, from, to, channels);
+    outTotals = { sessions: filtered.sessions, pageviews: filtered.pageviews };
     outUniques = null;
     dataQuality.push("uniques-unavailable-filtered");
   }
@@ -176,10 +194,12 @@ export async function getAcquisitionReport(
     totals: { ...outTotals, ...(outUniques !== null ? { uniques: outUniques } : {}) },
     ...(previousTotals ? { previousTotals } : {}),
     trend,
-    byChannel,
-    bySourceMedium,
-    byCampaign,
-    byLandingPage,
-    freshness: freshnessStub(false, dataQuality),
+    breakdowns: {
+      channel: byChannel,
+      sourceMedium: bySourceMedium,
+      campaign: byCampaign,
+      landingPage: byLandingPage,
+    },
+    freshness: await reportFreshness(false, dataQuality),
   };
 }

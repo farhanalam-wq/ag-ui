@@ -17,7 +17,7 @@
  * Generates docs/parity-check.md with full results and verdict.
  */
 
-import { client } from "../packages/database/src/index";
+import { client, db, companies, companySnapshots, eq, desc } from "../packages/database/src/index";
 import { queryChunkPoints } from "../packages/database/src/qdrant";
 import { generateEmbeddings } from "../packages/shared/src/embeddings";
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
@@ -76,19 +76,24 @@ async function main() {
   console.log("=================================================");
 
   // 1. Locate Resend company & snapshot
-  const [resend] = await client.unsafe(
-    `SELECT s.id as snapshot_id, s.company_id, c.name, c.domain 
-     FROM company_snapshots s 
-     JOIN companies c ON s.company_id = c.id 
-     WHERE c.domain = 'resend.com' 
-     ORDER BY s.version DESC LIMIT 1`
-  );
+  const [resend] = await db
+    .select({
+      snapshotId: companySnapshots.id,
+      companyId: companySnapshots.companyId,
+      name: companies.name,
+      domain: companies.domain,
+    })
+    .from(companySnapshots)
+    .innerJoin(companies, eq(companySnapshots.companyId, companies.id))
+    .where(eq(companies.domain, "resend.com"))
+    .orderBy(desc(companySnapshots.version))
+    .limit(1);
 
   if (!resend) {
     throw new Error("Resend snapshot not found in database. Run ingest-cli.ts for resend.com first.");
   }
 
-  const { snapshot_id: snapshotId, company_id: companyId } = resend;
+  const { snapshotId, companyId } = resend;
   console.log(`[PARITY] Target Company: ${resend.name} (${companyId})`);
   console.log(`[PARITY] Target Snapshot: ${snapshotId}\n`);
 

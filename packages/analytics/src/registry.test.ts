@@ -1,6 +1,10 @@
 /**
- * Phase 1 unit tests (TEMP-or-permanent? permanent): registry validation,
- * channel taxonomy, Organic Search exclusion vs Organic Social.
+ * The registry's behaviour: query validation, channel taxonomy, Organic
+ * Search exclusion vs Organic Social.
+ *
+ * The metric contract's own invariants (every metric has a story, every
+ * source resolves, every surface owns its metrics) live in
+ * `catalogue.test.ts`.
  * Run: bun test packages/analytics/src/registry.test.ts
  */
 import { describe, expect, test } from "bun:test";
@@ -9,9 +13,9 @@ import {
   classifyDevice,
   parseUtm,
   validateReportQuery,
-  METRICS,
   MAX_RANGE_DAYS,
 } from "./registry";
+import { METRICS } from "./catalogue";
 
 describe("channel taxonomy (free, first-party)", () => {
   test("direct: no referrer, no utm", () => {
@@ -124,10 +128,9 @@ describe("query validator", () => {
     if (!r.ok) expect(r.errors[0]!.code).toBe("incompatible-dimensions");
   });
 
-  test("every metric has a definition and formatting", () => {
-    for (const m of Object.values(METRICS)) {
-      expect(m.definition.length).toBeGreaterThan(0);
-      expect(["int", "float1", "percent1", "money1"]).toContain(m.format);
-    }
+  test("the metric catalogue is reachable through the registry's public surface", () => {
+    // The catalogue's own invariants (every metric has a story, every
+    // source resolves) live in catalogue.test.ts.
+    expect(Object.keys(METRICS).length).toBeGreaterThan(0);
   });
 });

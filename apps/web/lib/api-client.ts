@@ -7,6 +7,28 @@ export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 import type { WidgetThemeOverride } from "@ag-ui/shared/client";
+import type { Range } from "@/lib/analytics";
+
+/**
+ * One typed error for analytics reads.
+ *
+ * The API answers 422 for a bad range, 404 for a company this session does
+ * not own, 429 for the read budget and 500 for an upstream failure — all with
+ * `{ error }`. The UI needs the status (retry, or fix the input) and, for
+ * 429, the wait. A bare `Error` string cannot carry either.
+ */
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: "not-found" | "invalid" | "rate-limited" | "upstream",
+    message: string,
+    readonly details?: unknown,
+    readonly retryAfterSec?: number
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
 
 export interface CompanySummary {
   id: string;
@@ -39,15 +61,119 @@ export interface DiscoveredPageItem {
   depth: number;
 }
 
+/**
+ * The freshness envelope every analytics response carries.
+ *
+ * `dataQuality` is the machine-readable caveat codes; `notes` is the same
+ * caveats in plain language, resolved server-side from the catalogue so
+ * every surface says the same thing (F-07).
+ */
+export interface Freshness {
+  computedAt: string;
+  rollupLagMinutes: number;
+  live: boolean;
+  dataQuality: string[];
+  notes: string[];
+}
+
+export interface WebsiteBreakdownRow {
+  label: string;
+  pageviews: number;
+}
+
 export interface WebsiteAnalytics {
+  kind: "website";
   companyId: string;
   rangeDays: number;
-  totals: { sessions: number; pageviews: number; uniques: number | null; conversions: number };
-  trend: { d: string; pageviews: number; sessions: number }[];
-  topPages: { label: string; views: number }[];
-  referrers: { label: string; views: number }[];
-  viewports: { label: string; views: number }[];
-  dataQuality: string[];
+  /** `uniques` is absent when the HLL merge failed — never a fake zero. */
+  totals: Record<string, number>;
+  trend: { d: string; sessions: number; pageviews: number; engagedSessions: number }[];
+  breakdowns: {
+    path: WebsiteBreakdownRow[];
+    referrer: WebsiteBreakdownRow[];
+    viewport: WebsiteBreakdownRow[];
+  };
+  /** Unusual days in the window; empty when the baseline is too thin. */
+  anomalies: Anomaly[];
+  anomalyThresholds: { minDaily: number; z: number };
+  freshness: Freshness;
+}
+
+export interface Anomaly {
+  metric: "pageviews" | "sessions";
+  day: string;
+  observed: number;
+  expected: number;
+  z: number;
+  direction: "spike" | "dip";
+  baselineWindow: string;
+  /** Correlated channel mix for that day — context, not cause. */
+  context: Array<{ label: string; pageviews: number; sessions: number }>;
+  note: string;
+}
+
+export interface AudienceAnalytics {
+  kind: "audience";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  breakdowns: {
+    device: BreakdownRow[];
+    browser: BreakdownRow[];
+    os: BreakdownRow[];
+    hour: BreakdownRow[];
+  };
+  /** Share of visits that reported a timezone (0-100). */
+  timezoneCoverage: number;
+  freshness: Freshness;
+}
+
+/** An agent breakdown row, keyed by whatever the report measured. */
+export interface AgentBreakdownRow {
+  label: string;
+  [metric: string]: string | number;
+}
+
+export interface AgentOverviewAnalytics {
+  kind: "agent-overview";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  trend: { d: string; chatOpens: number; chatQuestions: number }[];
+  freshness: Freshness;
+}
+
+export interface AgentQuestionsAnalytics {
+  kind: "agent-questions";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  breakdowns: { path: AgentBreakdownRow[] };
+  freshness: Freshness;
+}
+
+export interface AgentQualityAnalytics {
+  kind: "agent-quality";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  trend: {
+    d: string;
+    answers: number;
+    groundedAnswers: number;
+    groundedAnswerRate: number;
+  }[];
+  breakdowns: { path: AgentBreakdownRow[] };
+  freshness: Freshness;
+}
+
+export interface VoiceAnalytics {
+  kind: "voice";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  trend: { d: string; voiceCalls: number; voiceTurns: number; voiceAvgDurationSec: number }[];
+  freshness: Freshness;
 }
 
 export interface ConversionAnalytics {
@@ -63,7 +189,7 @@ export interface ConversionAnalytics {
   };
   daily: { d: string; conversions: number; revenue: number }[];
   funnel: { stage: string; count: number; pctOfTop: number }[];
-  dataQuality: string[];
+  freshness: Freshness;
 }
 
 export interface RealtimeSnapshot {
@@ -88,73 +214,30 @@ export interface AcquisitionAnalytics {
   totals: Record<string, number>;
   previousTotals?: Record<string, number>;
   trend: { d: string; pageviews: number; sessions: number }[];
-  byChannel: BreakdownRow[];
-  bySourceMedium: BreakdownRow[];
-  byCampaign: BreakdownRow[];
-  byLandingPage: BreakdownRow[];
-  freshness: { computedAt: string; rollupLagMinutes: number; live: boolean; dataQuality: string[] };
+  breakdowns: {
+    channel: BreakdownRow[];
+    sourceMedium: BreakdownRow[];
+    campaign: BreakdownRow[];
+    landingPage: BreakdownRow[];
+  };
+  freshness: Freshness;
 }
 
-export interface EngagementAnalytics {
-  kind: "engagement";
-  companyId: string;
-  rangeDays: number;
-  totals: Record<string, number>;
-  trend: { d: string; sessions: number; pageviews: number; engagedSessions: number }[];
-  byPath: BreakdownRow[];
-  byDevice: BreakdownRow[];
-  freshness: { computedAt: string; rollupLagMinutes: number; live: boolean; dataQuality: string[] };
-}
 
 export interface ContentAnalytics {
   kind: "content";
   companyId: string;
   rangeDays: number;
   totals: Record<string, number>;
-  byPath: BreakdownRow[];
-  byTitle: BreakdownRow[];
-  byChannel: BreakdownRow[];
-  byDevice: BreakdownRow[];
-  freshness: { computedAt: string; rollupLagMinutes: number; live: boolean; dataQuality: string[] };
+  breakdowns: {
+    path: BreakdownRow[];
+    title: BreakdownRow[];
+    channel: BreakdownRow[];
+    device: BreakdownRow[];
+  };
+  freshness: Freshness;
 }
 
-export interface InsightsPayload {
-  kind: "insights";
-  companyId: string;
-  rangeDays: number;
-  qualityMatrix: {
-    channel: string;
-    sessions: number;
-    pageviews: number;
-    pagesPerSession: number;
-    interactionRate: number;
-    singleViewShare: number;
-    qualityScore: number;
-    confidence: "high" | "low";
-  }[];
-  opportunityMap: {
-    path: string;
-    sessions: number;
-    singleViewShare: number;
-    engagedRate: number;
-    opportunity: string;
-    reason: string;
-  }[];
-  journeys: { from: string; to: string; journeys: number; shareOfEntry: number }[];
-  anomalies: {
-    metric: string;
-    day: string;
-    observed: number;
-    expected: number;
-    z: number;
-    direction: "spike" | "dip";
-    baselineWindow: string;
-    context: { label: string; pageviews: number; sessions: number }[];
-    note: string;
-  }[];
-  thresholds: Record<string, number>;
-  freshness: { computedAt: string; rollupLagMinutes: number; live: boolean; dataQuality: string[] };
-}
 
 export interface DiscoveryResponse {  success: boolean;
   domain: string;
@@ -269,6 +352,8 @@ export interface CompanyDetailResponse {
 export interface ChatStreamPayload {
   message: string;
   conversationId?: string;
+  /** Host page path (embed only), so the conversation knows where it started. */
+  path?: string;
 }
 
 export interface ChatStreamEvent {
@@ -517,6 +602,41 @@ class ApiClient {
     this.baseUrl = baseUrl.replace(/\/$/, "");
   }
 
+  /**
+   * Analytics read: the one place an analytics failure becomes an ApiError.
+   *
+   * Every analytics method goes through here, so status, server message and
+   * the rate-limit hint reach the caller the same way — and a new endpoint
+   * cannot invent its own error string.
+   */
+  private async analyticsRequest<T>(path: string): Promise<T> {
+    const res = await fetch(`${this.baseUrl}${path}`);
+    if (res.ok) return (await res.json()) as T;
+    let body: { error?: string; details?: unknown } | null = null;
+    try {
+      body = await res.json();
+    } catch {
+      /* not JSON */
+    }
+    const retryAfter = Number(res.headers.get("retry-after"));
+    const message =
+      body?.error ??
+      (res.status === 404 ? "Company not found" : `Analytics request failed: HTTP ${res.status}`);
+    throw new ApiError(
+      res.status,
+      res.status === 404
+        ? "not-found"
+        : res.status === 422
+          ? "invalid"
+          : res.status === 429
+            ? "rate-limited"
+            : "upstream",
+      message,
+      body?.details,
+      Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined
+    );
+  }
+
   /** Single fetch primitive for newer endpoints. Throws on non-2xx. */
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     const res = await fetch(`${this.baseUrl}${path}`, init);
@@ -672,54 +792,28 @@ class ApiClient {
    * Analytics endpoints (live measured metrics; same shapes as web mocks)
    */
   analytics = {
-    overview: async (
+    overview: (
       companyId: string,
-      range: "7d" | "14d" | "30d" = "14d"
-    ): Promise<import("@/mocks/overview").OverviewMock> => {
-      const res = await fetch(
-        `${this.baseUrl}/api/analytics/overview?companyId=${encodeURIComponent(companyId)}&range=${range}`
-      );
-      if (res.status === 404) throw new Error("Company not found");
-      if (!res.ok) {
-        throw new Error(`Overview unavailable: HTTP ${res.status}`);
-      }
-      return res.json();
-    },
+      range: Range = "14d"
+    ): Promise<import("@/mocks/overview").OverviewMock> =>
+      this.analyticsRequest(
+        `/api/analytics/overview?companyId=${encodeURIComponent(companyId)}&range=${range}`
+      ),
 
-    website: async (companyId: string, range = "30d"): Promise<WebsiteAnalytics> => {
-      const res = await fetch(
-        `${this.baseUrl}/api/analytics/website?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
-      );
-      if (res.status === 404) throw new Error("Company not found");
-      if (!res.ok) {
-        throw new Error(`Website analytics unavailable: HTTP ${res.status}`);
-      }
-      return res.json();
-    },
+    website: (companyId: string, range = "30d"): Promise<WebsiteAnalytics> =>
+      this.analyticsRequest(
+        `/api/analytics/website?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      ),
 
-    conversions: async (companyId: string, range = "30d"): Promise<ConversionAnalytics> => {
-      const res = await fetch(
-        `${this.baseUrl}/api/analytics/conversions?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
-      );
-      if (res.status === 404) throw new Error("Company not found");
-      if (!res.ok) {
-        throw new Error(`Conversion analytics unavailable: HTTP ${res.status}`);
-      }
-      return res.json();
-    },
+    conversions: (companyId: string, range = "30d"): Promise<ConversionAnalytics> =>
+      this.analyticsRequest(
+        `/api/analytics/conversions?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      ),
 
-    realtime: async (companyId: string): Promise<RealtimeSnapshot> => {
-      const res = await fetch(
-        `${this.baseUrl}/api/analytics/realtime?companyId=${encodeURIComponent(companyId)}`
-      );
-      if (res.status === 404) throw new Error("Company not found");
-      if (!res.ok) {
-        throw new Error(`Realtime snapshot unavailable: HTTP ${res.status}`);
-      }
-      return res.json();
-    },
+    realtime: (companyId: string): Promise<RealtimeSnapshot> =>
+      this.analyticsRequest(`/api/analytics/realtime?companyId=${encodeURIComponent(companyId)}`),
 
-    acquisition: async (
+    acquisition: (
       companyId: string,
       range = "30d",
       opts?: { compare?: boolean; channels?: string[] }
@@ -727,63 +821,47 @@ class ApiClient {
       const q = new URLSearchParams({ companyId, range });
       if (opts?.compare) q.set("compare", "previous");
       if (opts?.channels?.length) q.set("channels", opts.channels.join(","));
-      const res = await fetch(`${this.baseUrl}/api/analytics/acquisition?${q.toString()}`);
-      if (res.status === 404) throw new Error("Company not found");
-      if (!res.ok) {
-        throw new Error(`Acquisition analytics unavailable: HTTP ${res.status}`);
-      }
-      return res.json();
+      return this.analyticsRequest(`/api/analytics/acquisition?${q.toString()}`);
     },
 
-    engagement: async (companyId: string, range = "30d"): Promise<EngagementAnalytics> => {
-      const res = await fetch(
-        `${this.baseUrl}/api/analytics/engagement?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
-      );
-      if (res.status === 404) throw new Error("Company not found");
-      if (!res.ok) {
-        throw new Error(`Engagement analytics unavailable: HTTP ${res.status}`);
-      }
-      return res.json();
-    },
-
-    content: async (companyId: string, range = "30d"): Promise<ContentAnalytics> => {
-      const res = await fetch(
-        `${this.baseUrl}/api/analytics/content?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
-      );
-      if (res.status === 404) throw new Error("Company not found");
-      if (!res.ok) {
-        throw new Error(`Content analytics unavailable: HTTP ${res.status}`);
-      }
-      return res.json();
-    },
-
-    insights: async (companyId: string, range = "14d"): Promise<InsightsPayload> => {
-      const res = await fetch(
-        `${this.baseUrl}/api/analytics/insights?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
-      );
-      if (res.status === 404) throw new Error("Company not found");
-      if (!res.ok) {
-        throw new Error(`Insights unavailable: HTTP ${res.status}`);
-      }
-      return res.json();
-    },
-
-    copilot: async (
+    agentOverview: (
       companyId: string,
-      question: string
-    ): Promise<
-      | { ok: true; answer: { summary: string[]; supporting: { label: string; value: string }[]; widgetSpec?: { component: string } } }
-      | { ok: false; rejection: { code: string; message: string; examples: string[] } }
-    > => {
-      const res = await fetch(
-        `${this.baseUrl}/api/analytics/copilot?companyId=${encodeURIComponent(companyId)}&question=${encodeURIComponent(question)}`
-      );
-      if (res.status === 404) throw new Error("Company not found");
-      if (!res.ok) {
-        throw new Error(`Copilot unavailable: HTTP ${res.status}`);
-      }
-      return res.json();
-    },
+      range = "14d"
+    ): Promise<AgentOverviewAnalytics> =>
+      this.analyticsRequest(
+        `/api/analytics/agent/overview?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      ),
+
+    agentQuestions: (
+      companyId: string,
+      range = "14d"
+    ): Promise<AgentQuestionsAnalytics> =>
+      this.analyticsRequest(
+        `/api/analytics/agent/questions?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      ),
+
+    agentQuality: (
+      companyId: string,
+      range = "14d"
+    ): Promise<AgentQualityAnalytics> =>
+      this.analyticsRequest(
+        `/api/analytics/agent/quality?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      ),
+
+    agentVoice: (companyId: string, range = "14d"): Promise<VoiceAnalytics> =>
+      this.analyticsRequest(
+        `/api/analytics/agent/voice?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      ),
+
+    content: (companyId: string, range = "30d"): Promise<ContentAnalytics> =>
+      this.analyticsRequest(
+        `/api/analytics/content?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      ),
+
+    audience: (companyId: string, range = "30d"): Promise<AudienceAnalytics> =>
+      this.analyticsRequest(
+        `/api/analytics/audience?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      ),
   };
 
   /**

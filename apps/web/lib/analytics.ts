@@ -24,7 +24,6 @@ export interface CompanyReportState<T> {
   loadError: string | null;
   refreshKey: number;
   setRefreshKey: Dispatch<SetStateAction<number>>;
-  setData: Dispatch<SetStateAction<T | null>>;
 }
 
 /**
@@ -47,6 +46,11 @@ export function useCompanyReport<T>(
   useEffect(() => {
     if (!company) {
       setData(null);
+      // The loading flag has to be cleared here too: the effect that was
+      // running when the company was deselected never resolves, so the page
+      // rendered a permanent skeleton instead of "Select a company" (F-08).
+      setLoading(false);
+      setLoadError(null);
       return;
     }
     let cancelled = false;
@@ -71,5 +75,5 @@ export function useCompanyReport<T>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [company?.id, refreshKey, ...deps]);
 
-  return { data, loading, loadError, refreshKey, setRefreshKey, setData };
+  return { data, loading, loadError, refreshKey, setRefreshKey };
 }

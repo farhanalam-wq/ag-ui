@@ -1,158 +1,155 @@
 "use client";
 
-import { useState } from "react";
-import { Robot, ShieldCheck } from "@phosphor-icons/react";
-import { StudioShell } from "@/components/studio-shell";
+/**
+ * Analytics → Agent.
+ *
+ * One route, four tabs: Overview, Questions, Quality, Voice — the same shell,
+ * range control and state handling as Website. Each tab has its own endpoint,
+ * so the browser never receives one combined payload it then slices.
+ *
+ * Only the active tab is fetched. A response is rendered only when its tab
+ * still matches, so a slow Quality request cannot paint under Questions.
+ */
+
+import { Suspense, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { StudioShell } from "@/components/studio-shell";
 import { useSelectedCompany } from "@/stores/use-company-store";
 import { apiClient } from "@/lib/api-client";
-import { useCompanyReport } from "@/lib/analytics";
+import type {
+  AgentOverviewAnalytics,
+  AgentQualityAnalytics,
+  AgentQuestionsAnalytics,
+  VoiceAnalytics,
+} from "@/lib/api-client";
+import { useCompanyReport, type Range } from "@/lib/analytics";
+import {
+  AnalyticsSurface,
+  type SurfaceStatus,
+} from "@/components/analytics/analytics-surface";
+import {
+  useAnalyticsTab,
+  type AnalyticsTab,
+} from "@/components/analytics/analytics-tabs";
+import { AgentOverviewTab } from "./overview-tab";
+import { AgentQuestionsTab } from "./questions-tab";
+import { AgentQualityTab } from "./quality-tab";
+import { VoiceTab } from "./voice-tab";
+
+const TABS: AnalyticsTab[] = [
+  { id: "overview", label: "Overview" },
+  { id: "questions", label: "Questions" },
+  { id: "quality", label: "Quality" },
+  { id: "voice", label: "Voice" },
+];
+
+type TabId = (typeof TABS)[number]["id"];
+
+type TabReport =
+  | { tab: "overview"; data: AgentOverviewAnalytics }
+  | { tab: "questions"; data: AgentQuestionsAnalytics }
+  | { tab: "quality"; data: AgentQualityAnalytics }
+  | { tab: "voice"; data: VoiceAnalytics };
 
 export default function AgentAnalyticsPage() {
-  const company = useSelectedCompany();
-  const [range, setRange] = useState<"7" | "14">("14");
-  const { data, loading, loadError } = useCompanyReport(
-    company,
-    (companyId) => apiClient.analytics.overview(companyId, range === "7" ? "7d" : "14d"),
-    [range]
+  return (
+    <Suspense fallback={<AgentFallback />}>
+      <AgentAnalytics />
+    </Suspense>
   );
+}
 
-  const trust = data?.trust;
+function AgentAnalytics() {
+  const company = useSelectedCompany();
+  const [tab, setTab] = useAnalyticsTab(TABS);
+  const [range, setRange] = useState<Range>("14d");
 
+  const { data, loadError, refreshKey, setRefreshKey } =
+    useCompanyReport<TabReport>(
+      company,
+      async (companyId) => {
+        switch (tab as TabId) {
+          case "questions":
+            return {
+              tab: "questions",
+              data: await apiClient.analytics.agentQuestions(companyId, range),
+            };
+          case "quality":
+            return {
+              tab: "quality",
+              data: await apiClient.analytics.agentQuality(companyId, range),
+            };
+          case "voice":
+            return {
+              tab: "voice",
+              data: await apiClient.analytics.agentVoice(companyId, range),
+            };
+          case "overview":
+          default:
+            return {
+              tab: "overview",
+              data: await apiClient.analytics.agentOverview(companyId, range),
+            };
+        }
+      },
+      [range, tab]
+    );
+
+  // The report only describes the tab it was requested for.
+  const active = data && data.tab === tab ? data : null;
+
+  const status: SurfaceStatus = !company
+    ? "empty"
+    : loadError
+      ? "error"
+      : !active
+        ? "loading"
+        : "ready";
+
+  return (
+    <AnalyticsSurface
+      crumbs={[{ label: "Analytics" }, { label: "Agent" }]}
+      title="Agent"
+      subtitle="How visitors use the assistant: opens, questions, grounding, and voice. Counts only — question text is never stored."
+      freshness={active?.data.freshness}
+      range={range}
+      onRangeChange={setRange}
+      onRefresh={() => setRefreshKey((k) => k + 1)}
+      status={status}
+      error={loadError}
+      onRetry={() => setRefreshKey((k) => k + 1)}
+      emptyMessage="Select a company to see how its assistant performs."
+      tabs={TABS}
+      activeTab={tab}
+      onTabChange={setTab}
+    >
+      {active?.tab === "overview" && (
+        <AgentOverviewTab data={active.data} refreshKey={refreshKey} />
+      )}
+      {active?.tab === "questions" && <AgentQuestionsTab data={active.data} />}
+      {active?.tab === "quality" && (
+        <AgentQualityTab data={active.data} refreshKey={refreshKey} />
+      )}
+      {active?.tab === "voice" && (
+        <VoiceTab data={active.data} refreshKey={refreshKey} />
+      )}
+    </AnalyticsSurface>
+  );
+}
+
+/** Header-only skeleton: the shell stays put while the tab reads the URL. */
+function AgentFallback() {
   return (
     <StudioShell crumbs={[{ label: "Analytics" }, { label: "Agent" }]}>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-[30px] leading-9 tracking-tight font-semibold">
-            Agent
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1 max-w-[65ch]">
-            How trustworthy and fast the assistant is — grounding, fallbacks,
-            and answer latency measured from real chats.
-          </p>
+          <Skeleton className="h-8 w-32" />
+          <Skeleton className="mt-2 h-4 w-96 max-w-full" />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {data && (
-            <Badge
-              variant="outline"
-              className="rounded-full border-emerald-500/30 bg-emerald-500/10 font-normal text-emerald-700 dark:text-emerald-300"
-            >
-              Live
-            </Badge>
-          )}
-          <label className="inline-flex h-8 items-center rounded-md border px-2 text-[13px] text-muted-foreground">
-            Range
-            <select
-              value={range}
-              onChange={(e) => setRange(e.target.value as "7" | "14")}
-              aria-label="Date range"
-              className="ml-2 h-full bg-transparent pr-1 text-[13px] text-foreground focus:outline-none"
-            >
-              <option value="14">Last 14 days</option>
-              <option value="7">Last 7 days</option>
-            </select>
-          </label>
-        </div>
+        <Skeleton className="h-8 w-48" />
       </div>
-
-      {!data ? (
-        loading ? (
-          <div className="mt-6 space-y-4">
-            <Skeleton className="h-[120px] w-full" />
-          </div>
-        ) : loadError ? (
-          <div
-            role="alert"
-            className="mx-auto mt-6 max-w-[60ch] rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-center"
-          >
-            <p className="text-sm font-medium">Agent analytics unavailable</p>
-            <p className="mt-1 font-mono text-xs text-muted-foreground">
-              {loadError}
-            </p>
-          </div>
-        ) : (
-          <p className="mt-6 text-sm text-muted-foreground">
-            Select a company to see how its assistant performs.
-          </p>
-        )
-      ) : (
-        trust && (
-          <div className="mt-6 min-w-0 space-y-4">
-            <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-              {[
-                {
-                  label: "Grounded answers",
-                  value: `${trust.groundedCoverage}%`,
-                  hint: "Assistant answers citing a learned source.",
-                },
-                {
-                  label: "Fallback rate",
-                  value: `${trust.fallbackRate}%`,
-                  hint: "Conversations with no grounded answer at all.",
-                },
-                {
-                  label: "Answer latency p50",
-                  value: `${trust.latencyP50.toLocaleString()}ms`,
-                  hint: "Median user-question → assistant-answer gap.",
-                },
-                {
-                  label: "Answer latency p95",
-                  value: `${trust.latencyP95.toLocaleString()}ms`,
-                  hint: "Slowest 5% — embedding + model + retrieval.",
-                },
-              ].map((k) => (
-                <Card key={k.label}>
-                  <CardContent className="pt-5">
-                    <p className="text-[13px] text-muted-foreground">{k.label}</p>
-                    <p className="mt-1 font-sans text-xl font-semibold tabular-nums tracking-tight">
-                      {k.value}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">{k.hint}</p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-[15px] font-semibold">
-                  Reading these numbers
-                </CardTitle>
-                <CardDescription className="text-[13px]">
-                  Grounded means the answer carried evidence from your pages.
-                  Latency is measured message-to-message, capped at two
-                  minutes to exclude idle tabs.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex items-center gap-3 text-sm">
-                <ShieldCheck className="size-5 shrink-0 text-emerald-500" aria-hidden="true" />
-                <p className="text-muted-foreground">
-                  {trust.groundedCoverage >= 70
-                    ? "Grounding is healthy — most answers cite sources."
-                    : trust.groundedCoverage > 0
-                      ? "Grounding needs work — check the blindspots on the Intent page."
-                      : "No grounded answers yet — ingest more pages or check retrieval."}
-                </p>
-              </CardContent>
-            </Card>
-
-            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Robot className="size-3.5" aria-hidden="true" />
-              Citation click-through arrives with click tracking — until then it
-              reads 0 by construction, not by measurement.
-            </p>
-          </div>
-        )
-      )}
+      <Skeleton className="mt-6 h-10 w-full" />
+      <Skeleton className="mt-4 h-[420px] w-full" />
     </StudioShell>
   );
 }

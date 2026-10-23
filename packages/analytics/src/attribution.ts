@@ -6,10 +6,17 @@
  * are used ONLY where Postgres has no builder equivalent (UTM regex
  * extraction, CASE taxonomy, FILTER aggregates, array_agg entry).
  * SOCIAL_HOSTS stays the single source of truth for JS + SQL.
+ *
+ * The CTEs here are on the *visit* grain: one row per event, carrying the
+ * visit id, so a report that counts "Sessions" against a dimension counts
+ * the same unit the rollup counts. There is deliberately no page-load-grain
+ * variant — a "Sessions" number built on one would disagree with every
+ * other surface in the module.
  */
 
-import { db, pageViews, sql, eq, and, gte, lt, type SQL, type SQLWrapper } from "@ag-ui/database";
+import { db, sql, type SQL, type SQLWrapper } from "@ag-ui/database";
 import { SOCIAL_HOSTS } from "./registry";
+import { sessionIslands } from "./sessions";
 
 /** `host = 'x' OR host LIKE '%.x' ...` — values bound as params. */
 function socialHostCondition(host: SQLWrapper): SQL {
@@ -17,10 +24,10 @@ function socialHostCondition(host: SQLWrapper): SQL {
   return sql`(${sql.join(parts, sql` OR `)})`;
 }
 
-const uSrc = sql<string>`COALESCE(substring(${pageViews.url} from '[?&]utm_source=([^&#]*)'), '')`;
-const uMed = sql<string>`lower(COALESCE(substring(${pageViews.url} from '[?&]utm_medium=([^&#]*)'), ''))`;
-const uCamp = sql<string>`COALESCE(substring(${pageViews.url} from '[?&]utm_campaign=([^&#]*)'), '')`;
-const rHost = sql<string>`lower(regexp_replace(split_part(${pageViews.referrer}, '/', 3), '^www\\.', ''))`;
+const uSrcFor = (url: SQLWrapper) => sql<string>`COALESCE(substring(${url} from '[?&]utm_source=([^&#]*)'), '')`;
+const uMedFor = (url: SQLWrapper) => sql<string>`lower(COALESCE(substring(${url} from '[?&]utm_medium=([^&#]*)'), ''))`;
+const uCampFor = (url: SQLWrapper) => sql<string>`COALESCE(substring(${url} from '[?&]utm_campaign=([^&#]*)'), '')`;
+const rHostFor = (ref: SQLWrapper) => sql<string>`lower(regexp_replace(split_part(${ref}, '/', 3), '^www\\.', ''))`;
 
 function channelCase(u: SQLWrapper, m: SQLWrapper, c: SQLWrapper, r: SQLWrapper): SQL<string> {
   return sql<string>`CASE
@@ -32,82 +39,66 @@ function channelCase(u: SQLWrapper, m: SQLWrapper, c: SQLWrapper, r: SQLWrapper)
     ELSE 'Direct' END`;
 }
 
-function windowWhere(companyId: string, from: Date, to: Date) {
-  return and(
-    eq(pageViews.companyId, companyId),
-    gte(pageViews.createdAt, from),
-    lt(pageViews.createdAt, to),
-    eq(pageViews.isBot, false)
-  );
-}
-
 /**
- * Shared attr CTEs over a raw window. a2 exposes sessionHash, path,
- * viewport, type, channel, source, medium, campaign. Compose with
- * `db.with(a1, a2).select(...).from(a2)`.
+ * The channel taxonomy on the visit grain.
+ *
+ * `visitKey` identifies a visit (one island of activity) the same way the
+ * rollup does. Every "Sessions" number in this module counts these, so a
+ * channel breakdown and a rollup total are the same unit.
+ *
+ * Compose with `db.with(v1, v2).select(...).from(v2)`.
  */
-export function attrCTEs(companyId: string, from: Date, to: Date) {
-  const ev = db
-    .select({
-      sessionHash: pageViews.sessionHash,
-      path: pageViews.path,
-      viewport: pageViews.viewport,
-      type: pageViews.type,
-      uSrc: uSrc.as("u_src"),
-      uMed: uMed.as("u_med"),
-      uCamp: uCamp.as("u_camp"),
-      rHost: rHost.as("rhost"),
-    })
-    .from(pageViews)
-    .where(windowWhere(companyId, from, to))
-    .as("ev");
-  const a1 = db.$with("attr1").as(
+export function visitAttrCTEs(companyId: string, from: Date, to: Date) {
+  const isl = sessionIslands(companyId, from, to);
+  const v1 = db.$with("vattr1").as(
     db
       .select({
-        sessionHash: ev.sessionHash,
-        path: ev.path,
-        viewport: ev.viewport,
-        type: ev.type,
-        uSrc: ev.uSrc,
-        uMed: ev.uMed,
-        uCamp: ev.uCamp,
-        rHost: ev.rHost,
-        channel: channelCase(ev.uSrc, ev.uMed, ev.uCamp, ev.rHost).as("channel"),
+        visitKey: isl.visitKey,
+        path: isl.path,
+        viewport: isl.viewport,
+        type: isl.type,
+        createdAt: isl.createdAt,
+        uSrc: uSrcFor(isl.url).as("u_src"),
+        uMed: uMedFor(isl.url).as("u_med"),
+        uCamp: uCampFor(isl.url).as("u_camp"),
+        rHost: rHostFor(isl.referrer).as("rhost"),
+        channel: channelCase(
+          uSrcFor(isl.url),
+          uMedFor(isl.url),
+          uCampFor(isl.url),
+          rHostFor(isl.referrer)
+        ).as("channel"),
       })
-      .from(ev)
+      .from(isl)
   );
-  const a2 = db.$with("attr2").as(
+  const v2 = db.$with("vattr2").as(
     db
       .select({
-        sessionHash: a1.sessionHash,
-        path: a1.path,
-        viewport: a1.viewport,
-        type: a1.type,
-        channel: a1.channel,
-        source: sql<string>`COALESCE(NULLIF(${a1.uSrc}, ''), NULLIF(${a1.rHost}, ''), '(direct)')`.as("source"),
+        visitKey: v1.visitKey,
+        path: v1.path,
+        viewport: v1.viewport,
+        type: v1.type,
+        createdAt: v1.createdAt,
+        channel: v1.channel,
+        source: sql<string>`COALESCE(NULLIF(${v1.uSrc}, ''), NULLIF(${v1.rHost}, ''), '(direct)')`.as("source"),
         medium: sql<string>`CASE
-          WHEN ${a1.channel} = 'Direct' THEN '(none)'
-          WHEN ${a1.uMed} <> '' THEN ${a1.uMed}
-          WHEN ${a1.channel} = 'Organic Social' THEN 'organic'
-          WHEN ${a1.channel} = 'Referral' THEN 'referral'
+          WHEN ${v1.channel} = 'Direct' THEN '(none)'
+          WHEN ${v1.uMed} <> '' THEN ${v1.uMed}
+          WHEN ${v1.channel} = 'Organic Social' THEN 'organic'
+          WHEN ${v1.channel} = 'Referral' THEN 'referral'
           ELSE '(none)' END`.as("medium"),
-        campaign: sql<string>`COALESCE(NULLIF(${a1.uCamp}, ''), '(not set)')`.as("campaign"),
+        campaign: sql<string>`COALESCE(NULLIF(${v1.uCamp}, ''), '(not set)')`.as("campaign"),
       })
-      .from(a1)
+      .from(v1)
   );
-  return { a1, a2 };
+  return { v1, v2 };
 }
 
 /**
- * Window predicate builder for services that query pageViews directly.
+ * Desktop vs Mobile from a "WxH" viewport column.
+ *
+ * The rule itself lives in `dimensions.ts`, next to the other dimension
+ * rules and the raw-SQL copy the rollup uses. This re-export keeps the
+ * existing call sites working.
  */
-export function pageViewsWindow(companyId: string, from: Date, to: Date) {
-  return windowWhere(companyId, from, to);
-}
-
-/** Desktop vs Mobile from a "WxH" viewport column. */
-export function deviceFragment(vp: SQLWrapper): SQL<string> {
-  return sql<string>`CASE
-    WHEN ${vp} ~ '^[0-9]{1,4}x' AND substring(${vp} from '^([0-9]{1,4})x')::int < 768
-    THEN 'Mobile' ELSE 'Desktop' END`;
-}
+export { deviceCaseSql as deviceFragment } from "./dimensions";

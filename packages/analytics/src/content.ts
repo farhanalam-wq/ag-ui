@@ -6,70 +6,83 @@
  * from the shared attr CTEs with builder aggregation.
  */
 
-import { db, pageViews, metricsDaily, sql, eq, and, desc, gte, lt } from "@ag-ui/database";
-import { freshnessStub, type BreakdownRow, type ContentReport } from "./registry";
-import { attrCTEs, deviceFragment } from "./attribution";
+import { db, metricsDaily, sql, eq, and, gte, desc, count, type SQL, type PgColumn } from "@ag-ui/database";
+
+/** What `groupBy`/`orderBy` accept: a column, a SQL fragment, or an aliased fragment. */
+type Groupable = SQL | PgColumn | SQL.Aliased;
+import { reportFreshness, type BreakdownRow, type ContentReport } from "./registry";
+import { deviceFragment, visitAttrCTEs } from "./attribution";
+import { sessionIslands } from "./sessions";
 
 export async function getContentReport(companyId: string, rangeDays: number): Promise<ContentReport> {
   const dataQuality: string[] = [];
   const to = new Date();
-  const from = new Date(to.getTime() - rangeDays * 86_400_000);
-  const fromDay = from.toISOString().slice(0, 10);
+  // The same calendar days every other report uses: a "29d" range is the
+  // last 29 calendar days, not a rolling 29×24 hours that clips the day
+  // before. A rolling window started a day early and summed a whole extra
+  // day of rollups, so this page showed a larger "Sessions" number than the
+  // Website page for the same range.
+  const fromDay = new Date(to.getTime() - (rangeDays - 1) * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  const from = new Date(`${fromDay}T00:00:00Z`);
 
   const t = await db
     .select({
       pv: sql<number>`COALESCE(SUM(${metricsDaily.pageviews}), 0)::int`.as("pv"),
       se: sql<number>`COALESCE(SUM(${metricsDaily.sessions}), 0)::int`.as("se"),
+      sc: sql<number>`COALESCE(SUM(${metricsDaily.scrolls}), 0)::int`.as("sc"),
+      dl: sql<number>`COALESCE(SUM(${metricsDaily.downloads}), 0)::int`.as("dl"),
+      cl: sql<number>`COALESCE(SUM(${metricsDaily.clicks}), 0)::int`.as("cl"),
     })
     .from(metricsDaily)
-    .where(and(eq(metricsDaily.companyId, companyId), sql`${metricsDaily.day} >= ${fromDay}::date`));
-  const totals = { sessions: Number(t[0]?.se ?? 0), pageviews: Number(t[0]?.pv ?? 0) };
+    .where(and(eq(metricsDaily.companyId, companyId), gte(metricsDaily.day, fromDay)));
+  const totals = {
+    sessions: Number(t[0]?.se ?? 0),
+    pageviews: Number(t[0]?.pv ?? 0),
+    scrolls: Number(t[0]?.sc ?? 0),
+    downloads: Number(t[0]?.dl ?? 0),
+    clicks: Number(t[0]?.cl ?? 0),
+  };
   if (totals.sessions === 0 && totals.pageviews === 0) dataQuality.push("tracking-off");
 
-  const { a1, a2 } = attrCTEs(companyId, from, to);
-  const split = async (labelFrag: ReturnType<typeof sql<string>>, groupFrag: ReturnType<typeof sql>): Promise<BreakdownRow[]> => {
+  // Same window, same island rule as the rollup: a "session" here is a visit.
+  const { v1, v2 } = visitAttrCTEs(companyId, from, to);
+  const split = async (labelFrag: Groupable, groupFrag: Groupable): Promise<BreakdownRow[]> => {
     const rows = await db
-      .with(a1, a2)
+      .with(v1, v2)
       .select({
         label: sql<string>`${labelFrag}`.as("label"),
-        pageviews: sql<number>`COUNT(*) FILTER (WHERE ${a2.type} = 'pageview')::int`.as("pageviews"),
-        sessions: sql<number>`COUNT(DISTINCT ${a2.sessionHash})::int`.as("sessions"),
+        pageviews: sql<number>`COUNT(*) FILTER (WHERE ${v2.type} = 'pageview')::int`.as("pageviews"),
+        sessions: sql<number>`COUNT(DISTINCT ${v2.visitKey}) FILTER (WHERE ${v2.type} = 'pageview')::int`.as("sessions"),
       })
-      .from(a2)
-      .groupBy(sql`${groupFrag}`)
-      .orderBy(desc(sql`COUNT(*) FILTER (WHERE ${a2.type} = 'pageview')`))
+      .from(v2)
+      .groupBy(groupFrag)
+      .orderBy(desc(sql`COUNT(*) FILTER (WHERE ${v2.type} = 'pageview')`))
       .limit(10);
     return rows
       .filter((r) => (r.label ?? "").length > 0)
       .map((r) => ({ label: r.label, pageviews: Number(r.pageviews), sessions: Number(r.sessions) }));
   };
 
-  const devFrag = deviceFragment(a2.viewport);
-  const byPath = await split(sql<string>`${a2.path}`, sql`${a2.path}`);
-  const byChannel = await split(sql<string>`${a2.channel}`, sql`${a2.channel}`);
-  const byDevice = await split(sql<string>`${devFrag}`, sql`${devFrag}`);
+  const devFrag = deviceFragment(v2.viewport);
+  const byPath = await split(v2.path, v2.path);
+  const byChannel = await split(v2.channel, v2.channel);
+  const byDevice = await split(devFrag, devFrag);
 
   // Page titles from pageview meta (tag-captured document.title).
-  const titleFrag = sql<string>`(${pageViews.meta}->>'title')`;
+  const isl = sessionIslands(companyId, from, to);
+  const titleFrag = sql<string>`(${isl.meta}->>'title')`;
   const titleRows = await db
     .select({
       label: sql<string>`${titleFrag}`.as("label"),
       pageviews: sql<number>`COUNT(*)::int`.as("pageviews"),
-      sessions: sql<number>`COUNT(DISTINCT ${pageViews.sessionHash})::int`.as("sessions"),
+      sessions: sql<number>`COUNT(DISTINCT ${isl.visitKey})::int`.as("sessions"),
     })
-    .from(pageViews)
-    .where(
-      and(
-        eq(pageViews.companyId, companyId),
-        gte(pageViews.createdAt, from),
-        lt(pageViews.createdAt, to),
-        eq(pageViews.type, "pageview"),
-        eq(pageViews.isBot, false),
-        sql`${titleFrag} IS NOT NULL AND ${titleFrag} <> ''`
-      )
-    )
+    .from(isl)
+    .where(and(eq(isl.type, "pageview"), sql`${titleFrag} IS NOT NULL AND ${titleFrag} <> ''`))
     .groupBy(sql`${titleFrag}`)
-    .orderBy(desc(sql`COUNT(*)`))
+    .orderBy(desc(count()))
     .limit(10);
   const byTitle: BreakdownRow[] = titleRows.map((r) => ({
     label: r.label,
@@ -82,10 +95,12 @@ export async function getContentReport(companyId: string, rangeDays: number): Pr
     companyId,
     rangeDays,
     totals,
-    byPath,
-    byTitle,
-    byChannel,
-    byDevice,
-    freshness: freshnessStub(false, dataQuality),
+    breakdowns: {
+      path: byPath,
+      title: byTitle,
+      channel: byChannel,
+      device: byDevice,
+    },
+    freshness: await reportFreshness(false, dataQuality),
   };
 }

@@ -36,7 +36,15 @@ import {
 } from "@ag-ui/database";
 import { generateWidgetKey, hashWidgetKey, logger, buildAnswerSystemPrompt, streamChatCompletionGenerator } from "@ag-ui/shared";
 import { analyticsQueue } from "@ag-ui/queues";
-import { validateTrackEvent, hashVisitor, dailySalt, newSessionHash } from "@ag-ui/analytics";
+import {
+  validateTrackEvent,
+  hashVisitor,
+  dailySalt,
+  newSessionHash,
+  parseUserAgent,
+  timezoneOffsetMinutes,
+  normalizePagePath,
+} from "@ag-ui/analytics";
 import { randomUUID } from "node:crypto";
 
 export function getClientIp(request: Request): string {
@@ -447,6 +455,14 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
       }
 
       const ua = (request.headers.get("user-agent") || "").slice(0, 300);
+      // The visitor profile is derived here, at the collector, and only
+      // from what the server can see: the request's own user agent and the
+      // timezone the snippet reported. The client cannot post a browser
+      // name — it is read out of the user agent, and the value is checked
+      // against the product's taxonomy before it is stored.
+      const observedUa = ua.length > 0 ? ua : String(body.user_agent ?? "").slice(0, 300);
+      const { browser, os } = parseUserAgent(observedUa);
+      const tzOffset = timezoneOffsetMinutes(body.tz, new Date());
       const raw = {
         event_id:
           typeof body.event_id === "string" && body.event_id.length > 0
@@ -460,6 +476,9 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
         referrer: body.referrer,
         viewport: body.viewport,
         user_agent: typeof body.user_agent === "string" && body.user_agent.length > 0 ? body.user_agent : ua,
+        browser,
+        os,
+        tz_offset: tzOffset,
         session_hash:
           typeof body.session_hash === "string" && body.session_hash.length > 0
             ? body.session_hash
@@ -506,6 +525,9 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
         referrer: t.Optional(t.String()),
         viewport: t.Optional(t.String()),
         user_agent: t.Optional(t.String()),
+        // The visitor's IANA timezone, e.g. "Europe/Berlin". The collector
+        // resolves it to an offset; the client never sends an offset.
+        tz: t.Optional(t.String()),
         session_hash: t.Optional(t.String()),
         value: t.Optional(t.Union([t.Number(), t.String()])),
         meta: t.Optional(t.Any()),
@@ -616,7 +638,14 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
         if (!activeConvId) {
           const [newConv] = await db
             .insert(conversations)
-            .values({ companyId: company.id, title: userQuery.slice(0, 50) })
+            .values({
+              companyId: company.id,
+              title: userQuery.slice(0, 50),
+              // The host page, so the quality report can answer "which pages
+              // can the agent answer from". Null when the panel did not send
+              // one — never inferred from a referer.
+              path: normalizePagePath(body.path),
+            })
             .returning();
           activeConvId = newConv.id;
         }
@@ -691,6 +720,12 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
       body: t.Object({
         message: t.String({ minLength: 1, maxLength: 2000 }),
         conversationId: t.Optional(t.String()),
+        /**
+         * Host page path, forwarded by the panel from its parent over
+         * postMessage. Untrusted: normalised server-side and stored only on a
+         * new conversation. Never the visitor's words.
+         */
+        path: t.Optional(t.String({ maxLength: 1024 })),
       }),
       detail: { summary: "Stream widget chat (SSE)", description: "Anonymous rate-limited streaming chat resolved via opaque widget key." },
     }

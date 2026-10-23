@@ -3,13 +3,17 @@
  *
  * B2C conversion analytics: totals + revenue + chat-assisted attribution +
  * daily series + funnel. Rollup-first (metrics_daily); the assisted join is
- * a bounded raw scan over the range window only.
+ * a bounded visit scan over the range window only.
  *
- * Assisted = conversion whose (session_hash, day) also produced a
- * chat_open/chat_message event. Approximation, documented in the payload.
+ * Assisted = a conversion in a visit that also produced a chat_open or
+ * chat_message event. The join is on the visit, not the page load, so a
+ * conversion is never credited to a chat that happened in a different visit
+ * of the same tab.
  */
 
-import { client } from "@ag-ui/database";
+import { db, metricsDaily, conversations, sql, eq, and, gte } from "@ag-ui/database";
+import { sessionIslands } from "./sessions";
+import { reportFreshness, type Freshness } from "./registry";
 
 export interface ConversionDayPoint {
   d: string;
@@ -42,7 +46,7 @@ export async function getConversionAnalytics(
   };
   daily: ConversionDayPoint[];
   funnel: ConversionFunnelStage[];
-  dataQuality: string[];
+  freshness: Freshness;
 }> {
   const dataQuality = ["assisted-approximate"];
   const now = new Date();
@@ -54,12 +58,19 @@ export async function getConversionAnalytics(
     days.push(new Date(now.getTime() - i * 86_400_000).toISOString().slice(0, 10));
   }
 
-  const tRows = (await client.unsafe(
-    `SELECT day::text AS day, SUM(pageviews)::int AS pv, SUM(sessions)::int AS se,
-      SUM(conversions)::int AS cv, SUM(revenue)::float AS rev, SUM(chat_opens)::int AS co
-      FROM metrics_daily WHERE company_id = $1 AND day >= $2::date GROUP BY day ORDER BY day;`,
-    [companyId, fromDay]
-  )) as Array<{ day: string; pv: number; se: number; cv: number; rev: number; co: number }>;
+  const tRows = await db
+    .select({
+      day: sql<string>`${metricsDaily.day}::text`.as("day"),
+      pv: sql<number>`COALESCE(SUM(${metricsDaily.pageviews}), 0)::int`.as("pv"),
+      se: sql<number>`COALESCE(SUM(${metricsDaily.sessions}), 0)::int`.as("se"),
+      cv: sql<number>`COALESCE(SUM(${metricsDaily.conversions}), 0)::int`.as("cv"),
+      rev: sql<number>`COALESCE(SUM(${metricsDaily.revenue}), 0)::float`.as("rev"),
+      co: sql<number>`COALESCE(SUM(${metricsDaily.chatOpens}), 0)::int`.as("co"),
+    })
+    .from(metricsDaily)
+    .where(and(eq(metricsDaily.companyId, companyId), gte(metricsDaily.day, fromDay)))
+    .groupBy(metricsDaily.day)
+    .orderBy(metricsDaily.day);
   const byDay = new Map(tRows.map((r) => [r.day.slice(0, 10), r]));
   const sessions = tRows.reduce((a, r) => a + (r.se ?? 0), 0);
   const chatOpens = tRows.reduce((a, r) => a + (r.co ?? 0), 0);
@@ -67,31 +78,35 @@ export async function getConversionAnalytics(
   const revenue = tRows.reduce((a, r) => a + (r.rev ?? 0), 0);
   if (sessions === 0 && conversions === 0) dataQuality.push("tracking-off");
 
-  // Assisted attribution over the raw window (company-scoped, indexed).
-  const assist = (await client.unsafe(
-    `
-    WITH conv AS (
-      SELECT session_hash, value FROM page_views
-      WHERE company_id = $1 AND type = 'conversion' AND created_at >= $2
-    ),
-    chat_sess AS (
-      SELECT DISTINCT session_hash FROM page_views
-      WHERE company_id = $1 AND type IN ('chat_open', 'chat_message') AND created_at >= $2
-    )
-    SELECT COUNT(*)::int AS convs,
-      COALESCE(SUM(conv.value), 0)::float AS rev,
-      COUNT(chat_sess.session_hash)::int AS assisted,
-      COALESCE(SUM(conv.value) FILTER (WHERE chat_sess.session_hash IS NOT NULL), 0)::float AS assisted_rev
-    FROM conv LEFT JOIN chat_sess USING (session_hash);`,
-    [companyId, fromISO]
-  )) as Array<{ convs: number; rev: number; assisted: number; assisted_rev: number }>;
-  const a = assist[0] ?? { convs: 0, rev: 0, assisted: 0, assisted_rev: 0 };
+  // Assisted attribution over the raw window (company-scoped, indexed),
+  // on the visit grain so a conversion and the chat that assisted it are
+  // the same visit.
+  const isl = sessionIslands(companyId, new Date(fromISO), now);
+  const perVisit = db
+    .select({
+      vk: isl.visitKey,
+      convs: sql<number>`COUNT(*) FILTER (WHERE ${isl.type} = 'conversion')::int`.as("convs"),
+      rev: sql<number>`COALESCE(SUM(${isl.value}) FILTER (WHERE ${isl.type} = 'conversion'), 0)::float`.as("rev"),
+      chatted: sql<boolean>`BOOL_OR(${isl.type} IN ('chat_open', 'chat_message'))`.as("chatted"),
+    })
+    .from(isl)
+    .groupBy(isl.visitKey)
+    .as("v");
+  const assist = await db
+    .select({
+      convs: sql<number>`COALESCE(SUM(${perVisit.convs}), 0)::int`.as("convs"),
+      rev: sql<number>`COALESCE(SUM(${perVisit.rev}), 0)::float`.as("rev"),
+      assisted: sql<number>`COUNT(*) FILTER (WHERE ${perVisit.convs} > 0 AND ${perVisit.chatted})::int`.as("assisted"),
+      assistedRev: sql<number>`COALESCE(SUM(${perVisit.rev}) FILTER (WHERE ${perVisit.convs} > 0 AND ${perVisit.chatted}), 0)::float`.as("assisted_rev"),
+    })
+    .from(perVisit);
+  const a = assist[0] ?? { convs: 0, rev: 0, assisted: 0, assistedRev: 0 };
 
-  const convos = (await client.unsafe(
-    `SELECT COUNT(*)::int AS c FROM conversations WHERE company_id = $1 AND created_at >= $2;`,
-    [companyId, fromISO]
-  )) as Array<{ c: number }>;
-  const started = convos[0]?.c ?? 0;
+  const [convRow] = await db
+    .select({ c: sql<number>`COUNT(*)::int`.as("c") })
+    .from(conversations)
+    .where(and(eq(conversations.companyId, companyId), gte(conversations.createdAt, new Date(fromISO))));
+  const started = Number(convRow?.c ?? 0);
 
   const fCounts = [sessions, chatOpens, started, conversions];
   const stages = ["Eligible sessions", "Widget opened", "Conversation started", "Recorded conversion"];
@@ -108,7 +123,7 @@ export async function getConversionAnalytics(
       conversions: a.convs,
       revenue: r1(a.rev),
       assistedConversions: a.assisted,
-      assistedRevenue: r1(a.assisted_rev),
+      assistedRevenue: r1(a.assistedRev),
       conversionRate: sessions > 0 ? r1((a.convs / sessions) * 100) : 0,
       revenuePerSession: sessions > 0 ? r1(a.rev / sessions) : 0,
     },
@@ -118,6 +133,6 @@ export async function getConversionAnalytics(
       revenue: r1(byDay.get(d)?.rev ?? 0),
     })),
     funnel,
-    dataQuality,
+    freshness: await reportFreshness(false, dataQuality),
   };
 }

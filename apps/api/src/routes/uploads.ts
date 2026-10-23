@@ -1,7 +1,6 @@
 import { Elysia, t } from "elysia";
 import {
   db,
-  sql,
   companies,
   companySnapshots,
   enrichmentBatches,
@@ -60,7 +59,11 @@ async function createBatch(
   extra?: { fileCount?: number }
 ) {
   return db.transaction(async (tx) => {
-    await tx.execute(sql`SELECT id FROM company_snapshots WHERE id = ${snapshotId} FOR UPDATE`);
+    await tx
+      .select({ id: companySnapshots.id })
+      .from(companySnapshots)
+      .where(eq(companySnapshots.id, snapshotId))
+      .for("update");
     const [row] = await tx
       .select({ minor: enrichmentBatches.minor })
       .from(enrichmentBatches)

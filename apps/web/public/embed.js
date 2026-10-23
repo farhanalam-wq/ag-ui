@@ -194,6 +194,15 @@
       });
   }
 
+  // Agent-panel analytics. The parent owns the panel, so it owns open/close
+  // timing and the turn count. initTracking() replaces these no-ops when
+  // tracking is enabled, so the widget behaves identically when it is off.
+  var chatTracking = {
+    open: function () {},
+    message: function () {},
+    close: function () {},
+  };
+
   orb.addEventListener("click", function () {
     if (orb.disabled) return;
     if (frame.hidden && !srcLoaded) {
@@ -205,11 +214,60 @@
     if (widgetKey && Date.now() - orbFetchedAt > ORB_STALE_MS) {
       fetchConfig().then(applyOrbTheme);
     }
+    var opening = frame.hidden;
     frame.hidden = !frame.hidden;
+    // Re-send the host path on every open: the visitor may have navigated
+    // while the panel was closed (SPA route change without an iframe reload).
+    if (opening) postHostContext();
+    if (opening) chatTracking.open();
+    else chatTracking.close();
   });
 
   document.body.appendChild(orb);
   document.body.appendChild(frame);
+
+  // --- Host page context for the panel --------------------------------------
+  // The chat iframe is cross-origin, so it cannot read the host path. The
+  // conversation stores the page it started on (Agent -> Quality: which pages
+  // the agent can answer from), so the parent forwards the path it already
+  // knows. The panel treats it as untrusted and the API normalises it with the
+  // same rule as the collector; it never contains anything the visitor said.
+  function postHostContext() {
+    try {
+      if (!frame || !frame.contentWindow) return;
+      var path = "/";
+      try {
+        path = window.location.pathname || "/";
+      } catch (e) {
+        /* opaque origin */
+      }
+      frame.contentWindow.postMessage(
+        { type: "ag-ui/context", path: String(path).slice(0, 1024) },
+        "*"
+      );
+    } catch (e) {
+      /* no frame yet */
+    }
+  }
+
+  frame.addEventListener("load", postHostContext);
+  window.addEventListener("popstate", postHostContext);
+
+  // SPA route changes: the panel can stay mounted while the host page changes.
+  // Independent of data-track, because the conversation path is product data,
+  // not traffic analytics.
+  ["pushState", "replaceState"].forEach(function (method) {
+    try {
+      var original = history[method];
+      history[method] = function () {
+        var result = original.apply(history, arguments);
+        window.setTimeout(postHostContext, 0);
+        return result;
+      };
+    } catch (e) {
+      /* frozen history */
+    }
+  });
 
   // --- Cookieless traffic tracking (opt-in via data-track="on") -------------
   // ~1KB, zero dependencies. Pageviews (incl. SPA route changes) and
@@ -263,6 +321,18 @@
       }
     }
 
+    // The visitor's timezone, as an IANA zone ("Europe/Berlin"). The
+    // collector resolves it to an offset, so "3pm" means 3pm where the
+    // visitor is. The zone is a claim about the clock, not an identity:
+    // nothing here identifies anyone.
+    function timezone() {
+      try {
+        return String(Intl.DateTimeFormat().resolvedOptions().timeZone || "").slice(0, 64);
+      } catch (e) {
+        return "";
+      }
+    }
+
     function send(type, extra) {
       var payload = {
         event_id: newEventId(),
@@ -272,6 +342,7 @@
         viewport: viewport(),
         user_agent: String(navigator.userAgent || "").slice(0, 300),
         session_hash: sessionId,
+        tz: timezone(),
       };
       if (extra) {
         for (var k in extra) {
@@ -311,6 +382,106 @@
     var lastTrackedUrl = null;
     var pageviewSent = false;
     var scrollFired = {};
+
+    // --- Agent events reported by our own iframe ----------------------------
+    // The panel is a cross-origin iframe, so it cannot see the host page path.
+    // It sends counts over postMessage and the parent emits the event here,
+    // with the real page context (url, referrer, viewport, tz). The iframe
+    // never emits analytics itself, and never sends anything the visitor said.
+    var AGENT_EVENTS = ["voice_start", "voice_end", "chat_message"];
+    // Server-side caps (events.ts -> voice/chat meta builders); mirrored so a
+    // runaway tab cannot post an absurd value even before validation.
+    var MAX_AGENT_DURATION_SEC = 14400;
+    var MAX_AGENT_TURNS = 500;
+
+    function intInRange(v, min, max) {
+      var n = typeof v === "number" ? v : Number(v);
+      if (!isFinite(n)) return min;
+      n = Math.round(n);
+      if (n < min) return min;
+      if (n > max) return max;
+      return n;
+    }
+
+    // --- Text chat: the panel's own events ---------------------------------
+    // chat_open → a turn per message → chat_close with the panel's duration.
+    // Counts only: the question text never leaves the iframe.
+    var panelOpen = false;
+    var panelOpenedAt = 0;
+    var panelTurns = 0;
+
+    function chatOpen() {
+      if (panelOpen) return;
+      panelOpen = true;
+      panelOpenedAt = Date.now();
+      panelTurns = 0;
+      send("chat_open", { meta: { turns: 0 } });
+    }
+
+    function chatMessage() {
+      if (!panelOpen) return;
+      panelTurns = Math.min(MAX_AGENT_TURNS, panelTurns + 1);
+      send("chat_message", { meta: { turns: panelTurns } });
+    }
+
+    function chatClose() {
+      if (!panelOpen) return;
+      panelOpen = false;
+      send("chat_close", {
+        meta: {
+          durationSec: intInRange(
+            (Date.now() - panelOpenedAt) / 1000,
+            0,
+            MAX_AGENT_DURATION_SEC
+          ),
+          turns: panelTurns,
+        },
+      });
+    }
+
+    chatTracking.open = chatOpen;
+    chatTracking.message = chatMessage;
+    chatTracking.close = chatClose;
+
+    // A panel still open when the tab goes away is a close, not a lost session.
+    window.addEventListener("pagehide", chatClose);
+
+    window.addEventListener("message", function (ev) {
+      try {
+        // Only our own frame, only our own message type.
+        if (!frame || !frame.contentWindow || ev.source !== frame.contentWindow) return;
+        var d = ev.data;
+        if (!d) return;
+        // The panel asks once on mount (and again after a host route change it
+        // missed). Answer with the current host path.
+        if (d.type === "ag-ui/context-request") {
+          postHostContext();
+          return;
+        }
+        if (d.type !== "ag-ui/agent-event") return;
+        var name = typeof d.event === "string" ? d.event : "";
+        if (AGENT_EVENTS.indexOf(name) === -1) return;
+        if (name === "chat_message") {
+          // The iframe says a message went out; the parent counts the turn
+          // and emits the event with the host context.
+          chatMessage();
+          return;
+        }
+        var extra = {};
+        if (name === "voice_end") {
+          // Rebuilt field by field: nothing from the iframe is trusted as-is.
+          // Abandonment is not reported — the collector derives it from turns.
+          extra.meta = {
+            durationSec: intInRange(d.durationSec, 0, MAX_AGENT_DURATION_SEC),
+            turns: intInRange(d.turns, 0, MAX_AGENT_TURNS),
+          };
+        }
+        send(name, extra);
+      } catch (e) {
+        /* a malformed agent event must never break the page */
+      }
+    });
+
     function trackPageview() {
       var href = String(window.location.href);
       if (href === lastTrackedUrl) return;
@@ -437,6 +608,10 @@
     }
     window.addEventListener("mousemove", markActive, { passive: true });
     window.addEventListener("keydown", markActive);
+    // Touch devices never fire mousemove, so a tap is the only sign of life
+    // (M-06). Passive: this must never delay a scroll or a tap.
+    window.addEventListener("touchstart", markActive, { passive: true });
+    window.addEventListener("pointerdown", markActive, { passive: true });
     window.setInterval(function () {
       try {
         if (document.visibilityState === "visible" && Date.now() - lastActive < 30000) {

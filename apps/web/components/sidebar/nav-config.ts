@@ -87,12 +87,7 @@ export const SIDEBAR_NAV: SidebarNavSection[] = [
     icon: ChartBar,
     items: [
       { id: "website", label: "Website", icon: Globe, href: "/analytics/website" },
-      { id: "acquisition", label: "Acquisition", icon: ChartLine, href: "/analytics/acquisition" },
-      { id: "engagement", label: "Engagement", icon: Smiley, href: "/analytics/engagement" },
-      { id: "content", label: "Content", icon: ListBullets, href: "/analytics/content" },
-      { id: "insights", label: "Insights", icon: WarningCircle, href: "/analytics/insights" },
       { id: "agent", label: "Agent", icon: Robot, href: "/analytics/agent" },
-      { id: "intent", label: "Intent", icon: Crosshair, href: "/analytics/intent" },
       { id: "analytics-conversions", label: "Conversions", icon: Target, href: "/analytics/conversions" },
     ],
   },

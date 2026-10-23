@@ -1,243 +1,19 @@
 /**
  * packages/analytics/src/registry.ts
  *
- * Phase 1 — first-party metric/dimension registry, channel taxonomy,
- * report query validator, and report schemas.
+ * The behaviour behind the metric contract: the channel taxonomy, the
+ * report query validator, and the report schemas.
  *
- * Free-only constraint: every "available" metric/dimension must be
- * computable from what the existing snippet tag already collects
- * (pageview/chat/conversion events in page_views + rollups + HLL).
- * Anything needing uncollected data is status "planned" (Phase 3 tag
- * work) or "excluded" (product scope) — never silently faked.
+ * The contract itself — every metric, dimension, surface and caveat — lives
+ * in `catalogue.ts`, which is re-exported from here so the import paths
+ * that predate the split keep working.
  *
  * No GA4, no third-party APIs, no paid services.
  */
 
-export type MetricStatus = "available" | "planned" | "excluded";
+import { DIMENSIONS, METRICS, caveatNotes, type DimensionDef, type DimensionId } from "./catalogue";
 
-export interface MetricDef {
-  id: string;
-  label: string;
-  /** How the frontend should render the raw number. */
-  format: "int" | "float1" | "percent1" | "money1";
-  definition: string;
-  status: MetricStatus;
-  /** Where the number comes from when available. */
-  source?: string;
-  /** Dimensions this metric can break down by (empty = total only). */
-  dimensions?: DimensionId[];
-  /** Why planned/excluded — surfaced to callers, never a silent zero. */
-  note?: string;
-}
-
-export type DimensionId =
-  | "day"
-  | "path"
-  | "channel"
-  | "source"
-  | "medium"
-  | "campaign"
-  | "landingPage"
-  | "device"
-  | "referrer"
-  | "title";
-
-export interface DimensionDef {
-  id: DimensionId;
-  label: string;
-  definition: string;
-  status: MetricStatus;
-  source?: string;
-  note?: string;
-}
-
-export const METRICS: Record<string, MetricDef> = {
-  sessions: {
-    id: "sessions",
-    label: "Sessions",
-    format: "int",
-    definition: "Island-counted sessions: one tab-session splits after 30 min inactivity.",
-    status: "available",
-    source: "metrics_daily.sessions",
-    dimensions: ["day", "path", "channel", "source", "medium", "campaign", "landingPage", "device", "referrer"],
-  },
-  pageviews: {
-    id: "pageviews",
-    label: "Views",
-    format: "int",
-    definition: "Human pageview events (bot traffic filtered at write time).",
-    status: "available",
-    source: "metrics_daily.pageviews / page_views COUNT",
-    dimensions: ["day", "path", "title", "channel", "source", "medium", "campaign", "landingPage", "device", "referrer"],
-  },
-  uniques: {
-    id: "uniques",
-    label: "Total users",
-    format: "int",
-    definition: "Approx. distinct visitors via daily Redis HLL merged over the range.",
-    status: "available",
-    source: "ahll:{company}:{day} PFMERGE",
-    dimensions: ["day"],
-    note: "HLL keys exist per company-day only, so uniques cannot split by channel/path yet.",
-  },
-  chatOpens: {
-    id: "chatOpens",
-    label: "Widget opened",
-    format: "int",
-    definition: "chat_open events: visitor opened the chat widget.",
-    status: "available",
-    source: "metrics_daily.chat_opens",
-    dimensions: ["day", "path", "channel", "source", "medium", "campaign", "device"],
-  },
-  messages: {
-    id: "messages",
-    label: "Chat messages",
-    format: "int",
-    definition: "chat_message events in range.",
-    status: "available",
-    source: "metrics_daily.messages",
-    dimensions: ["day"],
-  },
-  engagedSessions: {
-    id: "engagedSessions",
-    label: "Engaged sessions",
-    format: "int",
-    definition: "Distinct tab-sessions with 2+ pageviews or any interaction (chat, conversion, scroll, download, configured click) in the window.",
-    status: "available",
-    source: "raw distinct tab-session scan (engagement.ts)",
-    dimensions: ["day", "path", "device"],
-  },
-  engagementRate: {
-    id: "engagementRate",
-    label: "Engagement rate",
-    format: "percent1",
-    definition: "engagedSessions / sessions * 100 (raw tab-session denominator, see engagement-denominator-raw).",
-    status: "available",
-    source: "engagement.ts",
-    dimensions: ["day"],
-  },
-  avgEngagementTime: {
-    id: "avgEngagementTime",
-    label: "Avg. engagement time",
-    format: "float1",
-    definition: "Mean active seconds per session: 15s per heartbeat, capped at 30min per island.",
-    status: "available",
-    source: "sessions.active_seconds",
-    dimensions: ["day"],
-  },
-  scrolls: {
-    id: "scrolls",
-    label: "Scroll events",
-    format: "int",
-    definition: "Depth-threshold (25/50/75/90%) scroll events fired once per threshold per page.",
-    status: "available",
-    source: "metrics_daily.scrolls / page_views COUNT",
-    dimensions: ["day", "path", "device"],
-  },
-  downloads: {
-    id: "downloads",
-    label: "Download clicks",
-    format: "int",
-    definition: "File-download clicks (anchor download attr or file extension).",
-    status: "available",
-    source: "metrics_daily.downloads / page_views COUNT",
-    dimensions: ["day", "path", "device"],
-  },
-  clicks: {
-    id: "clicks",
-    label: "Configured clicks",
-    format: "int",
-    definition: "Clicks on [data-ag-click] elements.",
-    status: "available",
-    source: "metrics_daily.clicks / page_views COUNT",
-    dimensions: ["day", "path", "device"],
-  },
-  newUsers: {
-    id: "newUsers",
-    label: "New users",
-    format: "int",
-    definition: "Visitors never seen before the range.",
-    status: "planned",
-    note: "Needs cross-day visitor history lookup (Phase 3).",
-  },
-  conversions: {
-    id: "conversions",
-    label: "Conversions",
-    format: "int",
-    definition: "Recorded conversion events.",
-    status: "excluded",
-    note: "Conversion analysis is out of product scope; served only by the legacy conversions page.",
-  },
-  revenue: {
-    id: "revenue",
-    label: "Revenue",
-    format: "money1",
-    definition: "Sum of conversion values.",
-    status: "excluded",
-    note: "Out of product scope (see conversions).",
-  },
-};
-
-export const DIMENSIONS: Record<DimensionId, DimensionDef> = {
-  day: { id: "day", label: "Day", definition: "UTC calendar day.", status: "available", source: "metrics_daily.day" },
-  path: { id: "path", label: "Page path", definition: "Tracked page path.", status: "available", source: "page_views.path" },
-  channel: {
-    id: "channel",
-    label: "Channel",
-    definition: "First-party channel from referrer + UTM (Direct, Organic Social, Campaign, Email, Referral).",
-    status: "available",
-    source: "classifyChannel(referrer, url) at query time",
-  },
-  source: {
-    id: "source",
-    label: "Source",
-    definition: "utm_source, else referrer host, else (direct).",
-    status: "available",
-    source: "parseUtm(url) / referrer host",
-  },
-  medium: {
-    id: "medium",
-    label: "Medium",
-    definition: "utm_medium, else channel default.",
-    status: "available",
-    source: "parseUtm(url) / channel default",
-  },
-  campaign: {
-    id: "campaign",
-    label: "Campaign",
-    definition: "utm_campaign value, else (not set).",
-    status: "available",
-    source: "parseUtm(url)",
-  },
-  landingPage: {
-    id: "landingPage",
-    label: "Landing page",
-    definition: "Entry path of each session: first pageview per session_hash in the window.",
-    status: "available",
-    source: "DISTINCT ON (session_hash) over the range window",
-  },
-  device: {
-    id: "device",
-    label: "Device",
-    definition: "Desktop vs Mobile bucketed from viewport width.",
-    status: "available",
-    source: "page_views.viewport width bucket",
-  },
-  referrer: {
-    id: "referrer",
-    label: "Referrer",
-    definition: "Raw document referrer host.",
-    status: "available",
-    source: "page_views.referrer",
-  },
-  title: {
-    id: "title",
-    label: "Page title",
-    definition: "document.title captured on pageview into event meta.",
-    status: "available",
-    source: "page_views.meta->>'title'",
-  },
-};
+export * from "./catalogue";
 
 /* ------------------------------------------------------------------ */
 /* Channel taxonomy (first-party).                                     */
@@ -406,7 +182,11 @@ export function validateReportQuery(q: ReportQuery): { ok: true } | { ok: false;
       if (!m.dimensions.includes(d as DimensionId)) {
         errors.push({
           code: "incompatible-dimensions",
-          message: `"${id}" cannot break down by "${d}" (HLL keys are per company-day only).`,
+          // The metric's own note explains the usual reason (uniques live in
+          // per-day HLL keys); without one, say what actually happened.
+          message: m.note
+            ? `"${id}" cannot break down by "${d}" — ${m.note}`
+            : `"${id}" cannot break down by "${d}" (not one of the metric's dimensions).`,
         });
       }
     }
@@ -437,7 +217,27 @@ export interface Freshness {
   /** Rollup lag in minutes: website/acquisition numbers move on the worker tick. */
   rollupLagMinutes: number;
   live: boolean;
+  /** The caveat codes, machine-readable. */
   dataQuality: string[];
+  /**
+   * The same caveats in plain language.
+   *
+   * The codes are for machines, the notes are for the customer. Resolving
+   * them server-side keeps one wording for every surface (F-07).
+   */
+  notes: string[];
+}
+
+/** Where the rollup tick stamps the time of its last run. */
+export const ROLLUP_LAST_KEY = "ana:rollup:last";
+
+/**
+ * The configured rollup interval, in minutes — the worst-case age of a
+ * rollup-bound number when the tick stamp is unavailable.
+ */
+export function configuredRollupLagMinutes(): number {
+  const ms = parseInt(process.env.ANALYTICS_ROLLUP_MS || "900000", 10);
+  return Number.isFinite(ms) && ms > 0 ? Math.max(1, Math.round(ms / 60000)) : 15;
 }
 
 export interface ReportError {
@@ -455,6 +255,45 @@ export interface BreakdownRow {
   [metric: string]: string | number;
 }
 
+/**
+ * A day whose pageviews or sessions sit far enough from the same-length
+ * baseline to be worth a human's attention. The channel mix that day is
+ * context, not a proven cause.
+ */
+export interface Anomaly {
+  metric: "pageviews" | "sessions";
+  day: string;
+  observed: number;
+  expected: number;
+  z: number;
+  direction: "spike" | "dip";
+  baselineWindow: string;
+  context: Array<{ label: string; pageviews: number; sessions: number }>;
+  note: string;
+}
+
+/**
+ * The Website surface's headline report. Totals and trend come from the
+ * rollup; the splits are raw scans. `uniques` is absent when the HLL merge
+ * fails — absence is the honest answer, zero would not be.
+ */
+export interface WebsiteReport {
+  kind: "website";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  trend: TrendPoint[];
+  breakdowns: {
+    path: BreakdownRow[];
+    referrer: BreakdownRow[];
+    viewport: BreakdownRow[];
+  };
+  /** Unusual days in the window; empty when the baseline is too thin. */
+  anomalies: Anomaly[];
+  anomalyThresholds: { minDaily: number; z: number };
+  freshness: Freshness;
+}
+
 export interface AcquisitionReport {
   kind: "acquisition";
   companyId: string;
@@ -463,36 +302,140 @@ export interface AcquisitionReport {
   totals: Record<string, number>;
   previousTotals?: Record<string, number>;
   trend: TrendPoint[];
-  byChannel: BreakdownRow[];
-  bySourceMedium: BreakdownRow[];
-  byCampaign: BreakdownRow[];
-  byLandingPage: BreakdownRow[];
+  breakdowns: {
+    channel: BreakdownRow[];
+    sourceMedium: BreakdownRow[];
+    campaign: BreakdownRow[];
+    landingPage: BreakdownRow[];
+  };
   freshness: Freshness;
 }
 
-export interface EngagementReport {
-  kind: "engagement";
-  companyId: string;
-  rangeDays: number;
-  totals: Record<string, number>;
-  trend: TrendPoint[];
-  byPath: BreakdownRow[];
-  byDevice: BreakdownRow[];
-  freshness: Freshness;
-}
 
 export interface ContentReport {
   kind: "content";
   companyId: string;
   rangeDays: number;
   totals: Record<string, number>;
-  byPath: BreakdownRow[];
-  byTitle: BreakdownRow[];
-  byChannel: BreakdownRow[];
-  byDevice: BreakdownRow[];
+  breakdowns: {
+    path: BreakdownRow[];
+    title: BreakdownRow[];
+    channel: BreakdownRow[];
+    device: BreakdownRow[];
+  };
   freshness: Freshness;
 }
 
-export function freshnessStub(live: boolean, dataQuality: string[] = []): Freshness {
-  return { computedAt: new Date().toISOString(), rollupLagMinutes: 15, live, dataQuality };
+export interface AudienceReport {
+  kind: "audience";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  breakdowns: {
+    device: BreakdownRow[];
+    browser: BreakdownRow[];
+    os: BreakdownRow[];
+    hour: BreakdownRow[];
+  };
+  /** The share of visits that reported a timezone (0-100). */
+  timezoneCoverage: number;
+  freshness: Freshness;
+}
+
+/**
+ * Voice is counts-only by decision (O-3): calls, turns, duration and
+ * abandonment. There is deliberately no question list and no transcript —
+ * the events carry no content at all.
+ */
+export interface VoiceReport {
+  kind: "voice";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  trend: TrendPoint[];
+  freshness: Freshness;
+}
+
+
+/**
+ * Agent → Overview: how many visits use the agent, and how many visitors
+ * even open it. The questions and voice tabs have their own payloads so a
+ * surface never has to slice a combined report.
+ */
+export interface AgentOverviewReport {
+  kind: "agent-overview";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  trend: TrendPoint[];
+  freshness: Freshness;
+}
+
+/**
+ * Agent → Quality: is an answer backed by a retrieved source, how long does it
+ * take, and which pages can the agent answer from. Counts only — no question
+ * text, no snippets.
+ */
+export interface AgentQualityReport {
+  kind: "agent-quality";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  trend: TrendPoint[];
+  breakdowns: {
+    path: BreakdownRow[];
+  };
+  freshness: Freshness;
+}
+
+/** Agent → Questions: how much is asked, how deep, and on which pages. */
+export interface AgentQuestionsReport {
+  kind: "agent-questions";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  breakdowns: {
+    path: BreakdownRow[];
+  };
+  freshness: Freshness;
+}
+
+/**
+ * The freshness envelope every report carries.
+ *
+ * The rollup lag is **measured, not assumed**: the rollup tick stamps the
+ * time of its last run into Redis (`ana:rollup:last`) and the lag is the age
+ * of that stamp (F-15). The previous implementation hardcoded 15 minutes on
+ * every report, including reports that are not rollup-bound, so "last
+ * updated" was a number the product made up.
+ *
+ * Without Redis — or before the first tick — the configured tick interval is
+ * the honest worst case.
+ */
+export async function reportFreshness(
+  live: boolean,
+  dataQuality: string[] = []
+): Promise<Freshness> {
+  const computedAt = new Date();
+  let lagMinutes = configuredRollupLagMinutes();
+  try {
+    const { getRedisClient } = await import("@ag-ui/database");
+    const redis = await getRedisClient();
+    if (redis) {
+      const raw = await redis.get(ROLLUP_LAST_KEY);
+      const last = raw ? parseInt(raw, 10) : NaN;
+      if (Number.isFinite(last) && last > 0) {
+        lagMinutes = Math.max(0, Math.round((computedAt.getTime() - last) / 60000));
+      }
+    }
+  } catch {
+    // Redis down: the configured interval is the honest worst case.
+  }
+  return {
+    computedAt: computedAt.toISOString(),
+    rollupLagMinutes: lagMinutes,
+    live,
+    dataQuality,
+    notes: caveatNotes(dataQuality),
+  };
 }

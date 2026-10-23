@@ -6,6 +6,8 @@
  * storage budget so a malicious or buggy client cannot blow up a row.
  */
 
+import { BROWSER_VALUES, OS_VALUES, type BrowserValue, type OsValue } from "./catalogue";
+
 export type TrackEventType =
   | "pageview"
   | "chat_open"
@@ -14,7 +16,10 @@ export type TrackEventType =
   | "scroll"
   | "download"
   | "click"
-  | "heartbeat";
+  | "heartbeat"
+  | "voice_start"
+  | "voice_end"
+  | "chat_close";
 
 export const TRACK_EVENT_TYPES: readonly TrackEventType[] = [
   "pageview",
@@ -25,7 +30,13 @@ export const TRACK_EVENT_TYPES: readonly TrackEventType[] = [
   "download",
   "click",
   "heartbeat",
+  "voice_start",
+  "voice_end",
+  "chat_close",
 ] as const;
+
+/** Events that describe a voice call. They carry counts, never content. */
+export const VOICE_EVENT_TYPES: readonly TrackEventType[] = ["voice_start", "voice_end"] as const;
 
 /** Raw payload as submitted by the snippet / collector. */
 export interface RawTrackEvent {
@@ -38,6 +49,12 @@ export interface RawTrackEvent {
   referrer?: unknown;
   viewport?: unknown;
   user_agent?: unknown;
+  /** Derived at the collector from the request's user agent. */
+  browser?: unknown;
+  /** Derived at the collector from the request's user agent. */
+  os?: unknown;
+  /** Derived at the collector from the visitor's reported timezone. */
+  tz_offset?: unknown;
   session_hash?: unknown;
   visitor_hash?: unknown;
   /** Conversion revenue (B2C). Only honored on type === "conversion". */
@@ -57,6 +74,9 @@ export interface ValidatedTrackEvent {
   referrer: string;
   viewport: string;
   user_agent: string;
+  browser: BrowserValue | null;
+  os: OsValue | null;
+  tz_offset: number | null;
   session_hash: string;
   visitor_hash: string;
   value: number | null;
@@ -72,6 +92,9 @@ const MAX_VP_LEN = 32;
 const MAX_UA_LEN = 300;
 const MAX_VALUE = 1_000_000_000;
 
+/** UTC-14 to UTC+14, in minutes. Nothing outside that is a real timezone. */
+const MAX_TZ_OFFSET_MINUTES = 14 * 60;
+
 function str(v: unknown, max: number): string | null {
   if (typeof v !== "string") return null;
   const t = v.trim();
@@ -79,9 +102,96 @@ function str(v: unknown, max: number): string | null {
   return t;
 }
 
+/**
+ * A derived dimension is only kept if it is one of the product's own values.
+ *
+ * The collector computes these, but the validator is the last gate before
+ * the row is written, and a value outside the taxonomy would be a
+ * breakdown nobody can act on.
+ */
+function enumValue<T extends string>(v: unknown, allowed: readonly T[]): T | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim().toLowerCase();
+  return (allowed as readonly string[]).includes(t) ? (t as T) : null;
+}
+
+/** A timezone offset in minutes, or null when it is missing or impossible. */
+function tzOffsetValue(v: unknown): number | null {
+  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+  if (!Number.isFinite(n)) return null;
+  const rounded = Math.round(n);
+  if (rounded < -MAX_TZ_OFFSET_MINUTES || rounded > MAX_TZ_OFFSET_MINUTES) return null;
+  return rounded;
+}
+
 function optStr(v: unknown, max: number): string {
   if (typeof v !== "string") return "";
   return v.trim().slice(0, max);
+}
+
+/** A session longer than this is a stuck tab, not a conversation. */
+const MAX_EVENT_DURATION_SEC = 4 * 60 * 60;
+/** One turn is one visitor utterance or question; more is not a real session. */
+const MAX_EVENT_TURNS = 500;
+
+/** A duration in seconds, clamped to something a real session could last. */
+function durationValue(v: unknown): number {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? Math.min(MAX_EVENT_DURATION_SEC, Math.max(0, Math.round(n))) : 0;
+}
+
+/** A turn count, clamped. Never a string: these fields are counts only. */
+function turnsValue(v: unknown): number {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? Math.min(MAX_EVENT_TURNS, Math.max(0, Math.round(n))) : 0;
+}
+
+/**
+ * The counts a voice call may report.
+ *
+ * O-3 is a counts-only decision: voice is measurable, but not one word the
+ * visitor said is stored. That is enforced here rather than trusted to the
+ * client — the meta object is **rebuilt** from two numbers, so a snippet that
+ * posts a transcript in `meta` has it dropped before the row exists. A future
+ * change that wants transcripts has to change this function, which is exactly
+ * the conversation the decision deserves.
+ */
+export function voiceEventMeta(
+  type: TrackEventType,
+  rawMeta: Record<string, unknown> | null
+): Record<string, unknown> | null {
+  if (type === "voice_start") return {}; // a call started; nothing else to say
+  if (type !== "voice_end") return rawMeta;
+
+  const m = rawMeta ?? {};
+  const safeTurns = turnsValue(m.turns);
+  return {
+    durationSec: durationValue(m.durationSec),
+    turns: safeTurns,
+    // Derived, not reported: a call where the visitor never spoke is a
+    // silent call. One definition, at the gate, so the report and the
+    // product cannot disagree about what abandonment means.
+    abandoned: safeTurns === 0,
+  };
+}
+
+/**
+ * The counts a text chat may report.
+ *
+ * Same rule as voice: the parent measures the panel (it owns open/close
+ * timing and the turn counter) and the collector rebuilds the meta from
+ * numbers. A question's text, a page title, a conversation id pasted into
+ * `meta` — none of it survives, because none of it is read.
+ */
+export function chatEventMeta(
+  type: TrackEventType,
+  rawMeta: Record<string, unknown> | null
+): Record<string, unknown> | null {
+  const m = rawMeta ?? {};
+  if (type === "chat_open") return { turns: 0 };
+  if (type === "chat_message") return { turns: turnsValue(m.turns) };
+  if (type !== "chat_close") return rawMeta;
+  return { durationSec: durationValue(m.durationSec), turns: turnsValue(m.turns) };
 }
 
 function derivePath(url: string, explicit: unknown): string {
@@ -93,6 +203,20 @@ function derivePath(url: string, explicit: unknown): string {
   } catch {
     return "/";
   }
+}
+
+/**
+ * A page path a client sent, or null. Same rule the collector applies, minus
+ * the fallback: the chat panel asks for the *host* path, and a conversation
+ * must never claim a path it was not given. Query and hash are dropped, so a
+ * path is a page and not a query log.
+ */
+export function normalizePagePath(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("/")) return null;
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) return null;
+  return trimmed.split(/[?#]/)[0]!.slice(0, MAX_PATH_LEN) || "/";
 }
 
 /**
@@ -159,6 +283,12 @@ export function validateTrackEvent(
     }
   }
 
+  // Agent events keep their counts and nothing else — see the meta builders.
+  if (type === "voice_start" || type === "voice_end") meta = voiceEventMeta(type, meta);
+  if (type === "chat_open" || type === "chat_message" || type === "chat_close") {
+    meta = chatEventMeta(type, meta);
+  }
+
   return {
     ok: true,
     event: {
@@ -174,6 +304,9 @@ export function validateTrackEvent(
       referrer: optStr(raw.referrer, MAX_REF_LEN),
       viewport: optStr(raw.viewport, MAX_VP_LEN),
       user_agent: optStr(raw.user_agent, MAX_UA_LEN),
+      browser: enumValue(raw.browser, BROWSER_VALUES),
+      os: enumValue(raw.os, OS_VALUES),
+      tz_offset: tzOffsetValue(raw.tz_offset),
       session_hash,
       visitor_hash,
       value,

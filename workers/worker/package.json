@@ -7,6 +7,7 @@
     "dev": "bun --watch src/index.ts",
     "build": "echo 'worker: build ok'",
     "start": "bun src/index.ts",
+    "rebuild:analytics": "bun src/rebuild-analytics.ts",
     "lint": "echo 'worker: lint ok'"
   },
   "dependencies": {
