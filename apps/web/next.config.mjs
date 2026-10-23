@@ -40,6 +40,12 @@ const nextConfig = {
       { source: "/analytics/engagement", destination: "/analytics/website", permanent: false },
       // Insights kept its anomalies, now on the Overview.
       { source: "/analytics/insights", destination: "/analytics/website", permanent: false },
+      // The voice page never existed as its own route, but links did.
+      {
+        source: "/analytics/voice",
+        destination: "/analytics/agent?tab=voice",
+        permanent: false,
+      },
       // Intent Radar lives in Intelligence; the Analytics placeholder is gone.
       {
         source: "/analytics/intent",

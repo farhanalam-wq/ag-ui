@@ -35,6 +35,12 @@ export interface BreakdownColumn {
   /** Paths and referrers read as machine strings; counts do not. */
   mono?: boolean;
   align?: "left" | "right";
+  /**
+   * How a numeric cell is written. Counts are the default; a rate column says
+   * so, because "68" where the KPI row says "68.0%" reads like a different
+   * number.
+   */
+  format?: "count" | "percent1";
 }
 
 export function BreakdownTable<T extends { label: string }>({
@@ -106,7 +112,9 @@ export function BreakdownTable<T extends { label: string }>({
                         )}
                       >
                         {typeof value === "number"
-                          ? formatCount(value)
+                          ? c.format === "percent1"
+                            ? `${value.toFixed(1)}%`
+                            : formatCount(value)
                           : typeof value === "string"
                             ? value
                             : "—"}

@@ -356,22 +356,6 @@ export interface VoiceReport {
   freshness: Freshness;
 }
 
-/**
- * The agent's own numbers: sessions that used it, widget opens, questions,
- * panel duration, and the text-vs-voice share. Counts only, from events the
- * parent page emitted.
- */
-export interface AgentReport {
-  kind: "agent";
-  companyId: string;
-  rangeDays: number;
-  totals: Record<string, number>;
-  trend: TrendPoint[];
-  breakdowns: {
-    path: BreakdownRow[];
-  };
-  freshness: Freshness;
-}
 
 /**
  * Agent → Overview: how many visits use the agent, and how many visitors

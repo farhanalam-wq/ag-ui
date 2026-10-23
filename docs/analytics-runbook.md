@@ -53,7 +53,7 @@ Every analytics report answers with the same envelope:
   now). It is the only way to tell a stale read from a fresh one.
 - `GET /api/analytics/cache-stats` returns the global hit/miss counters plus
   `namespaces`, one entry per report (`acquisition`, `agent-overview`,
-  `agent-questions`, `voice`, …).
+  `agent-questions`, `agent-quality`, `agent-voice`, …).
 - A bad `range` is `422 { error }`, a company this session does not own is
   `404`, the read budget is `429` with `Retry-After`. The web client raises
   one `ApiError` carrying the status, code, details and `retryAfterSec`.
@@ -87,10 +87,11 @@ Overview. A stale client calling the old paths gets `404`.
 Agent routes: `/api/analytics/agent/overview` (sessions, opens, open rate,
 questions), `/api/analytics/agent/questions` (volume, depth, panel time, by
 page), `/api/analytics/agent/quality` (grounded rate, answers without a source,
-answer-time percentiles, grounding by page) and `/api/analytics/agent/voice`. The older `/api/analytics/agent` and
-`/api/analytics/voice` stay as shims for one release; they return the same
-data under the older keys. Analytics exposes **14** routes today (including the
-two shims and `/cache-stats`); the shims retire in the next commit, leaving 12.
+answer-time percentiles, grounding by page) and `/api/analytics/agent/voice`
+(calls, turns, duration, silent calls, text-vs-voice). The combined
+`/api/analytics/agent` and `/api/analytics/voice` routes are **gone**; the
+Agent surface is four tabs and no tab slices a combined payload. Analytics
+exposes **12** routes in total, including `/cache-stats`.
 
 ## Time contract (UTC)
 Every session in the pool is opened with `TimeZone=UTC` (a startup parameter, set in
@@ -183,9 +184,11 @@ conversation id cannot be stored even if a client sends one.
 (`metrics_daily.chat_opens`, `.messages`). `chat_close` has no column and is
 read from the event slice, like voice.
 
-`GET /api/analytics/agent` returns: agent sessions, opens and open rate,
-questions, questions per session, average/max panel time, voice calls, the
-text-vs-voice share, a daily trend and questions by page.
+`GET /api/analytics/agent/overview` returns agent sessions, opens and open rate,
+questions, questions per session and a daily opens/questions trend.
+`/agent/questions` returns questions, questions per session, average/max panel
+time and questions/opens by page. `/agent/quality` returns grounded rate,
+answers without a source, answer-time p50/p95 and grounding by page.
 
 Verifying by hand:
 
@@ -264,8 +267,8 @@ directly.
 
 There is **no migration and no conversation row** for voice — the report reads
 the raw `page_views` slice (one event per call). `GET /api/analytics/agent/voice`
-(or the older `/api/analytics/voice`) returns calls, turns, average/max
-duration, silent calls, silent-call rate, and the text-vs-voice share. A visit
+returns calls, turns, average/max duration, silent calls, silent-call rate, and
+the text-vs-voice share. A visit
 with a voice call counts as engaged.
 
 Verifying by hand:

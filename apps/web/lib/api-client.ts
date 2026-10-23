@@ -128,6 +128,54 @@ export interface AudienceAnalytics {
   freshness: Freshness;
 }
 
+/** An agent breakdown row, keyed by whatever the report measured. */
+export interface AgentBreakdownRow {
+  label: string;
+  [metric: string]: string | number;
+}
+
+export interface AgentOverviewAnalytics {
+  kind: "agent-overview";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  trend: { d: string; chatOpens: number; chatQuestions: number }[];
+  freshness: Freshness;
+}
+
+export interface AgentQuestionsAnalytics {
+  kind: "agent-questions";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  breakdowns: { path: AgentBreakdownRow[] };
+  freshness: Freshness;
+}
+
+export interface AgentQualityAnalytics {
+  kind: "agent-quality";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  trend: {
+    d: string;
+    answers: number;
+    groundedAnswers: number;
+    groundedAnswerRate: number;
+  }[];
+  breakdowns: { path: AgentBreakdownRow[] };
+  freshness: Freshness;
+}
+
+export interface VoiceAnalytics {
+  kind: "voice";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  trend: { d: string; voiceCalls: number; voiceTurns: number; voiceAvgDurationSec: number }[];
+  freshness: Freshness;
+}
+
 export interface ConversionAnalytics {
   companyId: string;
   rangeDays: number;
@@ -775,6 +823,35 @@ class ApiClient {
       if (opts?.channels?.length) q.set("channels", opts.channels.join(","));
       return this.analyticsRequest(`/api/analytics/acquisition?${q.toString()}`);
     },
+
+    agentOverview: (
+      companyId: string,
+      range = "14d"
+    ): Promise<AgentOverviewAnalytics> =>
+      this.analyticsRequest(
+        `/api/analytics/agent/overview?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      ),
+
+    agentQuestions: (
+      companyId: string,
+      range = "14d"
+    ): Promise<AgentQuestionsAnalytics> =>
+      this.analyticsRequest(
+        `/api/analytics/agent/questions?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      ),
+
+    agentQuality: (
+      companyId: string,
+      range = "14d"
+    ): Promise<AgentQualityAnalytics> =>
+      this.analyticsRequest(
+        `/api/analytics/agent/quality?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      ),
+
+    agentVoice: (companyId: string, range = "14d"): Promise<VoiceAnalytics> =>
+      this.analyticsRequest(
+        `/api/analytics/agent/voice?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      ),
 
     content: (companyId: string, range = "30d"): Promise<ContentAnalytics> =>
       this.analyticsRequest(

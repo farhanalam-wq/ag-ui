@@ -24,10 +24,12 @@
  *     the voice slice — a call is not a question, so the only unit both sides
  *     share is a session, and that is what the split divides.
  *
- * The surface reads three narrow views (`getAgentOverview`,
- * `getAgentQuestions`, and the voice report) rather than slicing one combined
- * payload in the browser. `getAgentReport` stays as the combined shape the
- * previous endpoint served.
+ * The surface reads narrow views (`getAgentOverview`, `getAgentQuestions`,
+ * `getAgentQualityReport` and the voice report) rather than slicing one
+ * combined payload in the browser. The combined report is gone: it existed to
+ * keep the old `/agent` endpoint alive, and every one of its numbers now has a
+ * home on exactly one tab. `loadAgentFacts` is the shared scan underneath the
+ * two views that need the same event pass.
  */
 
 import { db, pageViews, metricsDaily, sql, eq, and, gte, lt, inArray, desc } from "@ag-ui/database";
@@ -35,7 +37,6 @@ import {
   reportFreshness,
   type AgentOverviewReport,
   type AgentQuestionsReport,
-  type AgentReport,
   type BreakdownRow,
   type TrendPoint,
 } from "./registry";
@@ -80,10 +81,18 @@ export function agentTotals(
   };
 }
 
-export async function getAgentReport(
+/** What the shared event scan produces, before a view narrows it. */
+interface AgentFacts {
+  totals: Record<string, number>;
+  trend: TrendPoint[];
+  breakdowns: { path: BreakdownRow[] };
+  freshness: AgentOverviewReport["freshness"];
+}
+
+async function loadAgentFacts(
   companyId: string,
   rangeDays: number
-): Promise<AgentReport> {
+): Promise<AgentFacts> {
   const dataQuality: string[] = [];
   const now = new Date();
   const fromDay = new Date(now.getTime() - (rangeDays - 1) * 86_400_000)
@@ -191,9 +200,6 @@ export async function getAgentReport(
   if (visits === 0 && Number(traffic?.pv ?? 0) === 0) dataQuality.push("tracking-off");
 
   return {
-    kind: "agent",
-    companyId,
-    rangeDays,
     totals: agentTotals(counts, visits),
     trend,
     breakdowns: { path: byPath },
@@ -206,7 +212,7 @@ export async function getAgentOverview(
   companyId: string,
   rangeDays: number
 ): Promise<AgentOverviewReport> {
-  const full = await getAgentReport(companyId, rangeDays);
+  const full = await loadAgentFacts(companyId, rangeDays);
   const t = full.totals;
   return {
     kind: "agent-overview",
@@ -233,7 +239,7 @@ export async function getAgentQuestions(
   companyId: string,
   rangeDays: number
 ): Promise<AgentQuestionsReport> {
-  const full = await getAgentReport(companyId, rangeDays);
+  const full = await loadAgentFacts(companyId, rangeDays);
   const t = full.totals;
   return {
     kind: "agent-questions",
