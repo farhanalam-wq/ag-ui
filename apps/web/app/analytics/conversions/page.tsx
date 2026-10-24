@@ -20,7 +20,7 @@ import { DataQualityNote } from "@/components/analytics/data-quality-note";
 import { FreshnessBadge } from "@/components/analytics/freshness-badge";
 
 const ConversionsTrendChart = dynamic(
-  () => import("../../overview-charts").then((m) => m.ConversionsChart),
+  () => import("@/app/overview/overview-charts").then((m) => m.ConversionsChart),
   {
     ssr: false,
     loading: () => <Skeleton className="h-[280px] w-full" />,

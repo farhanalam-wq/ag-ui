@@ -20,6 +20,7 @@ import { AppSidebar } from "@/components/sidebar/app-sidebar";
 import type { CompanyItem } from "@/components/sidebar/company-switcher";
 import { ModeToggle } from "@/components/mode-toggle";
 import { useCompanyStore, useSelectedCompany } from "@/stores/use-company-store";
+import { useSessionStore } from "@/stores/use-session-store";
 
 export interface Crumb {
   label: string;
@@ -49,11 +50,26 @@ export function StudioShell({
   const router = useRouter();
   const companies = useCompanyStore((s) => s.companies);
   const selectedCompany = useSelectedCompany();
+  const ensureSession = useSessionStore((s) => s.ensure);
 
   useEffect(() => {
-    // Single shared loader (store dedupes concurrent callers).
-    useCompanyStore.getState().ensureCompanies();
-  }, []);
+    // Session first, tenant data second: company lists are owner-scoped, so
+    // fetching before the session resolves just buys a 401. If a stale or
+    // revoked cookie slipped past the proxy, land on /login instead.
+    let active = true;
+    ensureSession().then((user) => {
+      if (!active) return;
+      if (!user) {
+        router.replace("/login");
+        return;
+      }
+      // Single shared loader (store dedupes concurrent callers).
+      useCompanyStore.getState().ensureCompanies();
+    });
+    return () => {
+      active = false;
+    };
+  }, [ensureSession, router]);
 
   return (
     <SidebarProvider

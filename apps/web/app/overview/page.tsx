@@ -1,0 +1,829 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
+import {
+  ChartLineUp,
+  Funnel,
+  ArrowRight,
+  ArrowClockwise,
+  ArrowUpRight,
+  ChatCircle,
+  CircleNotch,
+  Code,
+  Copy,
+  Database,
+  Users,
+  Info,
+} from "@phosphor-icons/react";
+import { StudioShell } from "@/components/studio-shell";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { useSelectedCompany } from "@/stores/use-company-store";
+import type { OverviewMock } from "@/mocks/overview";
+import { apiClient } from "@/lib/api-client";
+import type { Range } from "@/lib/analytics";
+import { DataQualityNote } from "@/components/analytics/data-quality-note";
+import { FreshnessBadge } from "@/components/analytics/freshness-badge";
+
+const INTENT_COLORS = [
+  "hsl(var(--chart-1))",
+  "hsl(var(--chart-2))",
+  "hsl(var(--chart-3))",
+  "hsl(var(--chart-4))",
+  "hsl(var(--chart-5))",
+];
+
+const METRIC_HELP: Record<string, string> = {
+  assisted:
+    "Share of conversions where the assistant helped, vs visitors who never opened it.",
+  grounded:
+    "Share of assistant answers that cite a learned source page.",
+  blindspot:
+    "Share of high intent questions answered with low confidence. Change vs prior 7 days (week over week).",
+  intent:
+    "Sessions showing buying or research intent. Change vs prior 7 days (week over week).",
+};
+
+function MetricInfo({ metric }: { metric: keyof typeof METRIC_HELP }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={`What does this metric mean`}
+          className="cursor-pointer rounded-sm text-muted-foreground hover:text-foreground"
+        >
+          <Info className="size-3.5" aria-hidden="true" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[240px] text-xs">
+        {METRIC_HELP[metric]}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function fmtDelta(delta: string) {
+  return delta.replace("WoW", "vs prior 7d");
+}
+
+// Recharts ships in these islands only — never in the initial load.
+const MonitoringTrendChart = dynamic(
+  () => import("./overview-charts").then((m) => m.MonitoringTrendChart),
+  {
+    ssr: false,
+    loading: () => <Skeleton className="h-[280px] w-full" />,
+  }
+);
+
+const IntentRadarChart = dynamic(
+  () => import("./overview-charts").then((m) => m.IntentRadarChart),
+  {
+    ssr: false,
+    loading: () => <Skeleton className="min-h-[280px] w-full flex-1" />,
+  }
+);
+
+export default function OverviewPage() {
+  const router = useRouter();
+  const company = useSelectedCompany();
+  const [range, setRange] = useState<Range>("14d");
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  // Live measured overview (Phase 4). No mock fallback: a failed fetch is an
+  // honest error card, never silently fake numbers.
+  const [data, setData] = useState<OverviewMock | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!company) {
+      setData(null);
+      setLoadError(null);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
+    apiClient.analytics
+      .overview(company.id, range)
+      .then((d) => {
+        if (!cancelled) {
+          setData(d);
+          setLoading(false);
+        }
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setLoadError(e instanceof Error ? e.message : String(e));
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [company?.id, range, refreshKey]);
+
+  const rangeLabel = range === "7d" ? "last 7 days" : "last 14 days";
+
+  const demand = useMemo(() => {
+    if (!data) return [];
+    return range === "7d" ? data.demandTrend.slice(-7) : data.demandTrend;
+  }, [data, range]);
+
+  const leakStage = useMemo(() => {
+    if (!data) return null;
+    let worst = data.funnel[1];
+    for (const s of data.funnel.slice(1, -1)) {
+      if ((s.stepConversion ?? 100) < (worst?.stepConversion ?? 100)) worst = s;
+    }
+    return worst?.stage ?? null;
+  }, [data]);
+
+  const radarData = useMemo(() => {
+    if (!data) return [];
+    return data.intentBreakdown.slice(0, 5).map((s) => ({
+      intent: s.intent.split(" ")[0],
+      full: s.intent,
+      share: s.share,
+    }));
+  }, [data]);
+
+  function navigate(href: string) {
+    if (pendingHref) return;
+    setPendingHref(href);
+    router.push(href);
+  }
+
+  function NavSpinner() {
+    return <CircleNotch className="size-3.5 animate-spin" aria-hidden="true" />;
+  }
+
+  return (
+    <TooltipProvider delayDuration={150}>
+      <StudioShell crumbs={[{ label: "Overview" }]}>
+        <div className="min-w-0">
+          {/* Header: title + global range + status + actions */}
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <h1 className="text-[30px] leading-9 tracking-tight font-semibold">
+                Overview
+              </h1>
+              <p className="text-sm text-muted-foreground mt-1 max-w-[65ch]">
+                Demand, conversion, and blindspots for the selected
+                assistant.
+              </p>
+            </div>
+            {data && (
+              <div className="flex flex-wrap items-center gap-2">
+                <FreshnessBadge freshness={data.freshness} />
+                <Badge
+                  variant="outline"
+                  className="rounded-full font-normal"
+                >
+                  <span
+                    className={`mr-1.5 size-1.5 rounded-full ${
+                      data.health.crawlStatus === "READY"
+                        ? "bg-emerald-500"
+                        : "bg-amber-500"
+                    }`}
+                  />
+                  {data.health.crawlStatus === "READY"
+                    ? "All OK"
+                    : data.health.crawlStatus}
+                </Badge>
+                <label className="inline-flex h-8 items-center rounded-md border px-2 text-[13px] text-muted-foreground">
+                  Range
+                  <select
+                    value={range}
+                    onChange={(e) => setRange(e.target.value as Range)}
+                    aria-label="Date range for all metrics"
+                    className="ml-2 h-full bg-transparent pr-1 text-[13px] text-foreground focus:outline-none"
+                  >
+                    <option value="14d">Last 14 days</option>
+                    <option value="7d">Last 7 days</option>
+                    <option value="custom" disabled>
+                      Custom (live analytics)
+                    </option>
+                  </select>
+                </label>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={pendingHref !== null}
+                  aria-busy={
+                    pendingHref === "/integration/embed-snippet"
+                  }
+                  onClick={() =>
+                    navigate("/integration/embed-snippet")
+                  }
+                >
+                  {pendingHref === "/integration/embed-snippet" ? (
+                    <NavSpinner />
+                  ) : (
+                    <Copy className="size-3.5" aria-hidden="true" />
+                  )}
+                  Copy embed
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={pendingHref !== null}
+                  aria-busy={pendingHref === "/knowledge/ingest"}
+                  onClick={() => navigate("/knowledge/ingest")}
+                >
+                  {pendingHref === "/knowledge/ingest" ? (
+                    <NavSpinner />
+                  ) : (
+                    <Database className="size-3.5" aria-hidden="true" />
+                  )}
+                  Ingest site
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {!data && loading && (
+            <div className="mt-6 space-y-4">
+              <Skeleton className="h-[120px] w-full" />
+              <Skeleton className="h-[280px] w-full" />
+            </div>
+          )}
+          {!data && !loading && loadError && (
+            <div
+              role="alert"
+              className="mx-auto mt-6 max-w-[60ch] rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-center"
+            >
+              <p className="text-sm font-medium">Overview unavailable</p>
+              <p className="mt-1 font-mono text-xs text-muted-foreground">
+                {loadError}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => setRefreshKey((k) => k + 1)}
+              >
+                Retry
+              </Button>
+            </div>
+          )}
+          {!data && !loading && !loadError && (
+            <div className="flex flex-col items-center justify-center py-24 text-center">
+              <ChartLineUp
+                className="size-8 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <p className="mt-3 text-sm font-medium">
+                No company selected
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground max-w-[45ch]">
+                Add a company to see its demand, conversions, and
+                blindspots here.
+              </p>
+              <Button
+                className="mt-4"
+                disabled={pendingHref !== null}
+                onClick={() => navigate("/knowledge/ingest")}
+              >
+                {pendingHref === "/knowledge/ingest" ? (
+                  <NavSpinner />
+                ) : null}
+                Ingest a site
+              </Button>
+            </div>
+          )}
+          {data && (
+            <div className="mt-6 min-w-0 space-y-4">
+              {/* Starter: 4 action boxes, no outer card */}
+              <div>
+                <p className="text-[13px] text-muted-foreground">
+                  Get started
+                </p>
+                <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    {
+                      icon: ChatCircle,
+                      title: "Test chat",
+                      body: "Open the Playground and ask your first pricing question.",
+                      href: "/playground",
+                    },
+                    {
+                      icon: Code,
+                      title: "Embed snippet",
+                      body: "Paste one script tag to add the bubble to any site.",
+                      href: "/integration/embed-snippet",
+                    },
+                    {
+                      icon: Database,
+                      title: "Review sources",
+                      body: "Verify the pages it learned before you share it.",
+                      href: "/knowledge/sources",
+                    },
+                    {
+                      icon: Users,
+                      title: "Share preview",
+                      body: "Send the team a link to try the assistant.",
+                      href: "/visitors/leads",
+                    },
+                  ].map((s) => {
+                    const pending = pendingHref === s.href;
+                    return (
+                      <button
+                        key={s.title}
+                        onClick={() => navigate(s.href)}
+                        disabled={pendingHref !== null}
+                        aria-busy={pending}
+                        className="group flex min-h-[104px] flex-col justify-start rounded-lg border bg-card p-4 text-left transition-colors hover:bg-muted/40 disabled:opacity-60"
+                      >
+                        <span className="flex items-start justify-between gap-2">
+                          <span className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+                            {pending ? (
+                              <NavSpinner />
+                            ) : (
+                              <s.icon
+                                className="size-4 shrink-0 text-muted-foreground"
+                                aria-hidden="true"
+                              />
+                            )}
+                            <span className="truncate">{s.title}</span>
+                          </span>
+                          <ArrowUpRight
+                            className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-primary"
+                            aria-hidden="true"
+                          />
+                        </span>
+                        <span className="mt-1.5 block text-[13px] leading-5 text-muted-foreground">
+                          {s.body}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Quota strip: used/limit tnum + dividers + footnote */}
+              <Card>
+                <CardContent className="pt-5">
+                  <div className="grid grid-cols-2 gap-y-4 md:grid-cols-4 md:divide-x md:divide-border">
+                    <div className="min-w-0 pr-4">
+                      <div className="flex items-center gap-1 text-[13px] text-muted-foreground">
+                        Assisted rate
+                        <MetricInfo metric="assisted" />
+                      </div>
+                      <p className="mt-1 font-sans text-xl font-semibold tabular-nums tracking-tight">
+                        {data.hero.assistedRate}%{" "}
+                        <span className="text-sm font-normal text-muted-foreground">
+                          / base {data.hero.baselineRate}%
+                        </span>
+                      </p>
+                    </div>
+                    <div className="min-w-0 pr-4 md:px-5">
+                      <div className="flex items-center gap-1 text-[13px] text-muted-foreground">
+                        Grounded answers
+                        <MetricInfo metric="grounded" />
+                      </div>
+                      <p className="mt-1 font-sans text-xl font-semibold tabular-nums tracking-tight">
+                        {data.trust.groundedCoverage}{" "}
+                        <span className="text-sm font-normal text-muted-foreground">
+                          / 100%
+                        </span>
+                      </p>
+                    </div>
+                    <div className="min-w-0 pr-4 md:px-5">
+                      <div className="flex items-center gap-1 text-[13px] text-muted-foreground">
+                        Blindspot rate
+                        <MetricInfo metric="blindspot" />
+                      </div>
+                      <p className="mt-1 font-sans text-xl font-semibold tabular-nums tracking-tight">
+                        {data.kpis[1]?.value}{" "}
+                        <span
+                          className="text-sm font-normal text-emerald-600 dark:text-emerald-400"
+                          title="Week over week: change vs the prior 7 days"
+                        >
+                          {fmtDelta(data.kpis[1]?.delta ?? "")}
+                        </span>
+                      </p>
+                    </div>
+                    <div className="min-w-0 md:pl-5">
+                      <div className="flex items-center gap-1 text-[13px] text-muted-foreground">
+                        High-intent sessions
+                        <MetricInfo metric="intent" />
+                      </div>
+                      <p className="mt-1 font-sans text-xl font-semibold tabular-nums tracking-tight">
+                        {data.kpis[0]?.value}{" "}
+                        <span
+                          className="text-sm font-normal text-emerald-600 dark:text-emerald-400"
+                          title="Week over week: change vs the prior 7 days"
+                        >
+                          {fmtDelta(data.kpis[0]?.delta ?? "")}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-4 border-t pt-3 text-[13px] text-muted-foreground">
+                    Showing {rangeLabel} · Snapshot{" "}
+                    {data.health.snapshotVersion} · last crawl{" "}
+                    {data.health.lastCrawl} · p50{" "}
+                    {(data.trust.latencyP50 / 1000).toFixed(1)}s / p95{" "}
+                    {(data.trust.latencyP95 / 1000).toFixed(1)}s.
+                    Deltas are week over week, vs the prior 7 days.{" "}
+                    <Button
+                      variant="link"
+                      className="h-auto p-0 text-sm font-normal"
+                      disabled={pendingHref !== null}
+                      onClick={() =>
+                        navigate("/knowledge/snapshots")
+                      }
+                    >
+                      Learn more
+                    </Button>
+                    .
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* Monitoring + Blindspots ledger */}
+              <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3">
+                <Card className="min-w-0 lg:col-span-2">
+                  <CardHeader className="pb-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <CardTitle className="text-[15px] font-semibold">
+                        Monitoring
+                      </CardTitle>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="link"
+                          className="h-auto p-0 text-sm font-normal"
+                          disabled={pendingHref !== null}
+                          onClick={() => navigate("/analytics/agent")}
+                        >
+                          View all metrics
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => setRefreshKey((k) => k + 1)}
+                        >
+                          <ArrowClockwise className="size-3.5" />
+                          Refresh
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <MonitoringTrendChart
+                      demand={demand}
+                      refreshKey={refreshKey}
+                    />
+                    <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="inline-block h-2 w-2 rounded-[2px] bg-[hsl(var(--chart-1))]" />
+                        Assisted sessions
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="inline-block h-0 w-3 border-t-2 border-dashed border-[hsl(var(--chart-7))]" />
+                        Baseline
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <span
+                          className="inline-block h-2 w-3 rounded-[2px] border"
+                          style={{
+                            background:
+                              "repeating-linear-gradient(45deg, hsl(var(--muted)) 0 2px, transparent 2px 5px)",
+                          }}
+                        />
+                        Low-traffic window
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="min-w-0">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-[15px] font-semibold">
+                      Intent breakdown
+                    </CardTitle>
+                    <CardDescription className="text-[13px]">
+                      High intent demand in {rangeLabel}.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {data.intentBreakdown.slice(0, 5).map((slice, i) => (
+                      <div key={slice.intent}>
+                        <div className="flex items-baseline justify-between gap-2 text-[13px]">
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span
+                              className="size-2 shrink-0 rounded-full"
+                              style={{
+                                backgroundColor:
+                                  INTENT_COLORS[
+                                    i % INTENT_COLORS.length
+                                  ],
+                              }}
+                            />
+                            <span className="truncate">
+                              {slice.intent}
+                            </span>
+                          </span>
+                          <span className="shrink-0 font-sans tabular-nums text-muted-foreground">
+                            {slice.share}% ·{" "}
+                            {slice.sessions.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="mt-1 h-1.5 rounded-full bg-muted">
+                          <div
+                            className="h-1.5 rounded-full"
+                            style={{
+                              width: `${slice.share}%`,
+                              backgroundColor:
+                                INTENT_COLORS[
+                                  i % INTENT_COLORS.length
+                                ],
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                    <Button
+                      variant="link"
+                      className="h-auto p-0 text-sm font-normal"
+                      disabled={pendingHref !== null}
+                      onClick={() => navigate("/analytics/intent")}
+                    >
+                      View intent analytics
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Blindspots: full-width ledger for sentence length */}
+              <Card className="min-w-0">
+                <CardHeader className="pb-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <CardTitle className="text-[15px] font-semibold">
+                        {data.blindspots.length} Blindspots
+                      </CardTitle>
+                      <CardDescription className="mt-1 text-[13px]">
+                        High intent questions answered weakly in{" "}
+                        {rangeLabel}. Each one is a doc fix or a Signal.
+                      </CardDescription>
+                    </div>
+                    <Button
+                      variant="link"
+                      className="h-auto p-0 text-sm font-normal"
+                      disabled={pendingHref !== null}
+                      onClick={() =>
+                        navigate("/intelligence/intent-radar")
+                      }
+                    >
+                      View all
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead className="h-8 min-w-[300px] text-xs">
+                          Query
+                        </TableHead>
+                        <TableHead className="h-8 w-[190px] text-xs">
+                          Intent
+                        </TableHead>
+                        <TableHead className="h-8 w-[86px] text-xs">
+                          Sessions
+                        </TableHead>
+                        <TableHead className="h-8 w-[110px] text-right text-xs">
+                          Confidence
+                        </TableHead>
+                        <TableHead className="h-8 w-[220px] text-right text-xs">
+                          Fix
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {data.blindspots.map((row) => {
+                        const pending = pendingHref === row.nextHref;
+                        return (
+                          <TableRow
+                            key={row.query}
+                            className="cursor-pointer aria-busy:opacity-60"
+                            aria-busy={pending}
+                            onClick={() => navigate(row.nextHref)}
+                          >
+                            <TableCell className="max-w-0 py-3">
+                              <p className="flex items-center gap-1.5 text-[13px] font-medium">
+                                {pending ? <NavSpinner /> : null}
+                                <span
+                                  className="block truncate"
+                                  title={row.query}
+                                >
+                                  {row.query}
+                                </span>
+                              </p>
+                              <p
+                                className="mt-0.5 truncate text-xs text-muted-foreground"
+                                title={row.evidence}
+                              >
+                                {row.evidence}
+                              </p>
+                            </TableCell>
+                            <TableCell className="py-3">
+                              <Badge
+                                variant="outline"
+                                className="max-w-[170px] rounded-full px-3 font-normal"
+                              >
+                                <span
+                                  className="truncate"
+                                  title={row.intent}
+                                >
+                                  {row.intent}
+                                </span>
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="py-3 font-sans text-[13px] tabular-nums">
+                              {row.volume}
+                            </TableCell>
+                            <TableCell className="py-3 text-right">
+                              <Badge
+                                variant="outline"
+                                className="rounded-full font-normal"
+                              >
+                                <span className="mr-1.5 size-1.5 rounded-full bg-amber-500" />
+                                {row.confidence}%
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="py-3 text-right">
+                              <span className="inline-flex items-center justify-end gap-1 whitespace-nowrap text-[13px] text-primary">
+                                <span className="truncate">
+                                  {row.nextStep}
+                                </span>
+                                <ArrowUpRight
+                                  className="size-3.5 shrink-0"
+                                  aria-hidden="true"
+                                />
+                              </span>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/50 p-4">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Badge
+                        variant="outline"
+                        className="shrink-0 rounded-full border-violet-500/30 bg-violet-500/10 text-xs font-normal text-violet-700 dark:text-violet-300"
+                      >
+                        Signals
+                      </Badge>
+                      <p className="text-[13px] leading-5">
+                        No signals from these gaps yet. Turn the top
+                        blindspot into a doc fix or a published Signal.
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={pendingHref !== null}
+                      aria-busy={
+                        pendingHref === "/intelligence/signals"
+                      }
+                      onClick={() =>
+                        navigate("/intelligence/signals")
+                      }
+                    >
+                      {pendingHref === "/intelligence/signals" ? (
+                        <NavSpinner />
+                      ) : null}
+                      Create a signal
+                      <ArrowRight className="size-3.5" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Funnel + coverage radar */}
+              <div className="grid min-w-0 grid-cols-1 items-stretch gap-4 lg:grid-cols-3">
+                <Card className="min-w-0 lg:col-span-2">
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <Funnel
+                        className="size-4 text-muted-foreground"
+                        aria-hidden="true"
+                      />
+                      <CardTitle className="text-[15px] font-semibold">
+                        Visitor to outcome funnel
+                      </CardTitle>
+                    </div>
+                    <CardDescription className="text-[13px]">
+                      Biggest drop-off in {rangeLabel}:{" "}
+                      {data.funnelDropout}.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-1">
+                    {data.funnel.map((stage) => {
+                      const isLeak = stage.stage === leakStage;
+                      return (
+                        <div
+                          key={stage.stage}
+                          className={`grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 ${
+                            isLeak
+                              ? "bg-amber-500/8 ring-1 ring-amber-500/25"
+                              : ""
+                          }`}
+                        >
+                          <span className="flex min-w-0 items-center gap-2 truncate text-sm">
+                            {stage.stage}
+                            {isLeak && (
+                              <Badge
+                                variant="outline"
+                                className="shrink-0 rounded-full border-amber-500/30 bg-amber-500/10 text-[11px] font-normal text-amber-700 dark:text-amber-300"
+                              >
+                                biggest leak
+                              </Badge>
+                            )}
+                          </span>
+                          <span className="font-sans text-sm tabular-nums">
+                            {stage.count.toLocaleString()}
+                          </span>
+                          <div className="h-2 rounded-full bg-muted">
+                            <div
+                              className={`h-2 rounded-full ${
+                                isLeak
+                                  ? "bg-[hsl(var(--chart-3))]"
+                                  : "bg-[hsl(var(--chart-1))]"
+                              }`}
+                              style={{
+                                width: `${Math.max(stage.pctOfTop, 2)}%`,
+                              }}
+                            />
+                          </div>
+                          <span className="font-sans text-xs tabular-nums text-muted-foreground">
+                            {stage.stepConversion === null
+                              ? "100%"
+                              : `${stage.stepConversion}%`}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+
+                <div className="flex min-w-0 flex-col">
+                  <Card className="flex min-w-0 flex-1 flex-col">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-[15px] font-semibold">
+                        Intent coverage radar
+                      </CardTitle>
+                      <CardDescription className="text-[13px]">
+                        Demand concentration in {rangeLabel}.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex min-h-0 flex-1 flex-col">
+                      <IntentRadarChart radarData={radarData} />
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {data.intentBreakdown[0]?.intent} leads at{" "}
+                        {data.intentBreakdown[0]?.share}% of high intent
+                        demand. Preview data.
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+              {data.freshness.notes.length > 0 ? (
+                <DataQualityNote notes={data.freshness.notes} />
+              ) : null}
+            </div>
+          )}
+        </div>
+      </StudioShell>
+    </TooltipProvider>
+  );
+}
