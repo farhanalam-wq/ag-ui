@@ -13,6 +13,7 @@ import { voiceRoutes } from "./routes/voice";
 import { voiceToolRoutes } from "./routes/voice-tool";
 import { uploadsRoutes } from "./routes/uploads";
 import { operationsRoutes } from "./routes/operations";
+import { authRoutes } from "./routes/auth";
 
 const PORT = parseInt(process.env.PORT || "3001", 10);
 
@@ -22,6 +23,9 @@ export const app = new Elysia()
   // nothing keeps Elysia's normal status/response behaviour untouched.
   .onError(({ code, error, set, request }) => {
     const status = typeof set.status === "number" ? set.status : 500;
+    // Expected 4xx (validation, auth, not-found) are part of the contract, not
+    // failures. The sink is for unexpected 5xx (docs/auth-tenancy.md §9.4).
+    if (status >= 400 && status < 500) return;
     void recordError({
       level: status >= 500 ? "error" : "warn",
       source: "api",
@@ -56,6 +60,7 @@ export const app = new Elysia()
     message: "ag-ui backend active",
     documentation: "/swagger",
   }))
+  .use(authRoutes)
   .use(companiesRoutes)
   .use(analyticsRoutes)
   .use(chatRoutes)
