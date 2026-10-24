@@ -1063,6 +1063,9 @@ Two users, two companies, two widget keys. For every company-scoped route:
 
 Also assert the payload contains zero rows from the other company (not just a 404 shell).
 
+`apps/api/src/analytics-tenancy.test.ts` is the DB-backed matrix for the 11 analytics
+reports, `cache-stats`, and both operations reads.
+
 ### 14.3 Auth tests
 
 - Register → login → me → logout → me (401).
@@ -1098,6 +1101,10 @@ Also assert the payload contains zero rows from the other company (not just a 40
 set `TEST_DATABASE_URL` and map it to `DATABASE_URL` **before** the first import, and must
 refuse to run if the URL is not a test database. Add a `test` script to `apps/api/package.json`
 so `turbo run test` includes it.
+
+Implemented in `apps/api/src/test-preload.ts`, wired through the `test` script. DB-backed
+files guard on `process.env.DATABASE_URL === process.env.TEST_DATABASE_URL`, so a bare
+`bun test` skips them instead of touching the live database.
 
 ---
 

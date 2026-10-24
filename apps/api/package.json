@@ -7,7 +7,7 @@
     "dev": "bun --watch src/server.ts",
     "build": "echo 'api: build ok'",
     "start": "bun src/server.ts",
-    "test": "bun test",
+    "test": "bun test --preload ./src/test-preload.ts",
     "lint": "echo 'api: lint ok'"
   },
   "dependencies": {
