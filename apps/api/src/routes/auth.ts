@@ -7,7 +7,7 @@
  */
 
 import { Elysia, t } from "elysia";
-import { db, users, companies, eq, sql } from "@ag-ui/database";
+import { db, users, sql } from "@ag-ui/database";
 import { logger } from "@ag-ui/shared";
 import { requireUser, type AuthContext } from "../auth/plugin";
 import { authConfig, googleConfigured } from "../auth/config";
@@ -284,15 +284,9 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
           request.headers.get("user-agent")
         );
 
-        const [{ count }] = await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(companies)
-          .where(eq(companies.ownerId, user.id));
-
-        const destination =
-          count > 0
-            ? `${authConfig.appUrl}/overview`
-            : `${authConfig.appUrl}/onboarding`;
+        // Zero-company users land on the dashboard too: its empty state is
+        // the entry point until a dedicated onboarding route exists.
+        const destination = `${authConfig.appUrl}/overview`;
 
         logger.info("[auth] google login", { userId: user.id });
 

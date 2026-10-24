@@ -90,7 +90,8 @@ The flow the product promises:
 
 1. A visitor lands on `/`, then goes to `/login` or `/register`.
 2. After authentication, the user sees their own companies (zero on first login).
-3. With zero companies, `/onboarding` asks for a URL and starts the first crawl.
+3. With zero companies, `/overview` renders its empty state as the entry point
+   (`/onboarding` stays a planned route — deferred, see A8 notes).
 4. The user selects one company. Every page below `/overview` reads that company only.
 5. The company's embed keys and allowed origins live under Integration.
 6. The embed posts events with the widget key. The server resolves the key to exactly one
@@ -180,8 +181,8 @@ Flow:
    - `google_sub` match → sign in.
    - else verified email match with no `google_sub` → link the Google identity to that user.
    - else create a new user with `password_hash = NULL`.
-7. Create a session, set the cookie, redirect to `${APP_URL}/overview`. If the user owns
-   zero companies, redirect to `${APP_URL}/onboarding`.
+7. Create a session, set the cookie, redirect to `${APP_URL}/overview` — including
+   users with zero companies, whose empty state is handled there (`/onboarding` deferred).
 
 Rules:
 
@@ -634,7 +635,7 @@ one policy. The manifest test in §14.1 is authoritative; this table is the huma
 | POST | `/api/auth/login` | 200 + cookie |
 | POST | `/api/auth/logout` | public so an expired cookie can still be cleared |
 | GET | `/api/auth/google/start` | 302 to Google |
-| GET | `/api/auth/google/callback` | 302 to `/overview` or `/onboarding` |
+| GET | `/api/auth/google/callback` | 302 to `/overview` (zero-company users included) |
 
 ### 9.2 Authenticated (session, no company)
 
@@ -835,7 +836,7 @@ Google client values, `GOOGLE_REDIRECT_URI`, `SESSION_TTL_HOURS`, and `VOICE_TOO
 | `/` | public | landing page (replaces the current dashboard) |
 | `/login` | public | email/password + Google |
 | `/register` | public | email/password + Google |
-| `/onboarding` | authenticated | first company when the user owns zero |
+| `/onboarding` | authenticated | planned: first company when the user owns zero — deferred; `/overview`'s empty state is the entry point for now |
 | `/overview` | authenticated | the current `/` dashboard, moved here |
 | `/agents`, `/analytics/*`, `/experience/*`, `/integration/*`, `/intelligence/*`, `/knowledge/*`, `/operations/*`, `/playground`, `/settings/*`, `/visitors/*` | authenticated | unchanged URLs |
 | `/embed/[key]` | public | unchanged |
@@ -864,8 +865,10 @@ benefit. The API remains the authorization authority.
 
 - Client context fetching `GET /api/auth/me` with credentials.
 - Exposes `{ user, loading, refresh, logout }`.
-- `StudioShell` renders a skeleton while loading, redirects to `/login` on 401, and to
-  `/onboarding` when `/api/companies` returns an empty list.
+- `StudioShell` resolves the session first (no owner-scoped fetches before it) and
+  redirects to `/login` when it is missing. Zero-company users stay on
+  `/overview` — its empty state is the entry point; there is no `/onboarding`
+  redirect in the shell.
 - `nav-user` uses the real user; the hardcoded `DEFAULT_USER` and the fake
   "Enterprise Admin" role are removed. The "Team" nav item is removed until RBAC exists.
 
