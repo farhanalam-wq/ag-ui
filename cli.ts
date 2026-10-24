@@ -2,7 +2,6 @@ import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import {
   db,
-  companies,
   companySnapshots,
   documents,
   chunks,
@@ -14,7 +13,13 @@ import {
   invalidateCompanyContextCache,
 } from "./packages/database/src/index";
 import { streamChatCompletionGenerator } from "./packages/shared/src/index";
-import { runIngestPipeline } from "./ingest-cli";
+import { runIngestPipeline } from "./packages/ingest/src/index";
+import {
+  CliOwnerError,
+  findOwnedCompanyByDomain,
+  firstPositional,
+  requireOwner,
+} from "./scripts/cli-owner";
 
 interface Evidence {
   sourceId: string;
@@ -37,7 +42,12 @@ async function main() {
   console.log("              In-Process Ingestion + Qdrant Vector Intelligence");
   divider("=");
 
-  let targetInput = process.argv[2];
+  // Every company belongs to a user. The terminal has no session, so the
+  // owner must be explicit (docs/auth-tenancy.md §5.6).
+  const owner = await requireOwner(process.argv);
+  console.log(`\nOwner: ${owner.email} (${owner.id})`);
+
+  let targetInput = firstPositional(process.argv);
 
   if (!targetInput) {
     targetInput = await rl.question(
@@ -64,11 +74,7 @@ async function main() {
 
   console.log(`\nChecking database for existing records for '${cleanDomain}'...`);
 
-  let [company] = await db
-    .select()
-    .from(companies)
-    .where(eq(companies.domain, cleanDomain))
-    .limit(1);
+  let company = await findOwnedCompanyByDomain(owner.id, cleanDomain);
 
   let shouldIngest = false;
 
@@ -103,12 +109,8 @@ async function main() {
   if (shouldIngest) {
     console.log(`\nStarting real-time page discovery & ingestion pipeline for: ${targetInput}...`);
     try {
-      const ingestResult = await runIngestPipeline(targetInput);
-      [company] = await db
-        .select()
-        .from(companies)
-        .where(eq(companies.domain, cleanDomain))
-        .limit(1);
+      const ingestResult = await runIngestPipeline(targetInput, owner.id);
+      company = await findOwnedCompanyByDomain(owner.id, cleanDomain);
 
       if (!company) {
         throw new Error("Company record missing after ingestion.");
@@ -124,6 +126,15 @@ async function main() {
       await closeRedisConnection();
       process.exit(1);
     }
+  }
+
+  if (!company) {
+    console.error(
+      "[FATAL] No company row is available for this owner after ingestion."
+    );
+    rl.close();
+    await closeRedisConnection();
+    process.exit(1);
   }
 
   // Fetch facts count and chunks count
@@ -281,7 +292,11 @@ ${retrieved.compiledPromptContext}`;
 }
 
 main().catch(async (err) => {
-  console.error("[FATAL CLI ERROR]", err);
+  if (err instanceof CliOwnerError) {
+    console.error(`[FATAL] ${err.message}`);
+  } else {
+    console.error("[FATAL CLI ERROR]", err);
+  }
   await closeRedisConnection();
   process.exit(1);
 });

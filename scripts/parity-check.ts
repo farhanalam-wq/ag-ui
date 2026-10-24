@@ -12,16 +12,22 @@
  *
  * Compares pgvector top-10 vs Qdrant top-10 document ID sets.
  * Requires:
+ *   - --owner <email|id> for a real user (docs/auth-tenancy.md §5.6)
  *   - Jaccard similarity >= 0.8 on every query
  *   - 5 spot-checked question-to-answer pairs returning the identical top document
  * Generates docs/parity-check.md with full results and verdict.
  */
 
-import { client, db, companies, companySnapshots, eq, desc } from "../packages/database/src/index";
+import { client, db, companySnapshots, eq, desc } from "../packages/database/src/index";
 import { queryChunkPoints } from "../packages/database/src/qdrant";
 import { generateEmbeddings } from "../packages/shared/src/embeddings";
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import {
+  CliOwnerError,
+  findOwnedCompanyByDomain,
+  requireOwner,
+} from "./cli-owner";
 
 interface QuerySpec {
   id: number;
@@ -70,31 +76,40 @@ function jaccardSimilarity(setA: Set<string>, setB: Set<string>): number {
 }
 
 async function main() {
+  const owner = await requireOwner(process.argv);
   console.log("=================================================");
   console.log("PARITY VERIFICATION HARNESS (TASK 12)");
   console.log("pgvector vs Qdrant (Resend Corpus, 1818 Chunks)");
+  console.log(`Owner: ${owner.email} (${owner.id})`);
   console.log("=================================================");
 
-  // 1. Locate Resend company & snapshot
+  // 1. Locate the owner's Resend company & latest snapshot. A domain alone is
+  // never enough: another user may own the same domain.
+  const company = await findOwnedCompanyByDomain(owner.id, "resend.com");
+  if (!company) {
+    throw new Error(
+      `Resend company not found for owner ${owner.email}. Run ingest-cli.ts with --owner first.`
+    );
+  }
+
   const [resend] = await db
     .select({
       snapshotId: companySnapshots.id,
       companyId: companySnapshots.companyId,
-      name: companies.name,
-      domain: companies.domain,
     })
     .from(companySnapshots)
-    .innerJoin(companies, eq(companySnapshots.companyId, companies.id))
-    .where(eq(companies.domain, "resend.com"))
+    .where(eq(companySnapshots.companyId, company.id))
     .orderBy(desc(companySnapshots.version))
     .limit(1);
 
   if (!resend) {
-    throw new Error("Resend snapshot not found in database. Run ingest-cli.ts for resend.com first.");
+    throw new Error(
+      `No snapshot found for ${company.domain}. Run ingest-cli.ts with --owner first.`
+    );
   }
 
   const { snapshotId, companyId } = resend;
-  console.log(`[PARITY] Target Company: ${resend.name} (${companyId})`);
+  console.log(`[PARITY] Target Company: ${company.name} (${companyId})`);
   console.log(`[PARITY] Target Snapshot: ${snapshotId}\n`);
 
   interface QueryResult {
@@ -264,7 +279,11 @@ ${results
 }
 
 main().catch(async (err) => {
-  console.error("[FATAL in parity-check]:", err);
+  if (err instanceof CliOwnerError) {
+    console.error(`[FATAL] ${err.message}`);
+  } else {
+    console.error("[FATAL in parity-check]:", err);
+  }
   await client.end();
   process.exit(1);
 });

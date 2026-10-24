@@ -41,6 +41,7 @@ import {
   runFactsCommand,
   runStatsCommand,
 } from "./packages/ingest/src/index";
+import { requireOwner, positionalArgs } from "./scripts/cli-owner";
 
 function printHelp() {
   console.log(`
@@ -52,7 +53,7 @@ Usage:
 Discovery → selection → crawl → DB populate. No retrieval here.
 
 Options:
-  --owner <user-id>      Required. The user who owns the company (session owner equivalent)
+  --owner <email|id>     Required. The user who owns the company (session owner equivalent)
   --discover-only        Only discover + list URLs, do not crawl or write DB
   --limit N              Non-interactive: take top N discovered URLs
   --all                  Non-interactive: take all discovered URLs
@@ -130,13 +131,14 @@ function parseArgs(argv: string[]): {
         !a.startsWith("--owner=")
     ) ?? null;
 
-  const first = args[0] ?? null;
+  const first = positionalArgs(argv)[0] ?? null;
   let command: CliCommand | null = null;
   if (first === "query" || first === "facts" || first === "stats") {
+    const positional = positionalArgs(argv);
     command = {
       name: first,
-      domain: args[1] ?? "",
-      question: first === "query" ? (args[2] ?? "") : "",
+      domain: positional[1] ?? "",
+      question: first === "query" ? (positional[2] ?? "") : "",
       limit: Math.min(6, Math.max(1, parseInt(getVal("--limit") ?? "6", 10) || 6)),
       json: has("--json"),
     };
@@ -189,7 +191,7 @@ function parseArgs(argv: string[]): {
 // -------------------------------------------------------------- utils ---
 
 
-async function runCommand(command: CliCommand): Promise<void> {
+async function runCommand(command: CliCommand, ownerId: string): Promise<void> {
   if (!command.domain) {
     console.error("[FATAL] missing domain. Usage: bun ingest-cli.ts query <domain> \"question\" | facts <domain> | stats <domain>");
     process.exit(1);
@@ -199,32 +201,29 @@ async function runCommand(command: CliCommand): Promise<void> {
       console.error("[FATAL] missing question. Usage: bun ingest-cli.ts query <domain> \"question\" [--limit 6] [--json]");
       process.exit(1);
     }
-    await runQueryCommand(command.domain, command.question, { limit: command.limit, json: command.json });
+    await runQueryCommand(command.domain, command.question, ownerId, { limit: command.limit, json: command.json });
   } else if (command.name === "facts") {
-    await runFactsCommand(command.domain, { json: command.json });
+    await runFactsCommand(command.domain, ownerId, { json: command.json });
   } else {
-    await runStatsCommand(command.domain);
+    await runStatsCommand(command.domain, ownerId);
   }
 }
 
 async function main() {
-  const { url, ownerId, opts, command } = parseArgs(process.argv);
+  const { url, opts, command } = parseArgs(process.argv);
   if (!url && !command) {
     printHelp();
     process.exit(1);
   }
   try {
+    // Resolve `--owner` to a real user. The pipeline itself only accepts a
+    // uuid, so an email is resolved here (docs/auth-tenancy.md §5.6).
+    const owner = await requireOwner(process.argv);
     if (command) {
-      await runCommand(command);
+      await runCommand(command, owner.id);
       process.exit(0);
     }
-    if (!ownerId) {
-      console.error(
-        "[FATAL] --owner <user-id> is required: every company must belong to a user (docs/auth-tenancy.md §12.1)."
-      );
-      process.exit(1);
-    }
-    await runIngestPipeline(url!, ownerId, opts);
+    await runIngestPipeline(url!, owner.id, opts);
     process.exit(0);
   } catch (err: any) {
     console.error("[FATAL]", err?.message ?? err);

@@ -375,6 +375,12 @@ run with the database role directly. They must require an explicit `--owner <ema
 resolve it to a real user. They must not create a company without an owner, and they must
 not look up a company by domain alone. A missing owner is a hard error.
 
+Implemented: `scripts/cli-owner.ts` owns the parsing and resolution
+(`parseOwnerArg`, `positionalArgs`/`firstPositional`, `requireOwner`,
+`findOwnedCompanyByDomain` over `resolveOwnedCompanyByDomain`), every operator entry point
+calls `requireOwner(process.argv)` first, argument-parsing rules are unit-tested in
+`scripts/cli-owner.test.ts`, and failures print a `[FATAL]` message and exit non-zero.
+
 ---
 
 ## 6. Threat model and no-leak invariants
@@ -728,8 +734,8 @@ One module (`packages/database/src/tenancy.ts`) with:
 - `resolveOwnedCompany(userId, companyId)`.
 - `resolveOwnedConversation(userId, conversationId)`.
 - `resolveOwnedCrawlJob(userId, jobId)`.
-- `resolveOwnedWidgetKey(userId, keyId)`.
-- `companyIdForWidgetKey(keyId)` for admin routes.
+- `resolveOwnedWidgetKey(userId, keyId)` for the admin routes (embed keys and their
+  allowlisted origins).
 
 These are the only functions allowed to resolve ownership. Route files may not hand-roll
 `eq(companies.ownerId, ...)`.
@@ -970,8 +976,9 @@ For the record, the clean-slate procedure is:
 
 ### 13.3 Demo seeder
 
-**Location:** `seeder/` at the repo root (`index.ts`, plus small modules for events,
-content, and rollups). Root scripts:
+**Status:** implemented. Location `seeder/` at the repo root (`ids.ts`, `content.ts`,
+`events.ts`, `rollups.ts`, `index.ts`, and the read-only smoke test in `smoke.test.ts`).
+Root scripts:
 
 ```json
 "seed": "bun seeder/index.ts",
@@ -1034,12 +1041,40 @@ The point is to judge the product at scale, not to produce uniform noise.
 **Safety and lifecycle:**
 
 - Refuse to run when `NODE_ENV === "production"`.
-- Refuse when `DATABASE_URL` does not point at localhost/127.0.0.1.
+- Refuse when `DATABASE_URL` does not point at localhost/127.0.0.1, and refuse any argument
+  other than `--reset` (plus `--help`).
 - `--reset` deletes the demo user (cascade removes all three companies and every child row,
-  including analytics) and reseeds. Without `--reset`, an existing demo user is a hard error.
+  including analytics; company-scoped `error_events` rows are deleted explicitly because the
+  FK is `ON DELETE SET NULL`) and reseeds. Without `--reset`, an existing demo user is a
+  hard error.
+- One demo `auth_sessions` row is created so login works immediately.
 - Print a summary table: table name → row count, plus the login credentials.
 - Qdrant is left empty by default. Random vectors would make retrieval meaningless; a future
   `--qdrant` flag can insert demo vectors for UI work that needs points.
+
+**Implementation notes (verified against a scratch database):**
+
+- UUIDs come from `SEED_NAMESPACE` (env-overridable) hashed to RFC-4122-shaped UUIDs;
+  Faker is seeded with 42, and analytics volumes use a small Mulberry32 PRNG keyed per
+  company/day.
+- Raw `page_views` are streamed with `COPY page_views (...) FROM STDIN` (postgres.js
+  `.writable()`), one company at a time — never per-row inserts. `id` is omitted so the
+  default applies.
+- Partitions are created exactly like the worker (`page_views_YYYYMM` plus both indexes),
+  before the COPY.
+- Sessions/rollups/HLL are built by the real `buildDailyRollup`, `buildHourlyRollup` and
+  `rebuildDailyHll`; daily and hourly buckets run with bounded concurrency
+  (`mapLimit`, 6/8 in flight) because buckets are independent — a visit is written only
+  under the bucket it started in. Missing Redis downgrades HLL to "skipped" without failing
+  the run.
+- A full run takes roughly 4–6 minutes; the hourly pass dominates.
+- Determinism is per UTC day: the window is the 90 days ending *yesterday*, so two runs on
+  the same day produce identical rows/counts; a later day shifts the window and the counts
+  move slightly.
+- Seeded volumes on 2026-10-24: ~2.96M raw page_views rows (~1.30M non-bot pageviews,
+  ~104k bots), ~550k sessions, 270 + ~6,5k rollup rows, and ~134 error events across the
+  three companies.
+- The smoke test in §14.5 asserts this state read-only.
 
 **Scope:** the seeder creates exactly one user and three companies as requested. Cross-tenant
 **tests** create their own second user; the seeder is for demo/review, not authorization
@@ -1106,6 +1141,11 @@ reports, `cache-stats`, and both operations reads.
 - Assert the user exists, three companies are owned, and page views/sessions/metrics are
   above the documented thresholds.
 - Run `--reset` and assert the counts return to the same values (deterministic).
+
+Implemented as `seeder/smoke.test.ts`: the volume/ownership assertions run read-only and
+skip unless `DATABASE_URL === SEED_DATABASE_URL` (and the URL contains "seed"), mirroring
+the guard in §14.6. The `--reset` determinism assertion is manual for now — it is a
+5-minute double run, not unit material. Run it once per rollout as part of A9 verification.
 
 ### 14.6 Database harness
 
