@@ -754,6 +754,9 @@ policy, or two correctly scoped instances. Preflight tests must assert:
 - a foreign origin receives no allow-origin header,
 - `OPTIONS` is handled once, not duplicated.
 
+Implemented in `apps/api/src/cors.ts` as a single `onRequest` hook that answers preflight
+before routing and sets response headers for every later status, including 401/403.
+
 ### 10.4 CSRF
 
 - `SameSite=Lax` on the session cookie.
@@ -763,6 +766,10 @@ policy, or two correctly scoped instances. Preflight tests must assert:
 - Public embed routes are exempt because they carry no cookies; they rely on the key +
   origin gate.
 - `POST /api/voice/tool/query` is exempt; it uses a bearer secret.
+
+Implemented in `apps/api/src/csrf.ts` as a global `onRequest` hook mounted after CORS and
+before the auth plugin. `/api/voice/token` is exempt because its widget-key path is
+cookie-free and origin-gated, while its company path is covered by SameSite=Lax.
 
 ### 10.5 Rate limits
 
@@ -803,8 +810,13 @@ Required:
 Obsolete and removed from `.env.example`: `SECRET_KEY`, `CLIENT_SESSION_HOURS`,
 `ADMIN_DOMAIN`, `NEXTJS_CALLBACK_URL`. Opaque sessions need no signing secret.
 
-`validateEnv` (already in `packages/shared/src/env.ts`, currently unused) is called at API
-startup in production and fails fast on a missing required value.
+`validateEnv` (in `packages/shared/src/env.ts`) is called at API startup in production and
+fails fast on a missing required value.
+
+Implemented in `apps/api/src/env.ts` and called before the Elysia app is constructed.
+Development and test keep the local defaults; production requires `APP_URL`,
+`DATABASE_URL`, Redis (`REDIS_URL` or `REDIS_HOST` + `REDIS_PORT`), `QDRANT_URL`, the
+Google client values, `GOOGLE_REDIRECT_URI`, `SESSION_TTL_HOURS`, and `VOICE_TOOL_SECRET`.
 
 ---
 

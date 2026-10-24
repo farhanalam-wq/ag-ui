@@ -1,8 +1,10 @@
 import { Elysia } from "elysia";
-import { cors } from "@elysiajs/cors";
 import { swagger } from "@elysiajs/swagger";
 import { logger } from "@ag-ui/shared";
 import { recordError } from "@ag-ui/database";
+import { corsPlugin } from "./cors";
+import { csrfPlugin } from "./csrf";
+import { validateApiEnv } from "./env";
 import { companiesRoutes } from "./routes/companies";
 import { analyticsRoutes } from "./routes/analytics";
 import { chatRoutes } from "./routes/chat";
@@ -18,15 +20,30 @@ import { authPlugin } from "./auth/plugin";
 
 const PORT = parseInt(process.env.PORT || "3001", 10);
 
+// Fail fast in production; development/test keep local defaults.
+validateApiEnv();
+
 export const app = new Elysia()
-  .use(cors())
+  // CORS first so every later response (including 403/401) carries the right
+  // allow-origin headers. CSRF runs before auth: an unsafe cookie-authenticated
+  // request without a matching Origin never reaches session lookup.
+  .use(corsPlugin)
+  .use(csrfPlugin)
   // Operations error sink. Fire-and-forget and total by contract; returning
   // nothing keeps Elysia's normal status/response behaviour untouched.
   .onError(({ code, error, set, request }) => {
     const status = typeof set.status === "number" ? set.status : 500;
     // Expected 4xx (validation, auth, not-found) are part of the contract, not
     // failures. The sink is for unexpected 5xx (docs/auth-tenancy.md §9.4).
-    if (status >= 400 && status < 500) return;
+    // Elysia reports NOT_FOUND with a 200 `set.status`, so check the code too.
+    if (
+      (status >= 400 && status < 500) ||
+      code === "NOT_FOUND" ||
+      code === "VALIDATION" ||
+      code === "PARSE"
+    ) {
+      return;
+    }
     void recordError({
       level: status >= 500 ? "error" : "warn",
       source: "api",

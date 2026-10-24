@@ -183,8 +183,9 @@ export const authPlugin = new Elysia({ name: "auth" })
     const pathname = new URL(request.url).pathname;
     const rule = findRouteRule(request.method, pathname);
 
-    // CORS preflight is handled by @elysiajs/cors. If it reaches us, it is not
-    // a data route and must not require a session.
+    // CORS preflight is answered by `corsPlugin` in `onRequest`, before this
+    // hook. If one still reaches us, it is not a data route and must not
+    // require a session.
     if (!rule) {
       if (request.method.toUpperCase() === "OPTIONS") {
         return baseContext(params, query, body);

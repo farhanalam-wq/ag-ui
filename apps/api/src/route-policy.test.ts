@@ -19,6 +19,7 @@ import {
   processingQueue,
 } from "@ag-ui/queues";
 import { app } from "./server";
+import { authConfig } from "./auth/config";
 import {
   ROUTE_POLICIES,
   findRouteRule,
@@ -143,5 +144,53 @@ describe("global enforcement", () => {
       new Request("http://localhost/api/not-a-route")
     );
     expect(res.status).toBe(404);
+  });
+});
+
+describe("security plugins are mounted on the real app", () => {
+  test("CORS preflight is answered before the auth policy", async () => {
+    const res = await app.handle(
+      new Request("http://localhost/api/analytics/overview", {
+        method: "OPTIONS",
+        headers: {
+          origin: authConfig.appUrl,
+          "access-control-request-method": "GET",
+        },
+      })
+    );
+
+    expect(res.status).toBe(204);
+    expect(res.headers.get("access-control-allow-origin")).toBe(
+      authConfig.appUrl
+    );
+    expect(res.headers.get("access-control-allow-credentials")).toBe("true");
+  });
+
+  test("unsafe auth POST without an Origin is rejected by CSRF", async () => {
+    const res = await app.handle(
+      new Request("http://localhost/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      })
+    );
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "Invalid request origin" });
+  });
+
+  test("unsafe auth POST with APP_URL Origin reaches validation", async () => {
+    const res = await app.handle(
+      new Request("http://localhost/api/auth/login", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: authConfig.appUrl,
+        },
+        body: "{}",
+      })
+    );
+
+    expect(res.status).toBe(422);
   });
 });
