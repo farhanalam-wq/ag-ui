@@ -996,7 +996,7 @@ populated across every table that exists at the time of seeding:
 
 | Area | Volume per company |
 |---|---|
-| Snapshots | 4–5 versions (v1–v4 READY; one FAILED for UI states) |
+| Snapshots | 5 versions; the FAILED retry sits mid-history (v3) so the latest attempt (v5) is READY and the corpus reads live |
 | Documents | 100–150 across the latest two snapshots |
 | Chunks | 4–8 per document (~600–1,200) |
 | Facts | 40–60 |

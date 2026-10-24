@@ -197,7 +197,6 @@ export interface SeededCompany extends CompanySpec {
   failedSnapshotId: string;
   widgetKeyIds: string[];
 }
-
 const DAY_MS = 86_400_000;
 
 function daysAgo(days: number, hour = 12, minute = 0): Date {
@@ -249,9 +248,11 @@ export async function seedCompanies(owner: UserRow): Promise<SeededCompany[]> {
   return COMPANIES.map((spec, i) => ({
     ...spec,
     id: rows[i]!.id,
-    latestSnapshotId: uuidFor("snapshot", spec.key, 4),
-    readySnapshotIds: [1, 2, 3, 4].map((v) => uuidFor("snapshot", spec.key, v)),
-    failedSnapshotId: uuidFor("snapshot", spec.key, 5),
+    // v5 is the latest and READY; the FAILED crawl sits mid-history (v3) so
+    // the dashboard cards reflect the live corpus, not a dead attempt.
+    latestSnapshotId: uuidFor("snapshot", spec.key, 5),
+    readySnapshotIds: [5, 4, 2, 1].map((v) => uuidFor("snapshot", spec.key, v)),
+    failedSnapshotId: uuidFor("snapshot", spec.key, 3),
     widgetKeyIds: [uuidFor("widget-key", spec.key, 1), uuidFor("widget-key", spec.key, 2)],
   }));
 }
@@ -261,8 +262,10 @@ export async function seedCompanies(owner: UserRow): Promise<SeededCompany[]> {
 async function seedSnapshots(company: SeededCompany): Promise<void> {
   const versions = [1, 2, 3, 4, 5];
   const createdAt = [130, 95, 55, 12, 4];
-  const pageCounts = [42, 68, 96, 124, 0];
-  const statuses = ["READY", "READY", "READY", "READY", "FAILED"];
+  // One FAILED attempt mid-history for UI states; the latest (v5) is READY so
+  // the company cards and retrieval reflect the live corpus.
+  const pageCounts = [42, 68, 0, 96, 124];
+  const statuses = ["READY", "READY", "FAILED", "READY", "READY"];
 
   await db.insert(companySnapshots).values(
     versions.map((version, i) => ({
@@ -306,8 +309,8 @@ async function seedDocuments(company: SeededCompany, batchIds: string[]): Promis
   const docIds: string[] = [];
   const rows: Array<typeof documents.$inferInsert> = [];
 
-  // Two latest READY snapshots carry the current knowledge base.
-  for (const version of [3, 4]) {
+  // The two latest READY snapshots carry the current knowledge base.
+  for (const version of [4, 5]) {
     const snapshotId = uuidFor("snapshot", company.key, version);
     const count = 60 + ((version * 7 + company.key.length) % 15); // 60–74
     for (let i = 0; i < count; i++) {
@@ -331,8 +334,8 @@ async function seedDocuments(company: SeededCompany, batchIds: string[]): Promis
         sourceKind: "crawl",
         originName: url,
         batchId: null,
-        deletedBatchId: version === 3 && i < 2 ? batchIds[0]! : null,
-        createdAt: daysAgo(version === 4 ? 11 : 54, 10, i % 60),
+        deletedBatchId: version === 4 && i < 2 ? batchIds[0]! : null,
+        createdAt: daysAgo(version === 5 ? 11 : 54, 10, i % 60),
       });
     }
   }
@@ -351,7 +354,7 @@ async function seedDocuments(company: SeededCompany, batchIds: string[]): Promis
     docIds.push(id);
     rows.push({
       id,
-      snapshotId: uuidFor("snapshot", company.key, 4),
+      snapshotId: uuidFor("snapshot", company.key, 5),
       url: `upload://${upload.filename}`,
       title: upload.title,
       category: "docs",
@@ -445,21 +448,31 @@ async function seedFacts(company: SeededCompany, docIds: string[]): Promise<void
 /* ------------------------------------------------------------------ crawl/enrich */
 
 async function seedCrawlJobs(company: SeededCompany): Promise<void> {
-  const rows = [1, 2, 3, 4].map((version) => ({
+  const rows = [1, 2, 3, 4, 5].map((version) => ({
     id: uuidFor("crawl-job", company.key, version),
     companyId: company.id,
     snapshotId: uuidFor("snapshot", company.key, version),
     selectionHash: sha256(`${company.key}:selection:${version}`),
     idempotencyKey: `seed-${company.key}-v${version}`,
-    status: "READY",
+    status: version === 3 ? "FAILED" : "READY",
     selected: 80 + version * 12,
-    crawled: 72 + version * 11,
-    docs: 60 + version * 10,
-    failed: version === 1 ? 4 : 1,
+    crawled: version === 3 ? 64 : 72 + version * 11,
+    docs: version === 3 ? 0 : 60 + version * 10,
+    failed: version === 3 ? 34 : version === 1 ? 4 : 1,
     priority: version,
-    errorSample: version === 1 ? [{ url: `${company.url}/broken`, error: "Timeout" }] : null,
-    createdAt: daysAgo(140 - version * 30, 8, 0),
-    updatedAt: daysAgo(140 - version * 30, 8, 45),
+    errorSample:
+      version === 3
+        ? [
+            { url: `${company.url}/blocked`, error: "Robots.txt disallow" },
+            { url: `${company.url}/timeout`, error: "Extraction timeout after 30s" },
+          ]
+        : version === 1
+          ? [{ url: `${company.url}/broken`, error: "Timeout" }]
+          : null,
+    // Same timeline as the snapshots: the job precedes its snapshot by an
+    // hour, so the version history reads as a real crawl flow.
+    createdAt: daysAgo([130, 95, 55, 12, 4][version - 1]!, 8, 0),
+    updatedAt: daysAgo([130, 95, 55, 12, 4][version - 1]!, 8, 45),
   }));
   await db.insert(crawlJobs).values(rows);
 }
