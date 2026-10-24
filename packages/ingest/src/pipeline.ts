@@ -12,8 +12,11 @@ import {
   companySnapshots,
   crawlJobs,
   eq,
+  and,
   desc,
   inArray,
+  isUuid,
+  resolveOwnedCompanyByDomain,
   recordError,
 } from "@ag-ui/database";
 import { sha256 } from "./utils";
@@ -145,9 +148,20 @@ export interface IngestPipelineResult {
 
 export async function runIngestPipeline(
   urlInput: string,
+  ownerId: string,
   userOpts?: Partial<CliOptions>
 ): Promise<IngestPipelineResult> {
   const tStart = Date.now();
+
+  // The owner is the session user, supplied by the route (never the request
+  // body). A missing owner is a hard error: no unowned company may be created.
+  if (!isUuid(ownerId)) {
+    throw new PipelineExitError(
+      "[AUTH] ownerId must be a user uuid (docs/auth-tenancy.md §12.1)",
+      1
+    );
+  }
+
   let target = urlInput.trim();
   if (!target.startsWith("http://") && !target.startsWith("https://")) target = "https://" + target;
 
@@ -281,12 +295,19 @@ export async function runIngestPipeline(
   let snapVersion = 1;
 
   if (!opts.dryRun) {
-    // Task 6 — max_concurrent_jobs: refuse when live jobs are at the cap. Scoped to
-    // all live rows (no owner concept yet; per-owner scoping arrives with P3 task 18).
+    // Task 6 — max_concurrent_jobs: refuse when this owner's live jobs are at
+    // the cap. Scoped to the owner so one tenant cannot block another, and the
+    // error never names another tenant's job ids.
     const liveJobs = await db
       .select({ id: crawlJobs.id, status: crawlJobs.status })
       .from(crawlJobs)
-      .where(inArray(crawlJobs.status, LIVE_JOB_STATUSES));
+      .innerJoin(companies, eq(companies.id, crawlJobs.companyId))
+      .where(
+        and(
+          inArray(crawlJobs.status, LIVE_JOB_STATUSES),
+          eq(companies.ownerId, ownerId)
+        )
+      );
     if (liveJobs.length >= opts.maxConcurrentJobs) {
       const ids = liveJobs.map((j) => `${j.id} (${j.status})`).join(", ");
       throw new PipelineExitError(
@@ -295,9 +316,14 @@ export async function runIngestPipeline(
       );
     }
 
-    let [existingComp] = await db.select().from(companies).where(eq(companies.domain, domain)).limit(1);
+    // Find-or-create this owner's company. Domains are unique per owner, never
+    // globally (docs/auth-tenancy.md §5.1, §12.1).
+    const existingComp = await resolveOwnedCompanyByDomain(ownerId, domain);
     if (!existingComp) {
-      const [ins] = await db.insert(companies).values({ domain, name: companyName, url: (baseUrl as URL).origin }).returning();
+      const [ins] = await db
+        .insert(companies)
+        .values({ ownerId, domain, name: companyName, url: (baseUrl as URL).origin })
+        .returning();
       cId = ins.id;
       console.log(`[DB] created company ${companyName} (${cId})`);
     } else {
@@ -305,19 +331,26 @@ export async function runIngestPipeline(
       console.log(`[DB] reusing company ${existingComp.name} (${cId})`);
     }
 
-    // Generate selection hash & idempotency key per Task 2 / Task 3 / Section 0 contract
+    // Generate selection hash & idempotency key per Task 2 / Task 3 / Section 0
+    // contract. Both include owner + company so identical selections under two
+    // tenants never collide (docs/auth-tenancy.md §12.1).
     const chunkerVersion = "chunker-v1:1800:250";
     const embedModelVersion = "text-embedding-3-small:1536";
     const sortedUrls = selected.map((p) => p.url).sort();
-    const selectionInput = `${domain}\n${sortedUrls.join("\n")}\n${chunkerVersion}\n${embedModelVersion}`;
+    const selectionInput = `${ownerId}\n${cId}\n${sortedUrls.join("\n")}\n${chunkerVersion}\n${embedModelVersion}`;
     const idempotencyKey = sha256(selectionInput);
-    const selectionHash = sha256(`${domain}\n${sortedUrls.join("\n")}`);
+    const selectionHash = sha256(`${ownerId}\n${cId}\n${sortedUrls.join("\n")}`);
 
-    // Check crawl_jobs by idempotency key (Task 3)
+    // Check crawl_jobs by (company, idempotency key) (Task 3).
     const [existingJob] = await db
       .select()
       .from(crawlJobs)
-      .where(eq(crawlJobs.idempotencyKey, idempotencyKey))
+      .where(
+        and(
+          eq(crawlJobs.companyId, cId),
+          eq(crawlJobs.idempotencyKey, idempotencyKey)
+        )
+      )
       .limit(1);
 
     if (existingJob) {
@@ -515,7 +548,7 @@ export async function runIngestPipeline(
   // throw path leaves a live row behind.
   let res: Awaited<ReturnType<typeof populateDb>>;
   try {
-    res = await populateDb(baseUrl as URL, domain, docs, rootHtml, opts, stats, jobContext);
+    res = await populateDb(baseUrl as URL, domain, docs, rootHtml, opts, stats, ownerId, jobContext);
   } catch (err: any) {
     const message = String(err?.message ?? err);
     if (jobContext) {

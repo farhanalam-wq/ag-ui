@@ -1,7 +1,6 @@
 import { Elysia, t } from "elysia";
 import {
   db,
-  companies,
   companySnapshots,
   enrichmentBatches,
   batchFiles,
@@ -19,6 +18,7 @@ import {
 import { enrichQueue } from "@ag-ui/queues";
 import { extractUpload } from "@ag-ui/extract";
 import { logger, extractCompanyFacts } from "@ag-ui/shared";
+import { requireCompany } from "../auth/plugin";
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_BATCH_BYTES = 100 * 1024 * 1024;
@@ -87,17 +87,10 @@ export const uploadsRoutes = new Elysia({ prefix: "/api/companies/:id/uploads" }
   // 1. Upload files -> extract preview -> DRAFT batch (no knowledge touched)
   .post(
     "/",
-    async ({ params, body, request, set }) => {
-      const companyId = params.id;
-      const [company] = await db
-        .select()
-        .from(companies)
-        .where(eq(companies.id, companyId))
-        .limit(1);
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
+    async (ctx) => {
+      const { body, request, set } = ctx;
+      const company = await requireCompany(ctx);
+      const companyId = company.id;
 
       // READY-major gate: never enrich a half-crawled company.
       const snapshot = await getLatestSnapshot(companyId);
@@ -208,13 +201,20 @@ export const uploadsRoutes = new Elysia({ prefix: "/api/companies/:id/uploads" }
   // 2. Confirm DRAFT batch -> PROCESSING + background enrich job
   .post(
     "/:batchId/confirm",
-    async ({ params, set }) => {
+    async (ctx) => {
+      const { params, set } = ctx;
+      const company = await requireCompany(ctx);
       const [batch] = await db
         .select()
         .from(enrichmentBatches)
-        .where(eq(enrichmentBatches.id, params.batchId))
+        .where(
+          and(
+            eq(enrichmentBatches.id, params.batchId),
+            eq(enrichmentBatches.companyId, company.id)
+          )
+        )
         .limit(1);
-      if (!batch || batch.companyId !== params.id) {
+      if (!batch) {
         set.status = 404;
         return { error: "Batch not found" };
       }
@@ -244,20 +244,12 @@ export const uploadsRoutes = new Elysia({ prefix: "/api/companies/:id/uploads" }
   // 3. Batch history for the Sources UI
   .get(
     "/",
-    async ({ params, set }) => {
-      const [company] = await db
-        .select()
-        .from(companies)
-        .where(eq(companies.id, params.id))
-        .limit(1);
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
+    async (ctx) => {
+      const company = await requireCompany(ctx);
       const batches = await db
         .select()
         .from(enrichmentBatches)
-        .where(eq(enrichmentBatches.companyId, params.id))
+        .where(eq(enrichmentBatches.companyId, company.id))
         .orderBy(desc(enrichmentBatches.createdAt));
       return {
         batches: batches.map((b) => ({
@@ -276,13 +268,20 @@ export const uploadsRoutes = new Elysia({ prefix: "/api/companies/:id/uploads" }
   // 4. Cancel a DRAFT batch (indexed nothing, so nothing to roll back)
   .delete(
     "/:batchId",
-    async ({ params, set }) => {
+    async (ctx) => {
+      const { params, set } = ctx;
+      const company = await requireCompany(ctx);
       const [batch] = await db
         .select()
         .from(enrichmentBatches)
-        .where(eq(enrichmentBatches.id, params.batchId))
+        .where(
+          and(
+            eq(enrichmentBatches.id, params.batchId),
+            eq(enrichmentBatches.companyId, company.id)
+          )
+        )
         .limit(1);
-      if (!batch || batch.companyId !== params.id) {
+      if (!batch) {
         set.status = 404;
         return { error: "Batch not found" };
       }
@@ -305,17 +304,10 @@ export const uploadsRoutes = new Elysia({ prefix: "/api/companies/:id/uploads" }
   // 5. Tombstone documents (soft delete as a minor batch — restorable)
   .post(
     "/documents/delete",
-    async ({ params, body, set }) => {
-      const companyId = params.id;
-      const [company] = await db
-        .select()
-        .from(companies)
-        .where(eq(companies.id, companyId))
-        .limit(1);
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
+    async (ctx) => {
+      const { body, set } = ctx;
+      const company = await requireCompany(ctx);
+      const companyId = company.id;
       const snapshot = await getLatestSnapshot(companyId);
       if (!snapshot) {
         set.status = 409;
@@ -397,17 +389,10 @@ export const uploadsRoutes = new Elysia({ prefix: "/api/companies/:id/uploads" }
   // 6. Rollback to a version (compensating minor batch)
   .post(
     "/rollback",
-    async ({ params, body, set }) => {
-      const companyId = params.id;
-      const [company] = await db
-        .select()
-        .from(companies)
-        .where(eq(companies.id, companyId))
-        .limit(1);
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
+    async (ctx) => {
+      const { body, set } = ctx;
+      const company = await requireCompany(ctx);
+      const companyId = company.id;
 
       const majors = await db
         .select()
@@ -443,7 +428,10 @@ export const uploadsRoutes = new Elysia({ prefix: "/api/companies/:id/uploads" }
       };
 
       // Docs added after the target get tombstoned: crawled docs from
-      // newer majors, plus uploaded docs from post-target minors.
+      // newer majors, plus uploaded docs from post-target minors. Scope every
+      // document query to this company's snapshots — a global scan would let
+      // one tenant's rollback tombstone or restore another tenant's docs.
+      const majorIds = majors.map((m) => m.id);
       const majorOfSnapshot = new Map(majors.map((m) => [m.id, m.version]));
       const addedAfter = await db
         .select({
@@ -453,7 +441,12 @@ export const uploadsRoutes = new Elysia({ prefix: "/api/companies/:id/uploads" }
           batchId: documents.batchId,
         })
         .from(documents)
-        .where(isNull(documents.deletedBatchId));
+        .where(
+          and(
+            isNull(documents.deletedBatchId),
+            inArray(documents.snapshotId, majorIds)
+          )
+        );
       const toTombstone = addedAfter.filter((d) => {
         const docMajor = majorOfSnapshot.get(d.snapshotId) ?? 0;
         if (docMajor > targetMajor.version) return true;
@@ -471,7 +464,8 @@ export const uploadsRoutes = new Elysia({ prefix: "/api/companies/:id/uploads" }
           url: documents.url,
           deletedBatchId: documents.deletedBatchId,
         })
-        .from(documents);
+        .from(documents)
+        .where(inArray(documents.snapshotId, majorIds));
       const toRestore = tombstoned.filter((d) => {
         if (!d.deletedBatchId) return false;
         const b = batchById.get(d.deletedBatchId);

@@ -24,14 +24,18 @@ import { logger, mapBrandToWidgetTheme, isValidOverride } from "@ag-ui/shared";
 import {
   resolveThemeStylesheetId,
   resolveCompanyWidgetTheme,
+  resolveOwnedCompanyByDomain,
   invalidateCompanyContextCache,
 } from "@ag-ui/database";
+import { requireCompany, requireUser } from "../auth/plugin";
 
 export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
   // 1. Submit a company URL for ingestion
   .post(
     "/",
-    async ({ body, set }) => {
+    async (ctx) => {
+      const { body, set } = ctx;
+      const user = requireUser(ctx);
       const { url: rawUrl, maxPages } = body;
 
       // Ensure valid URL format
@@ -61,19 +65,17 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
       const domain = parsedUrl.hostname.toLowerCase().replace(/^www\./, "");
       const companyName = domain.split(".")[0].toUpperCase();
 
-      // 1. Find or create company
-      let [existingCompany] = await db
-        .select()
-        .from(companies)
-        .where(eq(companies.domain, domain))
-        .limit(1);
-
+      // 1. Find or create this owner's company. Domains are unique per owner,
+      // never globally (docs/auth-tenancy.md §5.1).
       let companyId: string;
+
+      const existingCompany = await resolveOwnedCompanyByDomain(user.id, domain);
 
       if (!existingCompany) {
         const [insertedCompany] = await db
           .insert(companies)
           .values({
+            ownerId: user.id,
             domain,
             name: companyName,
             url: parsedUrl.origin,
@@ -137,13 +139,15 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
     }
   )
 
-  // 2. List all ingested companies
+  // 2. List the session owner's companies
   .get(
     "/",
-    async () => {
+    async (ctx) => {
+      const user = requireUser(ctx);
       const allCompanies = await db
         .select()
         .from(companies)
+        .where(eq(companies.ownerId, user.id))
         .orderBy(desc(companies.createdAt));
 
       const results = await Promise.all(
@@ -253,17 +257,8 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
   // 3. Get single company status and brand tokens
   .get(
     "/:id",
-    async ({ params, set }) => {
-      const [company] = await db
-        .select()
-        .from(companies)
-        .where(eq(companies.id, params.id))
-        .limit(1);
-
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
+    async (ctx) => {
+      const company = await requireCompany(ctx);
 
       const snapshots = await db
         .select()
@@ -335,17 +330,8 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
   // 3b. Version timeline: majors with summaries + their minor batches
   .get(
     "/:id/versions",
-    async ({ params, set }) => {
-      const [company] = await db
-        .select()
-        .from(companies)
-        .where(eq(companies.id, params.id))
-        .limit(1);
-
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
+    async (ctx) => {
+      const company = await requireCompany(ctx);
 
       const snapshots = await db
         .select()
@@ -406,17 +392,8 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
   // 4. Get documents for a company's latest snapshot
   .get(
     "/:id/documents",
-    async ({ params, set }) => {
-      const [company] = await db
-        .select()
-        .from(companies)
-        .where(eq(companies.id, params.id))
-        .limit(1);
-
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
+    async (ctx) => {
+      const company = await requireCompany(ctx);
 
       const [latestSnapshot] = await db
         .select()
@@ -475,17 +452,8 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
   // 5. Get vector chunks for a company's latest snapshot
   .get(
     "/:id/chunks",
-    async ({ params, set }) => {
-      const [company] = await db
-        .select()
-        .from(companies)
-        .where(eq(companies.id, params.id))
-        .limit(1);
-
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
+    async (ctx) => {
+      const company = await requireCompany(ctx);
 
       const [latestSnapshot] = await db
         .select()
@@ -546,17 +514,8 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
   // 6. Get deterministic facts for a company's latest snapshot
   .get(
     "/:id/facts",
-    async ({ params, set }) => {
-      const [company] = await db
-        .select()
-        .from(companies)
-        .where(eq(companies.id, params.id))
-        .limit(1);
-
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
+    async (ctx) => {
+      const company = await requireCompany(ctx);
 
       const [latestSnapshot] = await db
         .select()
@@ -599,20 +558,10 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
   )
 
   // 7. Published widget theme override (Widget Studio Publish / Discard).
-  // No auth yet — the studio runs against a single local tenant; ownership
-  // and RBAC arrive with the multi-tenant phase.
   .get(
     "/:id/widget-theme",
-    async ({ params, set }) => {
-      const [company] = await db
-        .select({ id: companies.id })
-        .from(companies)
-        .where(eq(companies.id, params.id))
-        .limit(1);
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
+    async (ctx) => {
+      const company = await requireCompany(ctx);
       const [row] = await db
         .select()
         .from(widgetThemeOverrides)
@@ -634,16 +583,9 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
 
   .put(
     "/:id/widget-theme",
-    async ({ params, body, set }) => {
-      const [company] = await db
-        .select({ id: companies.id })
-        .from(companies)
-        .where(eq(companies.id, params.id))
-        .limit(1);
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
+    async (ctx) => {
+      const { body, set } = ctx;
+      const company = await requireCompany(ctx);
       if (!isValidOverride(body.override)) {
         set.status = 422;
         return { error: "Invalid theme override" };
@@ -692,16 +634,8 @@ export const companiesRoutes = new Elysia({ prefix: "/api/companies" })
 
   .delete(
     "/:id/widget-theme",
-    async ({ params, set }) => {
-      const [company] = await db
-        .select({ id: companies.id })
-        .from(companies)
-        .where(eq(companies.id, params.id))
-        .limit(1);
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
+    async (ctx) => {
+      const company = await requireCompany(ctx);
       await db
         .delete(widgetThemeOverrides)
         .where(eq(widgetThemeOverrides.companyId, company.id));

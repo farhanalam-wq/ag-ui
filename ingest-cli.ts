@@ -52,6 +52,7 @@ Usage:
 Discovery → selection → crawl → DB populate. No retrieval here.
 
 Options:
+  --owner <user-id>      Required. The user who owns the company (session owner equivalent)
   --discover-only        Only discover + list URLs, do not crawl or write DB
   --limit N              Non-interactive: take top N discovered URLs
   --all                  Non-interactive: take all discovered URLs
@@ -100,6 +101,7 @@ interface CliCommand {
 
 function parseArgs(argv: string[]): {
   url: string | null;
+  ownerId: string | null;
   opts: CliOptions;
   command: CliCommand | null;
 } {
@@ -118,7 +120,15 @@ function parseArgs(argv: string[]): {
     return null;
   };
   const has = (name: string) => args.includes(name);
-  const positional = args.find((a) => !a.startsWith("--")) ?? null;
+  const ownerId = getVal("--owner");
+  // Skip the value that follows `--owner` so it is not mistaken for the URL.
+  const positional =
+    args.find(
+      (a, i) =>
+        !a.startsWith("--") &&
+        args[i - 1] !== "--owner" &&
+        !a.startsWith("--owner=")
+    ) ?? null;
 
   const first = args[0] ?? null;
   let command: CliCommand | null = null;
@@ -149,6 +159,7 @@ function parseArgs(argv: string[]): {
 
   return {
     url: positional,
+    ownerId,
     command,
     opts: {
       url: positional ?? "",
@@ -197,7 +208,7 @@ async function runCommand(command: CliCommand): Promise<void> {
 }
 
 async function main() {
-  const { url, opts, command } = parseArgs(process.argv);
+  const { url, ownerId, opts, command } = parseArgs(process.argv);
   if (!url && !command) {
     printHelp();
     process.exit(1);
@@ -207,7 +218,13 @@ async function main() {
       await runCommand(command);
       process.exit(0);
     }
-    await runIngestPipeline(url!, opts);
+    if (!ownerId) {
+      console.error(
+        "[FATAL] --owner <user-id> is required: every company must belong to a user (docs/auth-tenancy.md §12.1)."
+      );
+      process.exit(1);
+    }
+    await runIngestPipeline(url!, ownerId, opts);
     process.exit(0);
   } catch (err: any) {
     console.error("[FATAL]", err?.message ?? err);

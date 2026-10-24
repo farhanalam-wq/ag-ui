@@ -588,9 +588,9 @@ deleting a user who created a domain on their own key.
 - Remove `owner` from `crawlJobs`; scope idempotency uniqueness to `(companyId, idempotencyKey)`.
 - Change `widgetKeyDomains.createdBy` to `uuid` with an FK to `users` on delete set null.
 - Keep `pageViews` as the read definition over the hand-maintained partitioned table.
-- Until A4 passes the session owner at every insert site, `companies.ownerId` carries a
-  temporary runtime guard: omitting it throws instead of writing an ownerless company. The
-  database column is `NOT NULL` regardless. A4 removes the guard.
+- A4 passes the session owner at every insert site, so the temporary runtime guard on
+  `companies.ownerId` is gone: omitting the owner is now a compile-time error. The database
+  column is `NOT NULL`.
 
 ### 8.4 Table ownership map
 

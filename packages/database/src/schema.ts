@@ -59,15 +59,6 @@ export const companies = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     ownerId: uuid("owner_id")
       .references(() => users.id, { onDelete: "cascade" })
-      // Transitional guard until A4 passes the authenticated owner at every
-      // insert site. The database column is NOT NULL; this makes the omission a
-      // clear runtime error instead of a fake owner. Remove once all callers
-      // supply the session user id (docs/auth-tenancy.md §5.1, §12.1).
-      .$defaultFn(() => {
-        throw new Error(
-          "companies.ownerId is required: pass the authenticated user id (docs/auth-tenancy.md §5)"
-        );
-      })
       .notNull(),
     // Unique per owner, not globally: two users may own the same domain and
     // stay completely separate. See docs/auth-tenancy.md §5.1.

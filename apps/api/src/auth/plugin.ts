@@ -83,11 +83,12 @@ export async function resolveSession(
 }
 
 /** Return the session user or throw a 401. */
-export function requireUser(ctx: AuthContext): AuthUser {
-  if (!ctx.authUser) {
+export function requireUser(ctx: unknown): AuthUser {
+  const c = ctx as AuthContext;
+  if (!c.authUser) {
     throw new AuthHttpError(401, "Authentication required");
   }
-  return ctx.authUser;
+  return c.authUser;
 }
 
 /**
@@ -98,26 +99,27 @@ export function requireUser(ctx: AuthContext): AuthUser {
  * id string here, so the ownership check stays in this one place.
  */
 export async function requireCompany(
-  ctx: AuthContext,
+  ctx: unknown,
   policy: CompanyIdSource | string = "derived"
 ): Promise<CompanyRow> {
-  const user = requireUser(ctx);
+  const c = ctx as AuthContext;
+  const user = requireUser(c);
 
-  if (ctx.authCompany) return ctx.authCompany;
+  if (c.authCompany) return c.authCompany;
 
   let companyId: string | null = null;
 
   switch (policy) {
     case "path":
       companyId =
-        readString(ctx.params?.id) ?? readString(ctx.params?.companyId);
+        readString(c.params?.id) ?? readString(c.params?.companyId);
       break;
     case "query":
-      companyId = readString(ctx.query?.companyId);
+      companyId = readString(c.query?.companyId);
       break;
     case "body":
       companyId = readString(
-        (ctx.body as Record<string, unknown> | null | undefined)?.companyId
+        (c.body as Record<string, unknown> | null | undefined)?.companyId
       );
       break;
     case "derived":
