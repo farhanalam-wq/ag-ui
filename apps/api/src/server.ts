@@ -14,6 +14,7 @@ import { voiceToolRoutes } from "./routes/voice-tool";
 import { uploadsRoutes } from "./routes/uploads";
 import { operationsRoutes } from "./routes/operations";
 import { authRoutes } from "./routes/auth";
+import { authPlugin } from "./auth/plugin";
 
 const PORT = parseInt(process.env.PORT || "3001", 10);
 
@@ -39,6 +40,8 @@ export const app = new Elysia()
       },
     });
   })
+  // Must run before every route so the manifest guards the whole surface.
+  .use(authPlugin)
   .use(
     swagger({
       path: "/swagger",
@@ -70,11 +73,14 @@ export const app = new Elysia()
   .use(voiceRoutes)
   .use(voiceToolRoutes)
   .use(uploadsRoutes)
-  .use(operationsRoutes)
-  .listen(PORT);
+  .use(operationsRoutes);
 
-logger.info(`ag-ui Elysia API running at http://localhost:${PORT}`);
-logger.info(`Swagger docs available at http://localhost:${PORT}/swagger`);
+// Tests import `app` to enumerate routes; only the real entrypoint listens.
+if (process.env.NODE_ENV !== "test" && process.env.AG_UI_NO_LISTEN !== "1") {
+  app.listen(PORT);
+  logger.info(`ag-ui Elysia API running at http://localhost:${PORT}`);
+  logger.info(`Swagger docs available at http://localhost:${PORT}/swagger`);
+}
 
 export type App = typeof app;
 // Reload trigger: 2026-09-14T18:20

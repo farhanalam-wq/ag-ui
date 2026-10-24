@@ -334,18 +334,22 @@ A route policy manifest lists every route exactly once:
 type RoutePolicy =
   | { kind: "public" }
   | { kind: "authenticated" }
-  | { kind: "company"; id: "path" | "query" | "body" | "derived" };
+  | { kind: "company"; id: "path" | "query" | "body" | "derived" }
+  // The only dual-policy route: widgetKey is public, companyId is owned.
+  | { kind: "voice-token" };
 ```
 
 The manifest is the source for:
 
-- the Elysia auth plugin macros,
+- the auth plugin's global `resolve` guard (and its explicit route macros),
 - the `proxy.ts` dashboard matcher,
 - the doc's route table,
 - a test that enumerates `app.routes` and fails if any live route has no policy.
 
-A new route cannot ship without declaring one of the three policies. This is the backstop
-against a future endpoint forgetting tenancy.
+The plugin reads the manifest for every request, so an undeclared route fails closed
+with `500 Route policy missing` instead of running unguarded. A new route cannot ship
+without declaring one of the policies. This is the backstop against a future endpoint
+forgetting tenancy.
 
 ### 5.5 Ownership resolution by surface
 
@@ -620,19 +624,19 @@ one policy. The manifest test in §14.1 is authoritative; this table is the huma
 | POST | `/api/embed/:key/chat` | key + origin gate; SSE |
 | POST | `/api/voice/token` | **only** when `widgetKey` is supplied; key + origin gate |
 | POST | `/api/voice/tool/query` | `VOICE_TOOL_SECRET` bearer; not browser-callable |
+| POST | `/api/auth/register` | self-serve; 201 + cookie |
+| POST | `/api/auth/login` | 200 + cookie |
+| POST | `/api/auth/logout` | public so an expired cookie can still be cleared |
+| GET | `/api/auth/google/start` | 302 to Google |
+| GET | `/api/auth/google/callback` | 302 to `/overview` or `/onboarding` |
 
 ### 9.2 Authenticated (session, no company)
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/api/auth/register` | 201 + cookie |
-| POST | `/api/auth/login` | 200 + cookie |
-| POST | `/api/auth/logout` | revoke current session |
 | GET | `/api/auth/me` | `{ user }` or 401 |
-| GET | `/api/auth/google/start` | 302 |
-| GET | `/api/auth/google/callback` | 302 to `/overview` or `/onboarding` |
-| GET | `/api/companies` | filtered by `owner_id` |
-| POST | `/api/companies` | ingest/create; owner from session |
+| GET | `/api/companies/` | filtered by `owner_id` |
+| POST | `/api/companies/` | ingest/create; owner from session |
 | POST | `/api/crawler/discover` | URL discovery; no tenant rows |
 | POST | `/api/crawler/discover-sitemap` | sitemap discovery; no tenant rows |
 | POST | `/api/crawler/ingest` | owner from session; find-or-create `(owner, domain)` |
@@ -647,13 +651,13 @@ one policy. The manifest test in §14.1 is authoritative; this table is the huma
 | GET | `/api/companies/:id/conversations` | path |
 | GET | `/api/companies/:id/documents` | path |
 | GET | `/api/companies/:id/facts` | path |
-| GET | `/api/companies/:id/uploads` | path |
+| GET | `/api/companies/:id/uploads/` | path |
 | GET | `/api/companies/:id/versions` | path |
 | GET | `/api/companies/:id/widget-theme` | path |
 | PUT | `/api/companies/:id/widget-theme` | path |
 | DELETE | `/api/companies/:id/widget-theme` | path |
 | POST | `/api/companies/:id/chat` | path |
-| POST | `/api/companies/:id/uploads` | path |
+| POST | `/api/companies/:id/uploads/` | path |
 | POST | `/api/companies/:id/uploads/:batchId/confirm` | path + batch check |
 | POST | `/api/companies/:id/uploads/documents/delete` | path |
 | POST | `/api/companies/:id/uploads/rollback` | path |
@@ -706,12 +710,16 @@ is present; both or neither is `422`.
 
 One Elysia plugin (`apps/api/src/auth/plugin.ts`) provides:
 
+- a global `resolve` hook that reads `route-policy.ts` and enforces the declared
+  policy before any handler runs (undeclared routes fail closed),
 - `resolveSession(request)` → `{ userId, user } | null`.
 - `requireUser(ctx)` → 401 if absent.
 - `requireCompany(ctx, policy)` → `resolveOwnedCompany`; 404 if null.
 - macros: `{ auth: true }`, `{ company: "path" | "query" | "body" | "derived" }`.
 
 Route handlers never read cookies directly and never query `companies` for ownership.
+The plugin is registered with `.as("global")`; without that Elysia scopes its hooks to
+the plugin itself and the parent routes run unguarded.
 
 ### 10.2 Tenancy helper
 
@@ -1031,9 +1039,14 @@ proof.
 
 ### 14.1 Route manifest
 
+`apps/api/src/route-policy.test.ts`:
+
 - Enumerate `app.routes` from the live Elysia app.
-- Assert every route has a policy in the manifest.
+- Assert every route has a policy in the manifest, with no duplicate or stale entries.
+- Assert every route pattern resolves to its own manifest entry.
 - Assert every `company` route references an ownership resolver.
+- Assert anonymous requests to protected routes get 401 and public routes stay public
+  (this is what catches a plugin that was accidentally left non-global).
 - Fail on a new route with no policy.
 
 ### 14.2 Cross-tenant matrix

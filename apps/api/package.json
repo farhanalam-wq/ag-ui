@@ -7,6 +7,7 @@
     "dev": "bun --watch src/server.ts",
     "build": "echo 'api: build ok'",
     "start": "bun src/server.ts",
+    "test": "bun test",
     "lint": "echo 'api: lint ok'"
   },
   "dependencies": {

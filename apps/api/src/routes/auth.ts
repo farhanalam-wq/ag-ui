@@ -1,14 +1,15 @@
 /**
  * Auth routes: register, login, logout, me, Google start/callback.
  *
- * Backend-only in this phase. Route-level auth/tenancy macros arrive in A3;
- * these handlers already use the opaque-session helpers from ../auth.
- * See docs/auth-tenancy.md §3, §4, §9.2.
+ * Session/tenancy enforcement for every other route lives in ../auth/plugin.ts.
+ * These handlers use the opaque-session helpers from ../auth and never touch
+ * company ownership. See docs/auth-tenancy.md §3, §4, §9.2.
  */
 
 import { Elysia, t } from "elysia";
 import { db, users, companies, eq, sql } from "@ag-ui/database";
 import { logger } from "@ag-ui/shared";
+import { requireUser, type AuthContext } from "../auth/plugin";
 import { authConfig, googleConfigured } from "../auth/config";
 import {
   emailFingerprint,
@@ -29,7 +30,6 @@ import {
 } from "../auth/cookies";
 import {
   createSession,
-  findSession,
   revokeSession,
   sessionTokenFromRequest,
   toAuthUser,
@@ -203,24 +203,13 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
       },
     }
   )
-  // 4. Current user, or 401.
+  // 4. Current user. The global auth plugin has already rejected missing,
+  // expired, and revoked sessions; requireUser is the typed assertion.
   .get(
     "/me",
-    async ({ set, request }) => {
-      const token = sessionTokenFromRequest(request);
-      if (!token) {
-        set.status = 401;
-        return { error: "Authentication required" };
-      }
-
-      const found = await findSession(token);
-      if (!found) {
-        set.headers["set-cookie"] = clearSessionCookie();
-        set.status = 401;
-        return { error: "Authentication required" };
-      }
-
-      return { user: found.user };
+    (ctx) => {
+      const user = requireUser(ctx as unknown as AuthContext);
+      return { user };
     },
     {
       detail: {

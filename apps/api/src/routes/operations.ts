@@ -30,11 +30,9 @@ const PAGE_QUERY = {
 };
 
 export const operationsRoutes = new Elysia({ prefix: "/api/operations" })
-  // Single auth seam. Today: no-op. The auth pass replaces the body with
-  // requireUser() (401). Do not add ad-hoc checks anywhere else in this file.
-  .onBeforeHandle(() => {
-    // TODO(auth): requireUser(); 401 when absent.
-  })
+  // Auth (401) and company ownership (404) are enforced by the global auth
+  // plugin from the route-policy manifest. The reads below are already scoped
+  // by the verified `companyId`.
   .get(
     "/errors",
     async ({ query, set }) => {

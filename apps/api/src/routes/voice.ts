@@ -125,7 +125,9 @@ export const voiceRoutes = new Elysia({ prefix: "/api/voice" }).post(
     const { companyId, widgetKey, metadata } = body;
 
     if ((companyId && widgetKey) || (!companyId && !widgetKey)) {
-      set.status = 400;
+      // The auth plugin enforces the same rule before the handler. Keep this
+      // branch for direct handler tests and for a consistent 422 contract.
+      set.status = 422;
       return { error: "Provide exactly one of companyId or widgetKey" };
     }
 
