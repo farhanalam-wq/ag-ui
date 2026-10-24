@@ -91,11 +91,6 @@ function toRow(r: typeof widgetKeyDomains.$inferSelect): DomainRow {
   };
 }
 
-export async function getKeyCompanyId(keyId: string): Promise<string | null> {
-  const [row] = await db.select({ companyId: widgetKeys.companyId }).from(widgetKeys).where(eq(widgetKeys.id, keyId)).limit(1);
-  return row?.companyId ?? null;
-}
-
 export async function listDomainsByKey(keyId: string): Promise<DomainRow[]> {
   const rows = await db
     .select()
@@ -215,28 +210,64 @@ async function saveDomainsCached(keyId: string, rows: DomainRow[]): Promise<void
 }
 
 export type OriginCheck =
-  | { allowed: true; mode: "open" | "listed" }
-  | { allowed: false; reason: "forbidden_origin" | "forbidden_path" | "missing_origin" };
+  | { allowed: true; mode: "listed" | "localhost" }
+  | {
+      allowed: false;
+      reason:
+        | "no_origins"
+        | "forbidden_origin"
+        | "forbidden_path"
+        | "missing_origin";
+    };
 
 /**
- * Per-key origin gate. Zero rules = open. Mismatch never fails open;
- * DB errors propagate (500), never silent-allow.
+ * Localhost is a development-only exemption. It must never weaken a
+ * production key, so the check is deliberately gated on the same production
+ * flags the auth config uses.
  */
-export async function assertOriginAllowed(
-  keyId: string,
-  request: Request,
-  opts?: { enforcePaths?: boolean }
-): Promise<OriginCheck> {
-  const headerOrigin = request.headers.get("origin");
-  const referer = request.headers.get("referer");
-  const reqOrigin = originFromHeader(headerOrigin) ?? originFromHeader(referer);
+function isProductionRuntime(): boolean {
+  return (
+    process.env.NODE_ENV === "production" ||
+    process.env.RUNTIME_ENV === "production"
+  );
+}
 
-  let domains = await loadDomainsCached(keyId);
-  if (!domains) {
-    domains = await listDomainsByKey(keyId);
-    await saveDomainsCached(keyId, domains);
+function isLocalhostOrigin(origin: string): boolean {
+  try {
+    const { hostname } = new URL(origin);
+    return (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "[::1]"
+    );
+  } catch {
+    return false;
   }
-  if (domains.length === 0) return { allowed: true, mode: "open" };
+}
+
+/**
+ * Pure origin decision. Deny-by-default: no rules means the key is disabled.
+ * Localhost/127.0.0.1 are exempt outside production so a developer can test a
+ * key before allowlisting a real origin (docs/auth-tenancy.md §7.3).
+ */
+export function evaluateOrigin(
+  domains: readonly DomainRow[],
+  originHeader: string | null,
+  referer: string | null,
+  opts?: { enforcePaths?: boolean }
+): OriginCheck {
+  const reqOrigin = originFromHeader(originHeader) ?? originFromHeader(referer);
+
+  // Development-only localhost exemption, independent of the allowlist.
+  if (
+    reqOrigin &&
+    isLocalhostOrigin(reqOrigin) &&
+    !isProductionRuntime()
+  ) {
+    return { allowed: true, mode: "localhost" };
+  }
+
+  if (domains.length === 0) return { allowed: false, reason: "no_origins" };
   if (!reqOrigin) return { allowed: false, reason: "missing_origin" };
 
   const match = domains.find((d) => d.origin === reqOrigin);
@@ -253,6 +284,29 @@ export async function assertOriginAllowed(
     }
   }
   return { allowed: true, mode: "listed" };
+}
+
+/**
+ * Per-key origin gate. Mismatch never fails open; DB errors propagate (500),
+ * never silent-allow.
+ */
+export async function assertOriginAllowed(
+  keyId: string,
+  request: Request,
+  opts?: { enforcePaths?: boolean }
+): Promise<OriginCheck> {
+  let domains = await loadDomainsCached(keyId);
+  if (!domains) {
+    domains = await listDomainsByKey(keyId);
+    await saveDomainsCached(keyId, domains);
+  }
+
+  return evaluateOrigin(
+    domains,
+    request.headers.get("origin"),
+    request.headers.get("referer"),
+    opts
+  );
 }
 
 /** Strip query strings before logging referers (tokens/PII). */

@@ -454,16 +454,16 @@ not look up a company by domain alone. A missing owner is a hard error.
 
 ### 7.3 Origin allowlist: deny-by-default
 
-Current behavior (verified): zero rules returns `{ allowed: true, mode: "open" }`
-(`packages/database/src/widget-key-domains.ts`). This is the hole.
-
-New behavior:
+`assertOriginAllowed` (`packages/database/src/widget-key-domains.ts`) is the single
+gate for config, track, chat, and voice-by-key. Its pure decision function
+(`evaluateOrigin`) is unit-tested against the matrix below.
 
 - Zero origins → **deny** on config, chat, and voice-by-key.
 - `track` with zero origins → `403`; the beacon is dropped. Pages must not stall, so the
   embed client already ignores failures.
-- Localhost is exempt only when `NODE_ENV !== "production"`: a key may work on
-  `http://localhost:<port>` and `http://127.0.0.1:<port>` without an explicit rule.
+- Localhost is exempt only when neither `NODE_ENV` nor `RUNTIME_ENV` is `production`:
+  a key may work on `http://localhost:<port>` and `http://127.0.0.1:<port>` without
+  an explicit rule.
 - Add an origin → checked against `Origin`, falling back to `Referer`.
 - Path include/exclude rules keep working as they do today.
 - The Redis allowlist cache stays keyed by `keyId`; invalidation on add/remove remains.

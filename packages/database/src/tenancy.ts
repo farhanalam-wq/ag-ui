@@ -14,7 +14,13 @@
 
 import { and, eq } from "drizzle-orm";
 import { db } from "./index";
-import { companies, conversations, crawlJobs, widgetKeys } from "./schema";
+import {
+  companies,
+  conversations,
+  crawlJobs,
+  widgetKeyDomains,
+  widgetKeys,
+} from "./schema";
 
 /** Loose Postgres uuid shape. Version/variant bits are not constrained. */
 const UUID_RE =
@@ -38,6 +44,7 @@ export type CompanyRow = typeof companies.$inferSelect;
 export type ConversationRow = typeof conversations.$inferSelect;
 export type CrawlJobRow = typeof crawlJobs.$inferSelect;
 export type TenantWidgetKeyRow = typeof widgetKeys.$inferSelect;
+export type WidgetDomainRow = typeof widgetKeyDomains.$inferSelect;
 
 export interface OwnedConversation {
   conversation: ConversationRow;
@@ -50,6 +57,12 @@ export interface OwnedCrawlJob {
 }
 
 export interface OwnedWidgetKey {
+  key: TenantWidgetKeyRow;
+  company: CompanyRow;
+}
+
+export interface OwnedWidgetDomain {
+  domain: WidgetDomainRow;
   key: TenantWidgetKeyRow;
   company: CompanyRow;
 }
@@ -154,21 +167,56 @@ export async function resolveOwnedWidgetKey(
   return row ?? null;
 }
 
-/**
- * Key -> company without an ownership check. Only for surfaces that have
- * already authenticated the key itself (embed/voice) or for admin routes that
- * immediately follow up with `resolveOwnedCompany`.
- */
-export async function companyIdForWidgetKey(
-  keyId: string
-): Promise<string | null> {
-  if (!isUuid(keyId)) return null;
+/** Allowed origin -> key -> company -> owner. */
+export async function resolveOwnedWidgetDomain(
+  userId: string,
+  domainId: string
+): Promise<OwnedWidgetDomain | null> {
+  if (!isUuid(userId) || !isUuid(domainId)) return null;
 
   const [row] = await db
-    .select({ companyId: widgetKeys.companyId })
-    .from(widgetKeys)
-    .where(eq(widgetKeys.id, keyId))
+    .select({
+      domain: widgetKeyDomains,
+      key: widgetKeys,
+      company: companies,
+    })
+    .from(widgetKeyDomains)
+    .innerJoin(widgetKeys, eq(widgetKeys.id, widgetKeyDomains.keyId))
+    .innerJoin(companies, eq(companies.id, widgetKeys.companyId))
+    .where(
+      and(
+        eq(widgetKeyDomains.id, domainId),
+        eq(companies.ownerId, userId)
+      )
+    )
     .limit(1);
 
-  return row?.companyId ?? null;
+  return row ?? null;
+}
+
+/**
+ * Conversation -> company, without an owner predicate.
+ *
+ * Only for public embed surfaces, where the widget key (not a session) has
+ * already resolved the company. Dashboard callers must use
+ * `resolveOwnedConversation` so the owner check is never skipped.
+ */
+export async function resolveCompanyConversation(
+  companyId: string,
+  conversationId: string
+): Promise<ConversationRow | null> {
+  if (!isUuid(companyId) || !isUuid(conversationId)) return null;
+
+  const [row] = await db
+    .select()
+    .from(conversations)
+    .where(
+      and(
+        eq(conversations.id, conversationId),
+        eq(conversations.companyId, companyId)
+      )
+    )
+    .limit(1);
+
+  return row ?? null;
 }
