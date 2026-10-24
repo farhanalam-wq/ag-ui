@@ -39,6 +39,7 @@ export default function AuthLayout({
           alt="A crowd at a product launch event"
           fill
           priority
+          sizes="(min-width: 1024px) 50vw, 100vw"
           className="object-cover"
         />
         <div
