@@ -6,6 +6,30 @@
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
+/** Every dashboard request must carry the session cookie. The cookie is
+ * SameSite=Lax and scoped to the API origin (:3001 in dev) while the app
+ * runs on :3000 — same-site, cross-origin — and `fetch` defaults to
+ * `same-origin` credentials, so one wrapper injects `credentials: "include"`
+ * for all call sites. The only calls on the cookie-free embed surface pass
+ * through here too; the header is a no-op for them.
+ */
+async function authedFetch(url: string, init?: RequestInit): Promise<Response> {
+  return fetch(url, { credentials: "include", ...init });
+}
+
+/** Current signed-in user shape (`/api/auth/me` and friends). */
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  avatarUrl: string | null;
+  createdAt: string;
+}
+
+interface AuthResponse {
+  user: AuthUser;
+}
+
 import type { WidgetThemeOverride } from "@ag-ui/shared/client";
 import type { Range } from "@/lib/analytics";
 
@@ -610,7 +634,7 @@ class ApiClient {
    * cannot invent its own error string.
    */
   private async analyticsRequest<T>(path: string): Promise<T> {
-    const res = await fetch(`${this.baseUrl}${path}`);
+    const res = await authedFetch(`${this.baseUrl}${path}`);
     if (res.ok) return (await res.json()) as T;
     let body: { error?: string; details?: unknown } | null = null;
     try {
@@ -639,7 +663,7 @@ class ApiClient {
 
   /** Single fetch primitive for newer endpoints. Throws on non-2xx. */
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
-    const res = await fetch(`${this.baseUrl}${path}`, init);
+    const res = await authedFetch(`${this.baseUrl}${path}`, init);
     if (!res.ok) {
       let detail = "";
       try {
@@ -655,10 +679,73 @@ class ApiClient {
   }
 
   /**
+   * Auth endpoints. The API sets/clears the `ag_session` cookie itself, so the
+   * client only serializes the body; credentials are included by `authedFetch`.
+   * Errors surface with the API's `{ error }` message whenever present —
+   * including the intentionally generic 401 for wrong credentials.
+   */
+  authRegister = async (input: {
+    email: string;
+    password: string;
+    name?: string;
+  }): Promise<AuthResponse> => {
+    const res = await authedFetch(`${this.baseUrl}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error(
+        data?.error || `Registration failed: HTTP ${res.status}`
+      );
+    }
+    return data as AuthResponse;
+  };
+
+  authLogin = async (input: { email: string; password: string }): Promise<AuthResponse> => {
+    const res = await authedFetch(`${this.baseUrl}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error(data?.error || `Login failed: HTTP ${res.status}`);
+    }
+    return data as AuthResponse;
+  };
+
+  authLogout = async (): Promise<void> => {
+    const res = await authedFetch(`${this.baseUrl}/api/auth/logout`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      throw new Error(`Logout failed: HTTP ${res.status}`);
+    }
+  };
+
+  /** Resolves the session user, or `null` for 401 (logged out / expired). */
+  authMe = async (): Promise<AuthUser | null> => {
+    const res = await authedFetch(`${this.baseUrl}/api/auth/me`);
+    if (res.status === 401) return null;
+    if (!res.ok) {
+      throw new Error(`Session check failed: HTTP ${res.status}`);
+    }
+    const data = (await res.json()) as AuthResponse;
+    return data.user;
+  };
+
+  /** Google OAuth begins on the API (it owns the state cookie + redirect). */
+  get googleStartUrl(): string {
+    return `${this.baseUrl}/api/auth/google/start`;
+  }
+
+  /**
    * Health check endpoint
    */
   async health(): Promise<{ status: string; service: string }> {
-    const res = await fetch(`${this.baseUrl}/health`);
+    const res = await authedFetch(`${this.baseUrl}/health`);
     if (!res.ok) {
       throw new Error(`Health check failed: HTTP ${res.status}`);
     }
@@ -670,7 +757,7 @@ class ApiClient {
    */
   companies = {
     list: async (): Promise<CompanySummary[]> => {
-      const res = await fetch(`${this.baseUrl}/api/companies`);
+      const res = await authedFetch(`${this.baseUrl}/api/companies`);
       if (!res.ok) {
         throw new Error(`Failed to list companies: HTTP ${res.status}`);
       }
@@ -679,7 +766,7 @@ class ApiClient {
     },
 
     get: async (id: string): Promise<CompanyDetailResponse> => {
-      const res = await fetch(`${this.baseUrl}/api/companies/${id}`);
+      const res = await authedFetch(`${this.baseUrl}/api/companies/${id}`);
       if (!res.ok) {
         throw new Error(`Failed to get company ${id}: HTTP ${res.status}`);
       }
@@ -696,7 +783,7 @@ class ApiClient {
       status?: string;
       snapshotId?: string;
     }> => {
-      const res = await fetch(`${this.baseUrl}/api/companies`, {
+      const res = await authedFetch(`${this.baseUrl}/api/companies`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
@@ -709,7 +796,7 @@ class ApiClient {
     },
 
     getFacts: async (id: string): Promise<any[]> => {
-      const res = await fetch(`${this.baseUrl}/api/companies/${id}/facts`);
+      const res = await authedFetch(`${this.baseUrl}/api/companies/${id}/facts`);
       if (!res.ok) {
         throw new Error(`Failed to get company facts: HTTP ${res.status}`);
       }
@@ -718,7 +805,7 @@ class ApiClient {
     },
 
     getChunks: async (id: string): Promise<any[]> => {
-      const res = await fetch(`${this.baseUrl}/api/companies/${id}/chunks`);
+      const res = await authedFetch(`${this.baseUrl}/api/companies/${id}/chunks`);
       if (!res.ok) {
         throw new Error(`Failed to get company chunks: HTTP ${res.status}`);
       }
@@ -727,7 +814,7 @@ class ApiClient {
     },
 
     getDocuments: async (id: string): Promise<DocumentsResponse> => {
-      const res = await fetch(`${this.baseUrl}/api/companies/${id}/documents`);
+      const res = await authedFetch(`${this.baseUrl}/api/companies/${id}/documents`);
       if (res.status === 404) throw new Error("Company not found");
       if (!res.ok) {
         throw new Error(`Failed to get company documents: HTTP ${res.status}`);
@@ -736,7 +823,7 @@ class ApiClient {
     },
 
     getVersions: async (id: string): Promise<{ companyId: string; versions: MajorVersion[] }> => {
-      const res = await fetch(`${this.baseUrl}/api/companies/${id}/versions`);
+      const res = await authedFetch(`${this.baseUrl}/api/companies/${id}/versions`);
       if (res.status === 404) throw new Error("Company not found");
       if (!res.ok) {
         throw new Error(`Failed to get version timeline: HTTP ${res.status}`);
@@ -748,7 +835,7 @@ class ApiClient {
     getWidgetTheme: async (
       id: string
     ): Promise<{ override: WidgetThemeOverride | null; updatedAt: string | null }> => {
-      const res = await fetch(`${this.baseUrl}/api/companies/${id}/widget-theme`);
+      const res = await authedFetch(`${this.baseUrl}/api/companies/${id}/widget-theme`);
       if (res.status === 404) throw new Error("Company not found");
       if (!res.ok) {
         throw new Error(`Failed to get widget theme: HTTP ${res.status}`);
@@ -761,7 +848,7 @@ class ApiClient {
       id: string,
       override: WidgetThemeOverride
     ): Promise<{ override: WidgetThemeOverride; updatedAt: string; themeVersion: string | null }> => {
-      const res = await fetch(`${this.baseUrl}/api/companies/${id}/widget-theme`, {
+      const res = await authedFetch(`${this.baseUrl}/api/companies/${id}/widget-theme`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ override }),
@@ -777,7 +864,7 @@ class ApiClient {
 
     /** Discard a company's published widget theme override (revert to brand). */
     discardWidgetTheme: async (id: string): Promise<{ deleted: boolean }> => {
-      const res = await fetch(`${this.baseUrl}/api/companies/${id}/widget-theme`, {
+      const res = await authedFetch(`${this.baseUrl}/api/companies/${id}/widget-theme`, {
         method: "DELETE",
       });
       if (res.status === 404) throw new Error("Company not found");
@@ -884,7 +971,7 @@ class ApiClient {
    */
   uploads = {
     list: async (companyId: string): Promise<EnrichmentBatch[]> => {
-      const res = await fetch(
+      const res = await authedFetch(
         `${this.baseUrl}/api/companies/${encodeURIComponent(companyId)}/uploads`
       );
       if (res.status === 404) throw new Error("Company not found");
@@ -898,7 +985,7 @@ class ApiClient {
     create: async (companyId: string, files: File[]): Promise<UploadDraft> => {
       const form = new FormData();
       for (const file of files) form.append("files", file);
-      const res = await fetch(
+      const res = await authedFetch(
         `${this.baseUrl}/api/companies/${encodeURIComponent(companyId)}/uploads`,
         { method: "POST", body: form }
       );
@@ -922,7 +1009,7 @@ class ApiClient {
     },
 
     confirm: async (companyId: string, batchId: string): Promise<{ batchId: string; status: string }> => {
-      const res = await fetch(
+      const res = await authedFetch(
         `${this.baseUrl}/api/companies/${encodeURIComponent(companyId)}/uploads/${encodeURIComponent(batchId)}/confirm`,
         { method: "POST" }
       );
@@ -938,7 +1025,7 @@ class ApiClient {
     },
 
     cancel: async (companyId: string, batchId: string): Promise<{ batchId: string; status: string }> => {
-      const res = await fetch(
+      const res = await authedFetch(
         `${this.baseUrl}/api/companies/${encodeURIComponent(companyId)}/uploads/${encodeURIComponent(batchId)}`,
         { method: "DELETE" }
       );
@@ -953,7 +1040,7 @@ class ApiClient {
       companyId: string,
       documentIds: string[]
     ): Promise<{ batchId: string; status: string; minor: number; removed: number }> => {
-      const res = await fetch(
+      const res = await authedFetch(
         `${this.baseUrl}/api/companies/${encodeURIComponent(companyId)}/uploads/documents/delete`,
         {
           method: "POST",
@@ -977,7 +1064,7 @@ class ApiClient {
       targetMajor: number,
       targetMinor?: number
     ): Promise<{ batchId: string; status: string; minor: number; restored: number; tombstoned: number }> => {
-      const res = await fetch(
+      const res = await authedFetch(
         `${this.baseUrl}/api/companies/${encodeURIComponent(companyId)}/uploads/rollback`,
         {
           method: "POST",
@@ -1011,7 +1098,7 @@ class ApiClient {
       callbacks: ChatStreamCallbacks,
       signal?: AbortSignal
     ): Promise<void> => {
-      const res = await fetch(`${this.baseUrl}/api/companies/${companyId}/chat`, {
+      const res = await authedFetch(`${this.baseUrl}/api/companies/${companyId}/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1102,7 +1189,7 @@ class ApiClient {
 
     getConfig: async (widgetKey: string, customBase?: string): Promise<EmbedConfig> => {
       const base = this.embed.baseFor(customBase);
-      const res = await fetch(`${base}/api/embed/${encodeURIComponent(widgetKey)}/config`);
+      const res = await authedFetch(`${base}/api/embed/${encodeURIComponent(widgetKey)}/config`);
       if (res.status === 404) throw new Error("Assistant offline - widget key not found");
       if (res.status === 410) throw new Error("This assistant was disabled");
       if (!res.ok) {
@@ -1123,7 +1210,7 @@ class ApiClient {
     },
 
     issueKey: async (companyId: string, label = "default"): Promise<IssueWidgetKeyResponse> => {
-      const res = await fetch(`${this.baseUrl}/api/embed/keys`, {
+      const res = await authedFetch(`${this.baseUrl}/api/embed/keys`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ companyId, label }),
@@ -1137,7 +1224,7 @@ class ApiClient {
     },
 
     listKeys: async (companyId: string): Promise<WidgetKeyListItem[]> => {
-      const res = await fetch(
+      const res = await authedFetch(
         `${this.baseUrl}/api/embed/keys?companyId=${encodeURIComponent(companyId)}`
       );
       if (res.status === 404) throw new Error("Company not found");
@@ -1150,7 +1237,7 @@ class ApiClient {
     },
 
     revokeKey: async (keyId: string): Promise<{ deleted: boolean }> => {
-      const res = await fetch(`${this.baseUrl}/api/embed/keys/${encodeURIComponent(keyId)}/revoke`, {
+      const res = await authedFetch(`${this.baseUrl}/api/embed/keys/${encodeURIComponent(keyId)}/revoke`, {
         method: "POST",
       });
       if (res.status === 404) throw new Error("Widget key not found");
@@ -1162,7 +1249,7 @@ class ApiClient {
     },
 
     listDomains: async (keyId: string): Promise<WidgetKeyDomain[]> => {
-      const res = await fetch(
+      const res = await authedFetch(
         `${this.baseUrl}/api/embed/keys/${encodeURIComponent(keyId)}/domains`
       );
       if (res.status === 404) throw new Error("Widget key not found");
@@ -1178,7 +1265,7 @@ class ApiClient {
       keyId: string,
       payload: { origin: string; includePaths?: string[]; excludePaths?: string[] }
     ): Promise<WidgetKeyDomain> => {
-      const res = await fetch(
+      const res = await authedFetch(
         `${this.baseUrl}/api/embed/keys/${encodeURIComponent(keyId)}/domains`,
         {
           method: "POST",
@@ -1205,7 +1292,7 @@ class ApiClient {
     },
 
     removeDomain: async (id: string): Promise<{ removed: boolean }> => {
-      const res = await fetch(`${this.baseUrl}/api/embed/domains/${encodeURIComponent(id)}`, {
+      const res = await authedFetch(`${this.baseUrl}/api/embed/domains/${encodeURIComponent(id)}`, {
         method: "DELETE",
       });
       if (res.status === 404) throw new Error("Allowed origin not found");
@@ -1224,7 +1311,7 @@ class ApiClient {
       customBase?: string
     ): Promise<void> => {
       const base = this.embed.baseFor(customBase);
-      const res = await fetch(`${base}/api/embed/${encodeURIComponent(widgetKey)}/chat`, {
+      const res = await authedFetch(`${base}/api/embed/${encodeURIComponent(widgetKey)}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1314,7 +1401,7 @@ class ApiClient {
    */
   brand = {
     getLatest: async (companyId: string): Promise<BrandLatestResponse> => {
-      const res = await fetch(
+      const res = await authedFetch(
         `${this.baseUrl}/api/brand/${encodeURIComponent(companyId)}/latest`
       );
       if (res.status === 404) return { brand: null, stylesheet: null };
@@ -1325,7 +1412,7 @@ class ApiClient {
     },
 
     getHistory: async (companyId: string): Promise<BrandHistoryResponse> => {
-      const res = await fetch(
+      const res = await authedFetch(
         `${this.baseUrl}/api/brand/${encodeURIComponent(companyId)}/history`
       );
       if (res.status === 404) return { items: [] };
@@ -1340,7 +1427,7 @@ class ApiClient {
       snapshotId?: string,
       origin?: string
     ): Promise<{ queued: boolean }> => {
-      const res = await fetch(`${this.baseUrl}/api/brand/retry`, {
+      const res = await authedFetch(`${this.baseUrl}/api/brand/retry`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ companyId, snapshotId, origin }),
@@ -1361,7 +1448,7 @@ class ApiClient {
       url: string,
       options?: { maxSitemaps?: number; maxSitemapUrls?: number }
     ): Promise<DiscoveryResponse> => {
-      const res = await fetch(`${this.baseUrl}/api/crawler/discover`, {
+      const res = await authedFetch(`${this.baseUrl}/api/crawler/discover`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url, ...options }),
@@ -1374,7 +1461,7 @@ class ApiClient {
     },
 
     discoverSitemap: async (form: FormData): Promise<DiscoveryResponse> => {
-      const res = await fetch(`${this.baseUrl}/api/crawler/discover-sitemap`, {
+      const res = await authedFetch(`${this.baseUrl}/api/crawler/discover-sitemap`, {
         method: "POST",
         body: form,
       });
@@ -1406,7 +1493,7 @@ class ApiClient {
         pageCount: number;
       } | null;
     }> => {
-      const res = await fetch(`${this.baseUrl}/api/crawler/jobs/${jobId}`);
+      const res = await authedFetch(`${this.baseUrl}/api/crawler/jobs/${jobId}`);
       if (!res.ok) {
         throw new Error(`Failed to get crawl job ${jobId}: HTTP ${res.status}`);
       }
@@ -1439,7 +1526,7 @@ class ApiClient {
         tokens: any;
       } | null;
     }> => {
-      const res = await fetch(`${this.baseUrl}/api/crawler/status/${encodeURIComponent(domain)}`);
+      const res = await authedFetch(`${this.baseUrl}/api/crawler/status/${encodeURIComponent(domain)}`);
       if (!res.ok) {
         throw new Error(`Failed to get status for domain ${domain}: HTTP ${res.status}`);
       }
@@ -1458,7 +1545,7 @@ class ApiClient {
       callbacks: IngestStreamCallbacks,
       signal?: AbortSignal
     ): Promise<void> => {
-      const res = await fetch(`${this.baseUrl}/api/crawler/ingest`, {
+      const res = await authedFetch(`${this.baseUrl}/api/crawler/ingest`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

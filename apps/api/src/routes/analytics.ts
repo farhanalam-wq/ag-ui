@@ -1,12 +1,11 @@
 import { Elysia, t } from "elysia";
 import {
-  db,
-  companies,
-  eq,
   getRedisClient,
   checkAnalyticsReadLimit,
+  type CompanyRow,
   type RedisClient,
 } from "@ag-ui/database";
+import { requireCompany } from "../auth/plugin";
 import { getClientIp } from "./embed";
 import {
   getCompanyOverview,
@@ -37,17 +36,6 @@ function parseWindowDays(raw: string | undefined): number | null {
   return n;
 }
 
-async function requireCompany(companyId: string) {
-  const [company] = await db
-    .select()
-    .from(companies)
-    .where(eq(companies.id, companyId))
-    .limit(1);
-  return company ?? null;
-}
-
-type Company = NonNullable<Awaited<ReturnType<typeof requireCompany>>>;
-
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const RANGE_ERROR = "range must be Nd with 1 <= N <= 90 (e.g. 7d, 30d, 90d)";
 
@@ -56,20 +44,10 @@ const RANGE_ERROR = "range must be Nd with 1 <= N <= 90 (e.g. 7d, 30d, 90d)";
  * status string, so the helper signatures accept both instead of narrowing to
  * `number` (which rejects the real context type).
  */
-type StatusSetter = { status?: number | string };
-
-/**
- * Tenant resolution for every analytics route. Returns null and sets 404 when
- * the id resolves to nothing — a missing id and a foreign id look identical, so
- * tenancy never leaks existence. This is the single seam the auth/tenancy guard
- * (`packages/database/src/tenancy.ts`, see docs/auth-tenancy.md) will repoint to
- * `requireCompany`-with-ownership; route bodies stay untouched.
- */
-async function tenant(companyId: string, set: StatusSetter): Promise<Company | null> {
-  const company = await requireCompany(companyId);
-  if (!company) set.status = 404;
-  return company;
-}
+type StatusSetter = {
+  status?: number | string;
+  headers: Record<string, string | number>;
+};
 
 /**
  * Shared read path for report endpoints: cache (60s fresh / 240s SWR unless
@@ -79,7 +57,7 @@ async function tenant(companyId: string, set: StatusSetter): Promise<Company | n
  */
 async function report<T>(
   set: StatusSetter,
-  company: Company,
+  company: CompanyRow,
   spec: {
     label: string;
     errorMessage: string;
@@ -145,9 +123,9 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
   })
   .get(
     "/overview",
-    async ({ query, set }) => {
-      const company = await tenant(query.companyId, set);
-      if (!company) return { error: "Company not found" };
+    async (ctx) => {
+      const { query, set } = ctx;
+      const company = await requireCompany(ctx, "query");
       // Same range contract as every sibling endpoint: Nd, 1..90. An
       // unrecognised range used to be silently clamped to 14 days, so
       // "range=90d" quietly answered a different question (F-04).
@@ -176,9 +154,9 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
   )
   .get(
     "/website",
-    async ({ query, set }) => {
-      const company = await tenant(query.companyId, set);
-      if (!company) return { error: "Company not found" };
+    async (ctx) => {
+      const { query, set } = ctx;
+      const company = await requireCompany(ctx, "query");
       const days = parseWindowDays(query.range);
       if (days === null) {
         set.status = 422;
@@ -214,9 +192,9 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
   )
   .get(
     "/conversions",
-    async ({ query, set }) => {
-      const company = await tenant(query.companyId, set);
-      if (!company) return { error: "Company not found" };
+    async (ctx) => {
+      const { query, set } = ctx;
+      const company = await requireCompany(ctx, "query");
       const days = parseWindowDays(query.range);
       if (days === null) {
         set.status = 422;
@@ -242,9 +220,9 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
   )
   .get(
     "/realtime",
-    async ({ query, set }) => {
-      const company = await tenant(query.companyId, set);
-      if (!company) return { error: "Company not found" };
+    async (ctx) => {
+      const { query, set } = ctx;
+      const company = await requireCompany(ctx, "query");
       // Short cache: thundering-herd protection for owners watching live.
       return report(set, company, {
         label: "Realtime",
@@ -270,9 +248,9 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
   })
   .get(
     "/acquisition",
-    async ({ query, set }) => {
-      const company = await tenant(query.companyId, set);
-      if (!company) return { error: "Company not found" };
+    async (ctx) => {
+      const { query, set } = ctx;
+      const company = await requireCompany(ctx, "query");
       const days = parseWindowDays(query.range);
       if (days === null) {
         set.status = 422;
@@ -312,9 +290,9 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
   )
   .get(
     "/audience",
-    async ({ query, set }) => {
-      const company = await tenant(query.companyId, set);
-      if (!company) return { error: "Company not found" };
+    async (ctx) => {
+      const { query, set } = ctx;
+      const company = await requireCompany(ctx, "query");
       const days = parseWindowDays(query.range);
       if (days === null) {
         set.status = 422;
@@ -343,9 +321,9 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
   )
   .get(
     "/agent/overview",
-    async ({ query, set }) => {
-      const company = await tenant(query.companyId, set);
-      if (!company) return { error: "Company not found" };
+    async (ctx) => {
+      const { query, set } = ctx;
+      const company = await requireCompany(ctx, "query");
       const days = parseWindowDays(query.range);
       if (days === null) {
         set.status = 422;
@@ -378,9 +356,9 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
   )
   .get(
     "/agent/questions",
-    async ({ query, set }) => {
-      const company = await tenant(query.companyId, set);
-      if (!company) return { error: "Company not found" };
+    async (ctx) => {
+      const { query, set } = ctx;
+      const company = await requireCompany(ctx, "query");
       const days = parseWindowDays(query.range);
       if (days === null) {
         set.status = 422;
@@ -413,9 +391,9 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
   )
   .get(
     "/agent/quality",
-    async ({ query, set }) => {
-      const company = await tenant(query.companyId, set);
-      if (!company) return { error: "Company not found" };
+    async (ctx) => {
+      const { query, set } = ctx;
+      const company = await requireCompany(ctx, "query");
       const days = parseWindowDays(query.range);
       if (days === null) {
         set.status = 422;
@@ -448,9 +426,9 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
   )
   .get(
     "/agent/voice",
-    async ({ query, set }) => {
-      const company = await tenant(query.companyId, set);
-      if (!company) return { error: "Company not found" };
+    async (ctx) => {
+      const { query, set } = ctx;
+      const company = await requireCompany(ctx, "query");
       const days = parseWindowDays(query.range);
       if (days === null) {
         set.status = 422;
@@ -483,9 +461,9 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
   )
   .get(
     "/content",
-    async ({ query, set }) => {
-      const company = await tenant(query.companyId, set);
-      if (!company) return { error: "Company not found" };
+    async (ctx) => {
+      const { query, set } = ctx;
+      const company = await requireCompany(ctx, "query");
       const days = parseWindowDays(query.range);
       if (days === null) {
         set.status = 422;

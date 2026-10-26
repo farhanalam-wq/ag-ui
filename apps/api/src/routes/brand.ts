@@ -1,18 +1,30 @@
 import { Elysia, t } from "elysia";
-import { db, brands, brandStylesheets, companies, companySnapshots, eq, desc, resolveThemeStylesheetId } from "@ag-ui/database";
+import {
+  db,
+  brands,
+  brandStylesheets,
+  companySnapshots,
+  eq,
+  and,
+  desc,
+} from "@ag-ui/database";
 import { brandQueue } from "@ag-ui/queues";
 import { logger } from "@ag-ui/shared";
+import { requireCompany } from "../auth/plugin";
 
 export const brandRoutes = new Elysia({ prefix: "/api/brand" })
   // Drizzle returns camelCase (designMd, screenshotUrl, createdAt); the API
   // contract mirrors it 1:1 so the web client never guesses key casing.
   .get(
     "/:companyId/latest",
-    async ({ params, set }) => {
+    async (ctx) => {
+      const { set } = ctx;
+      const company = await requireCompany(ctx);
+
       const [stylesheet] = await db
         .select()
         .from(brandStylesheets)
-        .where(eq(brandStylesheets.companyId, params.companyId))
+        .where(eq(brandStylesheets.companyId, company.id))
         .orderBy(desc(brandStylesheets.createdAt))
         .limit(1);
 
@@ -24,7 +36,7 @@ export const brandRoutes = new Elysia({ prefix: "/api/brand" })
       const [brand] = await db
         .select()
         .from(brands)
-        .where(eq(brands.companyId, params.companyId))
+        .where(eq(brands.companyId, company.id))
         .limit(1);
 
       return { stylesheet, brand: brand ?? null };
@@ -42,11 +54,12 @@ export const brandRoutes = new Elysia({ prefix: "/api/brand" })
 
   .get(
     "/:companyId/history",
-    async ({ params }) => {
+    async (ctx) => {
+      const company = await requireCompany(ctx);
       const rows = await db
         .select()
         .from(brandStylesheets)
-        .where(eq(brandStylesheets.companyId, params.companyId))
+        .where(eq(brandStylesheets.companyId, company.id))
         .orderBy(desc(brandStylesheets.createdAt))
         .limit(20);
 
@@ -66,31 +79,45 @@ export const brandRoutes = new Elysia({ prefix: "/api/brand" })
 
   .post(
     "/retry",
-    async ({ body, set }) => {
+    async (ctx) => {
+      const { body, set } = ctx;
+      // Body policy: the guard resolved and ownership-checked body.companyId.
+      const company = await requireCompany(ctx, "body");
+
       // Origin is optional: fall back to the company's stored URL so the
       // Appearance page retry button works without knowing it.
-      let origin = body.origin;
-      if (!origin) {
-        const [company] = await db
-          .select()
-          .from(companies)
-          .where(eq(companies.id, body.companyId))
-          .limit(1);
-        origin = company?.url ?? null;
-      }
+      const origin = body.origin ?? company.url;
       if (!origin) {
         set.status = 400;
         return { error: "origin is required (no stored company URL found)" };
       }
-      // Stamp the active snapshot when the caller didn't name one, so every
-      // stylesheet row knows which knowledge version it belongs to.
+
+      // A caller-supplied snapshot id must belong to this company; otherwise a
+      // brand job could stamp a stylesheet against another tenant's snapshot.
       let snapshotId = body.snapshotId ?? null;
-      if (!snapshotId) {
+      if (snapshotId) {
+        const [ownedSnapshot] = await db
+          .select({ id: companySnapshots.id })
+          .from(companySnapshots)
+          .where(
+            and(
+              eq(companySnapshots.id, snapshotId),
+              eq(companySnapshots.companyId, company.id)
+            )
+          )
+          .limit(1);
+        if (!ownedSnapshot) {
+          set.status = 404;
+          return { error: "Snapshot not found" };
+        }
+      } else {
+        // Stamp the active snapshot when the caller didn't name one, so every
+        // stylesheet row knows which knowledge version it belongs to.
         try {
           const [latest] = await db
             .select({ id: companySnapshots.id })
             .from(companySnapshots)
-            .where(eq(companySnapshots.companyId, body.companyId))
+            .where(eq(companySnapshots.companyId, company.id))
             .orderBy(desc(companySnapshots.version))
             .limit(1);
           snapshotId = latest?.id ?? null;
@@ -98,12 +125,13 @@ export const brandRoutes = new Elysia({ prefix: "/api/brand" })
           snapshotId = null;
         }
       }
+
       const job = await brandQueue.add(
         "extract",
-        { companyId: body.companyId, snapshotId, origin },
+        { companyId: company.id, snapshotId, origin },
         { removeOnComplete: true }
       );
-      logger.info(`[API:BRAND] retry queued for company ${body.companyId} (job ${job.id})`);
+      logger.info(`[API:BRAND] retry queued for company ${company.id} (job ${job.id})`);
       return { success: true, jobId: job.id };
     },
     {

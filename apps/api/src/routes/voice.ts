@@ -6,11 +6,14 @@ import {
   resolveWidgetKeyByHash,
   checkEmbedRateLimit,
   getRedisClient,
+  assertOriginAllowed,
+  safeRefererForLog,
   eq,
   desc,
   recordError,
 } from "@ag-ui/database";
 import { hashWidgetKey, logger } from "@ag-ui/shared";
+import { requireCompany } from "../auth/plugin";
 
 const VOICEKIT_TOKEN_PATH = "/api/web-call/get-token";
 const VOICEKIT_FETCH_TIMEOUT_MS = 15000;
@@ -121,11 +124,14 @@ async function mintVoiceKitToken(metadata: {
 
 export const voiceRoutes = new Elysia({ prefix: "/api/voice" }).post(
   "/token",
-  async ({ body, set, request }) => {
+  async (ctx) => {
+    const { body, set, request } = ctx;
     const { companyId, widgetKey, metadata } = body;
 
     if ((companyId && widgetKey) || (!companyId && !widgetKey)) {
-      set.status = 400;
+      // The auth plugin enforces the same rule before the handler. Keep this
+      // branch for direct handler tests and for a consistent 422 contract.
+      set.status = 422;
       return { error: "Provide exactly one of companyId or widgetKey" };
     }
 
@@ -150,19 +156,43 @@ export const voiceRoutes = new Elysia({ prefix: "/api/voice" }).post(
         .limit(1);
       company = row;
       rateLimitScopeId = resolved.keyHash;
-    } else {
-      const [row] = await db
-        .select({ id: companies.id, name: companies.name, domain: companies.domain })
-        .from(companies)
-        .where(eq(companies.id, companyId!))
-        .limit(1);
-      company = row;
-      rateLimitScopeId = companyId!;
-    }
 
-    if (!company) {
-      set.status = 404;
-      return { error: "Company not found" };
+      if (!company) {
+        set.status = 404;
+        return { error: "Company not found" };
+      }
+
+      // Public key path: same deny-by-default origin gate as config/chat.
+      // A DB failure reads as unavailable, never as allowed.
+      let gate;
+      try {
+        gate = await assertOriginAllowed(resolved.row.id, request);
+      } catch (err) {
+        const message = (err as Error)?.message ?? String(err);
+        logger.error(`[VOICE] Gate unavailable: ${message}`);
+        void recordError({
+          source: "voice",
+          message,
+          stack: err instanceof Error ? err.stack : undefined,
+          context: { keyPrefix: resolved.row.keyPrefix, stage: "voice-gate" },
+          companyId: company.id,
+        });
+        set.status = 503;
+        return { error: "Voice unavailable - try again shortly", code: "VOICE_UNAVAILABLE" };
+      }
+      if (!gate.allowed) {
+        logger.warn(
+          `[VOICE] Blocked token for key ${resolved.row.keyPrefix}… reason=${gate.reason} referer=${safeRefererForLog(request.headers.get("referer"))}`
+        );
+        set.status = 403;
+        return { error: "This key is not allowed on this site", reason: gate.reason };
+      }
+    } else {
+      // Session path: the guard has already checked company ownership. Using
+      // the resolved row avoids a second, unowned lookup by body id.
+      const owned = await requireCompany(ctx, "body");
+      company = { id: owned.id, name: owned.name, domain: owned.domain };
+      rateLimitScopeId = owned.id;
     }
 
     // 2. READY-gate: never mint voice for partial snapshots.

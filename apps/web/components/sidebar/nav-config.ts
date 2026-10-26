@@ -44,7 +44,7 @@ export interface SidebarNavSection {
 export const SIDEBAR_NAV: SidebarNavSection[] = [
   {
     title: null,
-    items: [{ id: "overview", label: "Overview", icon: SquaresFour, href: "/" }],
+    items: [{ id: "overview", label: "Overview", icon: SquaresFour, href: "/overview" }],
   },
   {
     title: "KNOWLEDGE",

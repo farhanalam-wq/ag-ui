@@ -1,40 +1,42 @@
 import { Elysia, t } from "elysia";
 import {
   db,
-  companies,
   conversations,
   messages,
   retrieveCompanyContext,
+  resolveOwnedConversation,
   eq,
   desc,
   recordError,
 } from "@ag-ui/database";
 import { streamChatCompletionGenerator, buildAnswerSystemPrompt, logger } from "@ag-ui/shared";
+import { requireCompany, requireUser } from "../auth/plugin";
 
 export const chatRoutes = new Elysia()
   // 1. Streaming Chat Endpoint (Native Elysia SSE Generator)
   .post(
     "/api/companies/:id/chat",
-    async function* ({ params, body, set }) {
+    async function* (ctx) {
+      const { body, set } = ctx;
       set.headers["content-type"] = "text/event-stream";
       set.headers["cache-control"] = "no-cache";
       set.headers["connection"] = "keep-alive";
       set.headers["access-control-allow-origin"] = "*";
 
-      const companyId = params.id;
+      const user = requireUser(ctx);
+      const company = await requireCompany(ctx);
+      const companyId = company.id;
       const { message: userQuery, conversationId } = body;
 
-      // Verify company exists
-      const [company] = await db
-        .select()
-        .from(companies)
-        .where(eq(companies.id, companyId))
-        .limit(1);
-
-      if (!company) {
-        set.status = 404;
-        yield { event: "error", data: { message: "Company not found" } };
-        return;
+      // T2: a supplied conversation id must belong to the company the guard
+      // just resolved. Foreign and nonexistent ids are indistinguishable.
+      if (conversationId) {
+        const owned = await resolveOwnedConversation(user.id, conversationId);
+        if (!owned || owned.conversation.companyId !== companyId) {
+          set.status = 404;
+          yield { event: "error", data: { message: "Conversation not found" } };
+          return;
+        }
       }
 
       let activeConvId = conversationId;
@@ -181,13 +183,13 @@ export const chatRoutes = new Elysia()
   // 2. List Conversations for a Company
   .get(
     "/api/companies/:id/conversations",
-    async ({ params }) => {
-      const companyId = params.id;
+    async (ctx) => {
+      const company = await requireCompany(ctx);
 
       const convs = await db
         .select()
         .from(conversations)
-        .where(eq(conversations.companyId, companyId))
+        .where(eq(conversations.companyId, company.id))
         .orderBy(desc(conversations.createdAt));
 
       return { conversations: convs };
@@ -206,16 +208,13 @@ export const chatRoutes = new Elysia()
   // 3. Get Messages in a Conversation
   .get(
     "/api/conversations/:id/messages",
-    async ({ params, set }) => {
-      const conversationId = params.id;
+    async (ctx) => {
+      const { params, set } = ctx;
+      const user = requireUser(ctx);
 
-      const [conv] = await db
-        .select()
-        .from(conversations)
-        .where(eq(conversations.id, conversationId))
-        .limit(1);
-
-      if (!conv) {
+      // Derived policy: conversation -> company -> owner.
+      const owned = await resolveOwnedConversation(user.id, params.id);
+      if (!owned) {
         set.status = 404;
         return { error: "Conversation not found" };
       }
@@ -223,11 +222,11 @@ export const chatRoutes = new Elysia()
       const msgList = await db
         .select()
         .from(messages)
-        .where(eq(messages.conversationId, conversationId))
+        .where(eq(messages.conversationId, owned.conversation.id))
         .orderBy(messages.createdAt);
 
       return {
-        conversation: conv,
+        conversation: owned.conversation,
         messages: msgList,
       };
     },

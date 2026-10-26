@@ -20,12 +20,14 @@ import {
   checkTrackQuota,
   resolveCompanyWidgetTheme,
   listDomainsByKey,
-  getKeyCompanyId,
   addDomain,
   removeDomain,
   assertOriginAllowed,
   safeRefererForLog,
   DomainValidationError,
+  resolveOwnedWidgetKey,
+  resolveOwnedWidgetDomain,
+  resolveCompanyConversation,
   eq,
   desc,
   and,
@@ -46,6 +48,7 @@ import {
   normalizePagePath,
 } from "@ag-ui/analytics";
 import { randomUUID } from "node:crypto";
+import { requireCompany, requireUser } from "../auth/plugin";
 
 export function getClientIp(request: Request): string {
   const forwarded = request.headers.get("x-forwarded-for");
@@ -82,18 +85,12 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
   // 1. Issue (or reuse) an opaque widget key for a company. Raw is returned once, only the hash is stored.
   .post(
     "/keys",
-    async ({ body, set }) => {
+    async (ctx) => {
+      const { body, set } = ctx;
+      // Session + ownership. The guard already resolved the body company id;
+      // requireCompany returns that row so it cannot be re-queried unowned.
+      const company = await requireCompany(ctx, "body");
       const label = body.label?.trim().slice(0, 64) || "default";
-
-      const [company] = await db
-        .select()
-        .from(companies)
-        .where(eq(companies.id, body.companyId))
-        .limit(1);
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
 
       const existing = await findActiveKeyByLabel(company.id, label);
       if (existing) {
@@ -140,16 +137,8 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
   // 2. List issued keys (prefixes only — never hashes or raw keys).
   .get(
     "/keys",
-    async ({ query, set }) => {
-      const [company] = await db
-        .select()
-        .from(companies)
-        .where(eq(companies.id, query.companyId))
-        .limit(1);
-      if (!company) {
-        set.status = 404;
-        return { error: "Company not found" };
-      }
+    async (ctx) => {
+      const company = await requireCompany(ctx, "query");
       const keys = await listKeysByCompany(company.id);
       return { companyId: company.id, keys };
     },
@@ -162,8 +151,19 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
   // so deleted keys 404 on config/chat like never issued ones.
   .post(
     "/keys/:keyId/revoke",
-    async ({ params, set }) => {
-      const deleted = await deleteWidgetKey(params.keyId);
+    async (ctx) => {
+      const { params, set } = ctx;
+      const user = requireUser(ctx);
+
+      // Derived policy: key -> company -> owner. A foreign key is
+      // indistinguishable from a missing one.
+      const owned = await resolveOwnedWidgetKey(user.id, params.keyId);
+      if (!owned) {
+        set.status = 404;
+        return { error: "Widget key not found" };
+      }
+
+      const deleted = await deleteWidgetKey(owned.key.id);
       if (!deleted) {
         set.status = 404;
         return { error: "Widget key not found" };
@@ -178,14 +178,18 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
   // 3b. List allowed origins for a key (prefixes never leave as raw).
   .get(
     "/keys/:keyId/domains",
-    async ({ params, set }) => {
-      const companyId = await getKeyCompanyId(params.keyId);
-      if (!companyId) {
+    async (ctx) => {
+      const { params, set } = ctx;
+      const user = requireUser(ctx);
+
+      const owned = await resolveOwnedWidgetKey(user.id, params.keyId);
+      if (!owned) {
         set.status = 404;
         return { error: "Widget key not found" };
       }
-      const domains = await listDomainsByKey(params.keyId);
-      return { keyId: params.keyId, domains };
+
+      const domains = await listDomainsByKey(owned.key.id);
+      return { keyId: owned.key.id, domains };
     },
     {
       params: t.Object({ keyId: t.String({ format: "uuid" }) }),
@@ -195,20 +199,24 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
   // 3c. Add an allowed origin to a key. Origin normalized server-side.
   .post(
     "/keys/:keyId/domains",
-    async ({ params, body, set, request }) => {
-      const companyId = await getKeyCompanyId(params.keyId);
-      if (!companyId) {
+    async (ctx) => {
+      const { params, body, set, request } = ctx;
+      const user = requireUser(ctx);
+
+      const owned = await resolveOwnedWidgetKey(user.id, params.keyId);
+      if (!owned) {
         set.status = 404;
         return { error: "Widget key not found" };
       }
-      const actor = request.headers.get("x-actor")?.trim().slice(0, 64) || null;
+
       try {
         const domain = await addDomain({
-          keyId: params.keyId,
+          keyId: owned.key.id,
           origin: body.origin,
           includePaths: body.includePaths,
           excludePaths: body.excludePaths,
-          createdBy: actor,
+          // Session user id, never a client-supplied actor header.
+          createdBy: user.id,
           createdIp: getClientIp(request),
         });
         set.status = 201;
@@ -242,13 +250,23 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
   // 3d. Remove an allowed origin by row id (resolves key internally).
   .delete(
     "/domains/:id",
-    async ({ params, set }) => {
-      const removed = await removeDomain(params.id);
+    async (ctx) => {
+      const { params, set } = ctx;
+      const user = requireUser(ctx);
+
+      // Derived policy: domain -> key -> company -> owner.
+      const owned = await resolveOwnedWidgetDomain(user.id, params.id);
+      if (!owned) {
+        set.status = 404;
+        return { error: "Allowed origin not found" };
+      }
+
+      const removed = await removeDomain(owned.domain.id);
       if (!removed) {
         set.status = 404;
         return { error: "Allowed origin not found" };
       }
-      return { removed: true, id: params.id };
+      return { removed: true, id: owned.domain.id };
     },
     {
       params: t.Object({ id: t.String({ format: "uuid" }) }),
@@ -269,8 +287,9 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
         return { error: "Widget key revoked" };
       }
 
-      // Per-key origin gate (zero rules = open). Never burns rate-limit budget.
-      // DB failures here must read as unavailable, never leak internals.
+      // Per-key origin gate. Deny-by-default: a key with no allowed origins is
+      // disabled. Never burns rate-limit budget. DB failures here must read as
+      // unavailable, never leak internals.
       let gate;
       try {
         gate = await assertOriginAllowed(resolved.row.id, request);
@@ -597,6 +616,20 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
         set.status = 404;
         yield { event: "error", data: { message: "Company not found" } };
         return;
+      }
+
+      // A supplied conversation must belong to the key's company. Otherwise a
+      // leaked id would append messages to another tenant's transcript.
+      if (body.conversationId) {
+        const conversation = await resolveCompanyConversation(
+          company.id,
+          body.conversationId
+        );
+        if (!conversation) {
+          set.status = 404;
+          yield { event: "error", data: { message: "Conversation not found" } };
+          return;
+        }
       }
 
       const snapshot = await getLatestSnapshot(company.id);

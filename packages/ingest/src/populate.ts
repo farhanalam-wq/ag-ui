@@ -13,6 +13,7 @@ import {
   eq,
   and,
   desc,
+  resolveOwnedCompanyByDomain,
   upsertChunkPoints,
   invalidateCompanyContextCache,
 } from "@ag-ui/database";
@@ -31,6 +32,7 @@ export async function populateDb(
   rootHtml: string | null,
   opts: CliOptions,
   crawlStats: Record<string, any>,
+  ownerId: string,
   jobContext?: { companyId: string; snapshotId: string; crawlJobId: string; version: number }
 ) {
   const t0 = Date.now();
@@ -47,12 +49,12 @@ export async function populateDb(
     snapId = jobContext.snapshotId;
     version = jobContext.version;
   } else {
-    // Company find-or-create fallback.
-    let [existing] = await db.select().from(companies).where(eq(companies.domain, domain)).limit(1);
+    // Company find-or-create fallback, scoped to the owner.
+    const existing = await resolveOwnedCompanyByDomain(ownerId, domain);
     if (!existing) {
       const [ins] = await db
         .insert(companies)
-        .values({ domain, name: companyName, url: baseUrl.origin })
+        .values({ ownerId, domain, name: companyName, url: baseUrl.origin })
         .returning();
       companyId = ins.id;
       console.log(`[DB] created company ${companyName} (${companyId})`);
@@ -271,7 +273,13 @@ export async function populateDb(
   }
 
   // Deterministic facts.
-  const companyRow = (await db.select().from(companies).where(eq(companies.id, companyId)).limit(1))[0];
+  const companyRow = (
+    await db
+      .select()
+      .from(companies)
+      .where(and(eq(companies.id, companyId), eq(companies.ownerId, ownerId)))
+      .limit(1)
+  )[0];
   const extracted = extractCompanyFacts(companyRow?.name ?? companyName, domain, inserted);
   if (extracted.length > 0) {
     await db.insert(facts).values(extracted.map((f) => ({ snapshotId: snapId, subject: f.subject, predicate: f.predicate, value: f.value, confidence: f.confidence })));

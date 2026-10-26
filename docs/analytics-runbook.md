@@ -120,30 +120,31 @@ sides agree only while the session timezone is UTC.
   is the only supported path.
 
 ## Fixture data (for review, not for production)
-The analytics module has only ever been seen with a handful of rows in it, so
-the repo ships a deterministic fixture:
+
+Superseded: the fixture script and its root scripts were removed. The canonical
+demo-data tool is the auth/tenancy seeder — see `docs/auth-tenancy.md` §13.3:
 
 ```bash
-bun run fixtures:analytics              # 90 days for two companies, then rolled up
-bun run fixtures:analytics -- --days 30 # a shorter window
-bun run fixtures:analytics:clear        # remove everything it created
+bun run seed        # 1 user, 3 companies, 90 days of analytics
+bun run seed:reset  # wipe the demo user and reseed
 ```
 
-It creates two companies with fixed ids — `Fixture Co (busy)` and
-`Fixture Co (quiet)` — so the numbers can be reviewed on every surface and the
-second company proves the tenant scoping. The seed is idempotent (fixed event
-ids, `ON CONFLICT DO NOTHING`) and removable with one command: the companies
-cascade to their events, sessions, rollups and conversations, and the Redis HLL
-keys are deleted with them. It creates the `page_views` monthly partitions it
-needs, exactly like the worker does.
+It creates one user owning three fictional companies with namespace-derived
+UUIDs, so every surface can be reviewed with real numbers and cross-company
+changes stay isolated. The seed is deterministic for a given UTC day
+(`SEED_NAMESPACE` UUIDs, Faker seed 42) and removes with one command: the user
+cascades to both companies' events, sessions, rollups and conversations
+(`seed:reset`). It creates the `page_views` monthly partitions it needs,
+exactly like the worker does.
 
-**The window ends yesterday, not today.** The fixture never invents traffic in
+**The window ends yesterday, not today.** The seeder never invents traffic in
 the future: a seed that wrote afternoon visits at eight in the morning made the
 rollup-based reports and the session-table-based reports disagree by exactly
 the traffic it had made up. Today is deliberately empty.
 
-**Do not run it against a production database** — it inserts 10k+ events and
-rebuilds 90 days of rollups.
+**Do not run it against a production database** — it inserts ~3M analytics
+rows and rebuilds 90 days of rollups. The seeder itself refuses non-localhost
+databases.
 
 ## The visitor profile (browser, OS, timezone)
 

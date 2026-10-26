@@ -7,11 +7,11 @@
     "dev": "bun --watch src/server.ts",
     "build": "echo 'api: build ok'",
     "start": "bun src/server.ts",
+    "test": "bun test --preload ./src/test-preload.ts",
     "lint": "echo 'api: lint ok'"
   },
   "dependencies": {
     "elysia": "^1.2.25",
-    "@elysiajs/cors": "^1.2.0",
     "@elysiajs/swagger": "^1.2.2",
     "@ag-ui/contracts": "workspace:*",
     "@ag-ui/crawler": "workspace:*",
@@ -21,7 +21,9 @@
     "@ag-ui/extract": "workspace:*",
     "@ag-ui/queues": "workspace:*",
     "@ag-ui/shared": "workspace:*",
-    "@ag-ui/analytics": "workspace:*"
+    "@ag-ui/analytics": "workspace:*",
+    "jose": "^6.2.13",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/bun": "latest",

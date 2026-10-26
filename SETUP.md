@@ -64,6 +64,8 @@ Then fill in:
 | `PORT` / `WEB_PORT` | no (defaults 3001/3000) | Change only on port conflicts |
 | `NEXT_PUBLIC_API_URL` / `NEXT_PUBLIC_BACKEND_URL` | yes, keep `http://localhost:3001` | Web talks to the API through these. If the API moves, both must move. |
 | `QDRANT_DUAL_WRITE` | no, keep `false` | Cutover is done; never re-enable without reading `docs/parity-check.md` |
+| `APP_URL` / `SESSION_TTL_HOURS` / `COOKIE_DOMAIN` | no for dev | Auth points login/CSRF at `APP_URL` (default `http://localhost:3000`); sessions default to 168 h. Change `APP_URL` wherever the web app actually lives — the CSRF guard compares `Origin` against it | 
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` | only for Google sign-in | Empty → the Google button answers 503 "not configured"; email/password sign-in works regardless |
 | LiveKit / VoiceKit / ElevenLabs / Sarvam / Pixabay keys | only for voice + media | Stack runs fine without them; voice routes 401/429 without keys |
 
 `.env` is gitignored — it never travels between machines. That is the #1 cause of
@@ -155,7 +157,20 @@ bun --filter @ag-ui/worker run dev   # worker only
 
 ### 2.7 Prove it works (same gates as the pipeline checklist)
 
+Optional but recommended — seed a realistic demo dataset (one demo user
+`demo@ag-ui.local` / `DemoPassw0rd!2026`, three companies with ~15 weeks of
+analytics and a live knowledge base):
+
 ```bash
+bun run seed          # wipes nothing; hard-errors if the demo user exists
+bun run seed:reset    # --reset variant: wipe + reseed
+```
+
+Auth + dashboard:
+
+```bash
+# open http://localhost:3000 — public landing, links to /login and /register
+# log in as demo@ag-ui.local / DemoPassw0rd!2026 → lands on /overview
 curl localhost:3001/health                          # {status,...}
 # open http://localhost:3001/swagger
 bun ingest-cli.ts stats <a-known-domain>            # DB + Qdrant counts agree
@@ -208,8 +223,9 @@ everything else; do not hand-delete entries, use `npx skills remove`.
 | Qdrant 404 collection | Wiped volume or new machine → `bun scripts/qdrant-init.ts` |
 | Embeddings fail | Missing/invalid `OPENAI_API_KEY` in `.env` (needs process restart) |
 | `--playwright` crashes | Browsers not installed → `bunx playwright install chromium` |
-| Port clash on 3000/3001 | Another process holds it → `PORT=` / `WEB_PORT=` in `.env`, keep the two `NEXT_PUBLIC_*` keys in sync |
-| Fresh machine has no companies | Expected — volumes don't transfer. Re-ingest per corpus. |
+| Port clash on 3000/3001 | Another process holds it → `PORT=` / `WEB_PORT=` in `.env`, keep the two `NEXT_PUBLIC_*` keys in sync — and set `APP_URL` to the new web port or every unsafe (POST) request fails CSRF with "Invalid request origin" |
+| Fresh machine has no companies | Expected — volumes don't transfer. `bun run seed` for the demo dataset, or re-ingest per corpus. |
+| Every dashboard visit bounces to `/login` even after logging in | Cookie is scoped to the site you logged in on. Log in through `http://localhost:3000` itself (not a `127.0.0.1` or LAN alias) — same hostname everywhere, or the cookie never matches |
 
 ## 5. Command cheat sheet
 
@@ -219,6 +235,7 @@ docker compose up -d                          # infra
 bun run db:migrate                            # apply schema (0000..000N)
 bun scripts/qdrant-init.ts                    # ensure vector collection
 bun dev                                       # all three runtimes
+bun run seed / bun run seed:reset             # demo dataset (demo@ag-ui.local) / wipe + reseed
 bun ingest-cli.ts <url> --limit 20 --yes      # ingest
 bun ingest-cli.ts stats <domain>              # PG vs Qdrant agreement
 bun ingest-cli.ts query <d> "question"        # retrieval probe

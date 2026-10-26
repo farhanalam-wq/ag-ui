@@ -1,14 +1,15 @@
 import {
   db,
-  companies,
   companySnapshots,
   documents,
   chunks,
   facts,
   eq,
+  and,
   desc,
   count,
   retrieveCompanyContext,
+  resolveOwnedCompanyByDomain,
   countCompanyPoints,
 } from "@ag-ui/database";
 
@@ -26,28 +27,35 @@ export function normalizeDomainInput(input: string): string {
     .trim();
 }
 
-async function findCompanyOrThrow(domainInput: string) {
+/**
+ * Owner-scoped lookup. The read-only commands are still operator tools, so a
+ * domain alone must never select another tenant's company (§5.6).
+ */
+async function findCompanyOrThrow(domainInput: string, ownerId: string) {
   const domain = normalizeDomainInput(domainInput);
-  const [company] = await db
-    .select()
-    .from(companies)
-    .where(eq(companies.domain, domain))
-    .limit(1);
+  const company = await resolveOwnedCompanyByDomain(ownerId, domain);
   if (!company) {
-    throw new Error(`Company not found for domain '${domain}' — ingest it first.`);
+    throw new Error(
+      `Company not found for domain '${domain}' under owner ${ownerId} — ingest it first or pass the right --owner.`
+    );
   }
   return company;
 }
 
+/**
+ * Highest-version READY snapshot. A FAILED crawl still allocates a version,
+ * and the read-only commands must answer from the latest indexed corpus, not
+ * an empty failed one (the same rule the retrieval path uses).
+ */
 async function latestSnapshotOrThrow(companyId: string) {
   const [snapshot] = await db
     .select()
     .from(companySnapshots)
-    .where(eq(companySnapshots.companyId, companyId))
+    .where(and(eq(companySnapshots.companyId, companyId), eq(companySnapshots.status, "READY")))
     .orderBy(desc(companySnapshots.version))
     .limit(1);
   if (!snapshot) {
-    throw new Error(`No snapshots for this company — ingest it first.`);
+    throw new Error(`No ready snapshots for this company — ingest it first.`);
   }
   return snapshot;
 }
@@ -59,9 +67,10 @@ async function latestSnapshotOrThrow(companyId: string) {
 export async function runQueryCommand(
   domainInput: string,
   question: string,
+  ownerId: string,
   opts?: QueryCommandOptions
 ): Promise<void> {
-  const company = await findCompanyOrThrow(domainInput);
+  const company = await findCompanyOrThrow(domainInput, ownerId);
   const limit = Math.min(Math.max(opts?.limit ?? 6, 1), 6);
   const retrieved = await retrieveCompanyContext(company.id, question, { chunkLimit: limit });
 
@@ -85,8 +94,8 @@ export async function runQueryCommand(
 }
 
 /** Read-only: print the latest snapshot's fact table. */
-export async function runFactsCommand(domainInput: string, opts?: QueryCommandOptions): Promise<void> {
-  const company = await findCompanyOrThrow(domainInput);
+export async function runFactsCommand(domainInput: string, ownerId: string, opts?: QueryCommandOptions): Promise<void> {
+  const company = await findCompanyOrThrow(domainInput, ownerId);
   const snapshot = await latestSnapshotOrThrow(company.id);
   const rows = await db
     .select({
@@ -111,8 +120,8 @@ export async function runFactsCommand(domainInput: string, opts?: QueryCommandOp
 }
 
 /** Read-only: print document/chunk/fact counts, snapshot status, Qdrant points. */
-export async function runStatsCommand(domainInput: string): Promise<void> {
-  const company = await findCompanyOrThrow(domainInput);
+export async function runStatsCommand(domainInput: string, ownerId: string): Promise<void> {
+  const company = await findCompanyOrThrow(domainInput, ownerId);
   const snapshot = await latestSnapshotOrThrow(company.id);
 
   const [docRow] = await db

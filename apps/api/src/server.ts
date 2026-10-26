@@ -1,8 +1,10 @@
 import { Elysia } from "elysia";
-import { cors } from "@elysiajs/cors";
 import { swagger } from "@elysiajs/swagger";
 import { logger } from "@ag-ui/shared";
 import { recordError } from "@ag-ui/database";
+import { corsPlugin } from "./cors";
+import { csrfPlugin } from "./csrf";
+import { validateApiEnv } from "./env";
 import { companiesRoutes } from "./routes/companies";
 import { analyticsRoutes } from "./routes/analytics";
 import { chatRoutes } from "./routes/chat";
@@ -13,15 +15,35 @@ import { voiceRoutes } from "./routes/voice";
 import { voiceToolRoutes } from "./routes/voice-tool";
 import { uploadsRoutes } from "./routes/uploads";
 import { operationsRoutes } from "./routes/operations";
+import { authRoutes } from "./routes/auth";
+import { authPlugin } from "./auth/plugin";
 
 const PORT = parseInt(process.env.PORT || "3001", 10);
 
+// Fail fast in production; development/test keep local defaults.
+validateApiEnv();
+
 export const app = new Elysia()
-  .use(cors())
+  // CORS first so every later response (including 403/401) carries the right
+  // allow-origin headers. CSRF runs before auth: an unsafe cookie-authenticated
+  // request without a matching Origin never reaches session lookup.
+  .use(corsPlugin)
+  .use(csrfPlugin)
   // Operations error sink. Fire-and-forget and total by contract; returning
   // nothing keeps Elysia's normal status/response behaviour untouched.
   .onError(({ code, error, set, request }) => {
     const status = typeof set.status === "number" ? set.status : 500;
+    // Expected 4xx (validation, auth, not-found) are part of the contract, not
+    // failures. The sink is for unexpected 5xx (docs/auth-tenancy.md §9.4).
+    // Elysia reports NOT_FOUND with a 200 `set.status`, so check the code too.
+    if (
+      (status >= 400 && status < 500) ||
+      code === "NOT_FOUND" ||
+      code === "VALIDATION" ||
+      code === "PARSE"
+    ) {
+      return;
+    }
     void recordError({
       level: status >= 500 ? "error" : "warn",
       source: "api",
@@ -35,6 +57,8 @@ export const app = new Elysia()
       },
     });
   })
+  // Must run before every route so the manifest guards the whole surface.
+  .use(authPlugin)
   .use(
     swagger({
       path: "/swagger",
@@ -56,6 +80,7 @@ export const app = new Elysia()
     message: "ag-ui backend active",
     documentation: "/swagger",
   }))
+  .use(authRoutes)
   .use(companiesRoutes)
   .use(analyticsRoutes)
   .use(chatRoutes)
@@ -65,11 +90,14 @@ export const app = new Elysia()
   .use(voiceRoutes)
   .use(voiceToolRoutes)
   .use(uploadsRoutes)
-  .use(operationsRoutes)
-  .listen(PORT);
+  .use(operationsRoutes);
 
-logger.info(`ag-ui Elysia API running at http://localhost:${PORT}`);
-logger.info(`Swagger docs available at http://localhost:${PORT}/swagger`);
+// Tests import `app` to enumerate routes; only the real entrypoint listens.
+if (process.env.NODE_ENV !== "test" && process.env.AG_UI_NO_LISTEN !== "1") {
+  app.listen(PORT);
+  logger.info(`ag-ui Elysia API running at http://localhost:${PORT}`);
+  logger.info(`Swagger docs available at http://localhost:${PORT}/swagger`);
+}
 
 export type App = typeof app;
 // Reload trigger: 2026-09-14T18:20

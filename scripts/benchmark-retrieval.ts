@@ -5,22 +5,29 @@
  * MMR diversification, and Redis hot/cold cache performance.
  *
  * Usage:
- *   bun scripts/benchmark-retrieval.ts <domain> "<question>"
+ *   bun scripts/benchmark-retrieval.ts --owner <email|id> <domain> "<question>"
  *
  * Example:
- *   bun scripts/benchmark-retrieval.ts resend.com "What are the pricing tiers?"
+ *   bun scripts/benchmark-retrieval.ts --owner demo@ag-ui.local resend.com "What are the pricing tiers?"
  */
 
-import { db, companies, eq, retrieveCompanyContext, closeRedisConnection } from "../packages/database/src/index";
+import { retrieveCompanyContext, closeRedisConnection } from "../packages/database/src/index";
 import { invalidateCompanyContextCache } from "../packages/database/src/cache";
+import {
+  CliOwnerError,
+  findOwnedCompanyByDomain,
+  positionalArgs,
+  requireOwner,
+} from "./cli-owner";
 
 async function main() {
-  const domain = process.argv[2];
-  const query = process.argv[3] || "What are the main products, services, and pricing?";
+  const owner = await requireOwner(process.argv);
+  const [domain, question] = positionalArgs(process.argv);
+  const query = question || "What are the main products, services, and pricing?";
 
   if (!domain) {
-    console.log("Usage: bun scripts/benchmark-retrieval.ts <domain> [\"question\"]");
-    console.log("Example: bun scripts/benchmark-retrieval.ts resend.com \"What are the pricing tiers?\"");
+    console.log("Usage: bun scripts/benchmark-retrieval.ts --owner <email|id> <domain> [\"question\"]");
+    console.log("Example: bun scripts/benchmark-retrieval.ts --owner demo@ag-ui.local resend.com \"What are the pricing tiers?\"");
     process.exit(1);
   }
 
@@ -28,19 +35,18 @@ async function main() {
 
   console.log(`\n======================================================`);
   console.log(` RETRIEVAL & VECTOR SEARCH BENCHMARK`);
+  console.log(` Owner:  ${owner.email} (${owner.id})`);
   console.log(` Domain: ${cleanDomain}`);
   console.log(` Query:  "${query}"`);
   console.log(`======================================================\n`);
 
-  const [company] = await db
-    .select()
-    .from(companies)
-    .where(eq(companies.domain, cleanDomain))
-    .limit(1);
+  const company = await findOwnedCompanyByDomain(owner.id, cleanDomain);
 
   if (!company) {
-    console.error(`[ERROR] Company '${cleanDomain}' not found in PostgreSQL database.`);
-    console.log(`Run ingestion first: bun ingest-cli.ts https://${cleanDomain} --limit 10 --yes`);
+    console.error(`[ERROR] Company '${cleanDomain}' not found for owner ${owner.email}.`);
+    console.log(
+      `Run ingestion first: bun ingest-cli.ts https://${cleanDomain} --owner ${owner.email} --limit 10 --yes`
+    );
     process.exit(1);
   }
 
@@ -89,7 +95,11 @@ async function main() {
 }
 
 main().catch(async (err) => {
-  console.error("[FATAL BENCHMARK ERROR]:", err);
+  if (err instanceof CliOwnerError) {
+    console.error(`[FATAL] ${err.message}`);
+  } else {
+    console.error("[FATAL BENCHMARK ERROR]:", err);
+  }
   await closeRedisConnection();
   process.exit(1);
 });

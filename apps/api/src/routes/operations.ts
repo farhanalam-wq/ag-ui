@@ -1,8 +1,7 @@
 import { Elysia, t } from "elysia";
 import { listErrorEvents, listActivity } from "@ag-ui/database";
 import { logger } from "@ag-ui/shared";
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { requireCompany } from "../auth/plugin";
 
 /** ISO date/datetime → Date. `null` means present but unparseable. */
 function parseSince(raw: string | undefined): Date | undefined | null {
@@ -30,18 +29,14 @@ const PAGE_QUERY = {
 };
 
 export const operationsRoutes = new Elysia({ prefix: "/api/operations" })
-  // Single auth seam. Today: no-op. The auth pass replaces the body with
-  // requireUser() (401). Do not add ad-hoc checks anywhere else in this file.
-  .onBeforeHandle(() => {
-    // TODO(auth): requireUser(); 401 when absent.
-  })
+  // Auth (401) and company ownership (404) are enforced by the global auth
+  // plugin from the route-policy manifest. `requireCompany` returns the owned
+  // row, and the reads use its id — never the raw query value.
   .get(
     "/errors",
-    async ({ query, set }) => {
-      if (!UUID_RE.test(query.companyId)) {
-        set.status = 422;
-        return { error: "companyId must be a UUID" };
-      }
+    async (ctx) => {
+      const { query, set } = ctx;
+      const company = await requireCompany(ctx, "query");
       const since = parseSince(query.since);
       if (since === null) {
         set.status = 422;
@@ -50,7 +45,7 @@ export const operationsRoutes = new Elysia({ prefix: "/api/operations" })
 
       try {
         return await listErrorEvents({
-          companyId: query.companyId,
+          companyId: company.id,
           source: query.source,
           level: query.level,
           since,
@@ -85,11 +80,9 @@ export const operationsRoutes = new Elysia({ prefix: "/api/operations" })
   )
   .get(
     "/activity",
-    async ({ query, set }) => {
-      if (!UUID_RE.test(query.companyId)) {
-        set.status = 422;
-        return { error: "companyId must be a UUID" };
-      }
+    async (ctx) => {
+      const { query, set } = ctx;
+      const company = await requireCompany(ctx, "query");
       const since = parseSince(query.since);
       if (since === null) {
         set.status = 422;
@@ -98,7 +91,7 @@ export const operationsRoutes = new Elysia({ prefix: "/api/operations" })
 
       try {
         return await listActivity({
-          companyId: query.companyId,
+          companyId: company.id,
           status: query.status,
           kind: query.kind,
           since,

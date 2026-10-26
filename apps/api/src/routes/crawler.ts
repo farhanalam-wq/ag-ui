@@ -9,9 +9,19 @@ import {
   type ManualDiscoveryInput,
 } from "@ag-ui/crawler";
 import { logger } from "@ag-ui/shared";
-import { db, brands, companies, companySnapshots, crawlJobs, eq, desc } from "@ag-ui/database";
+import {
+  db,
+  brands,
+  companySnapshots,
+  crawlJobs,
+  eq,
+  desc,
+  resolveOwnedCompanyByDomain,
+  resolveOwnedCrawlJob,
+} from "@ag-ui/database";
 import { brandQueue } from "@ag-ui/queues";
 import { runIngestPipeline, type PipelineProgressEvent } from "@ag-ui/ingest";
+import { requireUser } from "../auth/plugin";
 
 class AsyncEventQueue<T> {
   private queue: T[] = [];
@@ -328,17 +338,17 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
   // 2. Query status of an active or recent crawl job by ID
   .get(
     "/jobs/:id",
-    async ({ params, set }) => {
-      const [job] = await db
-        .select()
-        .from(crawlJobs)
-        .where(eq(crawlJobs.id, params.id))
-        .limit(1);
+    async (ctx) => {
+      const { params, set } = ctx;
+      const user = requireUser(ctx);
 
-      if (!job) {
+      // Derived policy: job -> company -> owner.
+      const owned = await resolveOwnedCrawlJob(user.id, params.id);
+      if (!owned) {
         set.status = 404;
         return { error: "Job not found" };
       }
+      const job = owned.job;
 
       let snapshot = null;
       if (job.snapshotId) {
@@ -366,17 +376,17 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
   // 3b. Cancel a live crawl job — frees the concurrency cap immediately.
   .post(
     "/jobs/:id/cancel",
-    async ({ params, set }) => {
-      const [job] = await db
-        .select()
-        .from(crawlJobs)
-        .where(eq(crawlJobs.id, params.id))
-        .limit(1);
+    async (ctx) => {
+      const { params, set } = ctx;
+      const user = requireUser(ctx);
 
-      if (!job) {
+      // Derived policy: job -> company -> owner.
+      const owned = await resolveOwnedCrawlJob(user.id, params.id);
+      if (!owned) {
         set.status = 404;
         return { error: "Job not found" };
       }
+      const job = owned.job;
 
       const terminal = ["READY", "FAILED", "CANCELLED"];
       if (terminal.includes(job.status)) {
@@ -418,21 +428,15 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
     }
   )
 
-  // 3. Query status of the latest crawl job for a domain
+  // 3. Query status of the latest crawl job for a domain owned by the session
   .get(
     "/status/:domain",
-    async ({ params, set }) => {
-      const cleanDomain = params.domain
-        .replace(/^https?:\/\//, "")
-        .replace(/\/.*$/, "")
-        .replace(/^www\./, "")
-        .trim();
+    async (ctx) => {
+      const { params, set } = ctx;
+      const user = requireUser(ctx);
 
-      const [company] = await db
-        .select()
-        .from(companies)
-        .where(eq(companies.domain, cleanDomain))
-        .limit(1);
+      // Never a global domain lookup: the same domain may belong to many owners.
+      const company = await resolveOwnedCompanyByDomain(user.id, params.domain);
 
       if (!company) {
         set.status = 404;
@@ -480,7 +484,9 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
   // 4. Real-time streaming crawl + parse + dedup + chunk + embed (Qdrant) pipeline
   .post(
     "/ingest",
-    async function* ({ body, set }) {
+    async function* (ctx) {
+      const { body, set } = ctx;
+      const user = requireUser(ctx);
       set.headers["content-type"] = "text/event-stream";
       set.headers["cache-control"] = "no-cache";
       set.headers["connection"] = "keep-alive";
@@ -519,8 +525,9 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
         data: { phase: "INITIALIZING", message: `Initializing pipeline for ${clean}...` },
       });
 
-      // Launch in-process ingestion pipeline
-      runIngestPipeline(clean, {
+      // Launch in-process ingestion pipeline. The owner comes from the session,
+      // never from the request body.
+      runIngestPipeline(clean, user.id, {
         selectedUrls: selectedUrls && selectedUrls.length > 0 ? selectedUrls : undefined,
         select: select || null,
         fetchConcurrency: fetchConcurrency || 25,
