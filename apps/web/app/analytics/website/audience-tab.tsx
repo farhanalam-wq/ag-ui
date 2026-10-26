@@ -7,10 +7,12 @@
  * operating system, and the hour of the day they browse. All four are the same
  * visit grid read four ways, so the numbers add up to the same sessions.
  *
- * The shape each card draws follows its question: device is composition *and*
- * depth, so it draws two measures per bucket side by side; browser and OS are
- * composition, so they draw one share bar each; hour of day is a distribution
- * over a clock, so its columns run 00:00 → 23:00 in time order, never ranked.
+ * The shape each card draws follows its question: viewport width is a
+ * distribution over screen size (the histogram the device split is bucketed
+ * from), device is composition *and* depth, so it draws two measures per
+ * bucket side by side; browser and OS are composition, so they draw one
+ * share bar each; hour of day is a distribution over a clock, so its columns
+ * run 00:00 → 23:00 in time order, never ranked.
  *
  * Country is deliberately absent — there is no agreed GeoIP source (D12) — and
  * so is new-vs-returning (D3). A tab that pretends otherwise would be the only
@@ -66,6 +68,26 @@ export function AudienceTab({ data }: { data: AudienceAnalytics }) {
           { id: "pageviews", value: data.totals.pageviews },
         ]}
       />
+
+      <TrendCard
+        title="Viewport widths"
+        description="Views by screen-width bucket, small to large — the distribution the device split is bucketed from."
+        footer="Everything left of 768 is what the device rule calls Mobile. Pageview grain; the visit-level split is the Devices chart below."
+      >
+        <ColumnChart
+          data={data.breakdowns.viewportWidth.map((row) => ({
+            label: String(row.label),
+            pageviews: Number(row.pageviews ?? 0),
+          }))}
+          series={[
+            {
+              key: "pageviews",
+              label: "Views",
+              color: "hsl(var(--chart-5))",
+            },
+          ]}
+        />
+      </TrendCard>
 
       <TrendCard
         title="Devices"

@@ -315,7 +315,7 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
       detail: {
         summary: "Audience analytics",
         description:
-          "Sessions and views by device, browser, operating system and hour of day. First-party only; no country (no GeoIP source agreed).",
+          "Sessions and views by device, browser, operating system and hour of day, plus the viewport-width distribution behind the device split. First-party only; no country (no GeoIP source agreed).",
       },
     }
   )

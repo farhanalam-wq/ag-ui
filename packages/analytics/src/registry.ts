@@ -27,6 +27,19 @@ export * from "./catalogue";
 
 export type Channel = "Direct" | "Organic Social" | "Campaign" | "Email" | "Referral";
 
+/**
+ * The taxonomy itself, in display order — the one list every channel split
+ * reads, so a report and its filter can never disagree about what the
+ * channels are.
+ */
+export const CHANNELS: Channel[] = [
+  "Direct",
+  "Organic Social",
+  "Campaign",
+  "Email",
+  "Referral",
+];
+
 export const SOCIAL_HOSTS = [
   "facebook.com", "instagram.com", "x.com", "twitter.com", "linkedin.com",
   "youtube.com", "youtu.be", "tiktok.com", "pinterest.com", "reddit.com",
@@ -307,6 +320,13 @@ export interface AcquisitionReport {
     sourceMedium: BreakdownRow[];
     campaign: BreakdownRow[];
     landingPage: BreakdownRow[];
+    /**
+     * Sessions per channel per day, one point per day with a key per
+     * channel — the mix the Channels table ranks, drawn over time. Zeros
+     * are filled for days the scan saw nothing, because a missing day is no
+     * traffic, not a hole in the chart.
+     */
+    channelTrend: TrendPoint[];
   };
   freshness: Freshness;
 }
@@ -336,6 +356,13 @@ export interface AudienceReport {
     browser: BreakdownRow[];
     os: BreakdownRow[];
     hour: BreakdownRow[];
+    /**
+     * Pageviews bucketed by viewport width (`dimensions.ts` bucket rule),
+     * in bucket order — the distribution behind the device split. Pageview
+     * grain, stated on the tab: the visit table keeps only the device
+     * bucket, not the width.
+     */
+    viewportWidth: BreakdownRow[];
   };
   /** The share of visits that reported a timezone (0-100). */
   timezoneCoverage: number;

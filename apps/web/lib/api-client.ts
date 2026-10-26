@@ -146,6 +146,8 @@ export interface AudienceAnalytics {
     browser: BreakdownRow[];
     os: BreakdownRow[];
     hour: BreakdownRow[];
+    /** Pageviews by viewport-width bucket, in bucket order (≤420 → ≥1920, unknown last). */
+    viewportWidth: BreakdownRow[];
   };
   /** Share of visits that reported a timezone (0-100). */
   timezoneCoverage: number;
@@ -243,6 +245,8 @@ export interface AcquisitionAnalytics {
     sourceMedium: BreakdownRow[];
     campaign: BreakdownRow[];
     landingPage: BreakdownRow[];
+    /** Sessions per channel per day — one point per day, a key per channel, zero-filled. */
+    channelTrend?: { d: string } & Record<string, string | number>[];
   };
   freshness: Freshness;
 }

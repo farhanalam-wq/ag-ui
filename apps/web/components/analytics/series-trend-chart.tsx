@@ -37,10 +37,16 @@ export function SeriesTrendChart({
   data,
   series,
   refreshKey,
+  percent,
 }: {
   data: Array<Record<string, string | number>>;
   series: TrendSeries[];
   refreshKey: number;
+  /**
+   * The series are rates (0–100): a fixed axis so the days stay comparable,
+   * and % ticks so "78" cannot be read as a count.
+   */
+  percent?: boolean;
 }) {
   const config = Object.fromEntries(
     series.map((s) => [s.key, { label: s.label, color: s.color }])
@@ -83,7 +89,8 @@ export function SeriesTrendChart({
           axisLine={false}
           tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
           width={40}
-          allowDecimals={false}
+          allowDecimals={percent}
+          {...(percent ? { domain: [0, 100] as [number, number], tickFormatter: (v: number) => `${Math.round(v)}%` } : {})}
         />
         <ChartTooltip content={<ChartTooltipContent />} />
         {series.map((s, i) => (

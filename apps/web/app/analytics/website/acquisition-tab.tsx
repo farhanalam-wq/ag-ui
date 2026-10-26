@@ -9,13 +9,18 @@
  * Referral with the host preserved (D6). Saying that on the tab is cheaper than
  * explaining a missing row later.
  *
- * No traffic-trend chart here: the Overview tab is that chart's home, and
- * drawing the same daily pair twice on one surface would just repeat a number.
- * What this tab adds that Overview cannot say is the *mix* — how the sessions
- * divide by channel — and the tables underneath.
+ * No pageviews-vs-sessions trend here: the Overview tab is that chart's
+ * home, and drawing the same daily pair twice on one surface would just
+ * repeat a number. What this tab adds that Overview cannot say is the *mix*
+ * — how sessions divide by channel, as a snapshot bar and as stacked columns
+ * over time, because "is the mix shifting" is the question a channel owner
+ * actually brings here.
  */
 
+import { useMemo } from "react";
+import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Card,
   CardContent,
@@ -27,7 +32,14 @@ import { DataQualityNote } from "@/components/analytics/data-quality-note";
 import { deltaPct } from "@/components/analytics/format";
 import { MetricGrid } from "@/components/analytics/metric-tile";
 import { MetricStory } from "@/components/analytics/metric-story";
+import { TrendCard } from "@/components/analytics/trend-card";
 import { ChartLine } from "@phosphor-icons/react";
+
+const ColumnChart = dynamic(
+  () =>
+    import("@/components/analytics/column-chart").then((m) => m.ColumnChart),
+  { ssr: false, loading: () => <Skeleton className="h-[220px] w-full" /> }
+);
 
 const ALL_CHANNELS = [
   "Direct",
@@ -35,10 +47,20 @@ const ALL_CHANNELS = [
   "Campaign",
   "Email",
   "Referral",
-];
+] as const;
+
+/** One hue per channel, fixed so the mix reads the same wherever it is drawn. */
+const CHANNEL_COLORS: Record<string, string> = {
+  Direct: "hsl(var(--chart-1))",
+  "Organic Social": "hsl(var(--chart-2))",
+  Campaign: "hsl(var(--chart-3))",
+  Email: "hsl(var(--chart-4))",
+  Referral: "hsl(var(--chart-5))",
+};
 
 export function AcquisitionTab({
   data,
+  refreshKey,
   compare,
   onCompareChange,
   channels,
@@ -46,8 +68,7 @@ export function AcquisitionTab({
   onClearChannels,
 }: {
   data: AcquisitionAnalytics;
-  /** Still accepted for symmetry with the other tabs; unused since the tab stopped duplicating the Overview trend. */
-  refreshKey?: number;
+  refreshKey: number;
   compare: boolean;
   onCompareChange: (value: boolean) => void;
   channels: string[];
@@ -137,6 +158,27 @@ export function AcquisitionTab({
         description="How the range's sessions divide by channel. Untagged visits are Direct."
         rows={mix}
       />
+
+      {data.breakdowns.channelTrend &&
+        data.breakdowns.channelTrend.length > 0 && (
+          <TrendCard
+            title="Channel mix over time"
+            description="Sessions per day, stacked by channel — watch for one channel quietly taking over, or one collapsing."
+            footer="A visit that touched two channels counts once in each, so columns can exceed the day's session total on multi-channel days."
+          >
+            <ColumnChart
+              data={data.breakdowns.channelTrend}
+              series={ALL_CHANNELS.map((c) => ({
+                key: c,
+                label: c,
+                color: CHANNEL_COLORS[c],
+              }))}
+              stacked
+              refreshKey={refreshKey}
+              className="h-[280px]"
+            />
+          </TrendCard>
+        )}
 
       <div className="grid gap-4 xl:grid-cols-2">
         <BreakdownTable

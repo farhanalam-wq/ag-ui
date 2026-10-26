@@ -78,6 +78,25 @@ export function AgentQualityTab({
         />
       </TrendCard>
 
+      <TrendCard
+        title="Grounding rate"
+        description="Grounded share of that day's answers — the quality signal the counts above only imply."
+        footer="Days with answers but no grounded ones read 0%; days without answers do not exist in the report."
+      >
+        <SeriesTrendChart
+          data={trend}
+          percent
+          series={[
+            {
+              key: "groundedAnswerRate",
+              label: "Grounding rate",
+              color: "hsl(var(--chart-2))",
+            },
+          ]}
+          refreshKey={refreshKey}
+        />
+      </TrendCard>
+
       <BreakdownTable
         title="Grounding by page"
         description="Which host pages the agent can answer from. Only conversations with a known path are counted."
