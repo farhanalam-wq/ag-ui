@@ -74,6 +74,19 @@ export function OverviewTab({
     [data]
   );
   const uniquesMissing = data.totals.uniques === undefined;
+  // Caption for the traffic chart: momentum. Views in the second half of the
+  // range vs the first — the trend the daily bars only imply.
+  const trafficInsight = useMemo(() => {
+    if (data.trend.length < 4) return null;
+    const half = Math.floor(data.trend.length / 2);
+    const sum = (rows: typeof data.trend) =>
+      rows.reduce((a, t) => a + t.pageviews, 0);
+    const first = sum(data.trend.slice(0, half));
+    const second = sum(data.trend.slice(half));
+    if (first === 0) return null;
+    const pct = Math.round(((second - first) / first) * 1000) / 10;
+    return `Views ${pct >= 0 ? "rose" : "fell"} ${Math.abs(pct)}% from the first to the second half of the range.`;
+  }, [data]);
   // Viewport labels are "WxH". Width is the axis that matters — sort by it,
   // so the chart reads small → large instead of big → small.
   const viewports = useMemo(
@@ -89,6 +102,22 @@ export function OverviewTab({
         }),
     [data]
   );
+  // Caption for the width chart: which bucket holds the median view — the
+  // one number that tells the team what they are building for.
+  const viewportInsight = useMemo(() => {
+    const total = viewports.reduce((a, v) => a + v.pageviews, 0);
+    if (total === 0) return null;
+    let acc = 0;
+    for (const v of viewports) {
+      acc += v.pageviews;
+      if (acc >= total / 2) {
+        return Number.isFinite(parseInt(v.label, 10))
+          ? `Half of views are ${v.label}px wide or narrower.`
+          : `The median view has no reported width.`;
+      }
+    }
+    return null;
+  }, [viewports]);
 
   return (
     <div className="space-y-4">
@@ -136,6 +165,7 @@ export function OverviewTab({
       <TrendCard
         title="Traffic"
         description="Pageviews (solid) vs sessions (dashed) per day. Flagged days are the unusual days above — amber spikes, red dips."
+        insight={trafficInsight ?? undefined}
       >
         <TrafficTrendChart
           data={trend}
@@ -166,6 +196,7 @@ export function OverviewTab({
       <TrendCard
         title="Viewports"
         description="Screen widths behind the traffic, small to large — size the widget and pages for the tall columns."
+        insight={viewportInsight ?? undefined}
         footer="Widths as the tracker reported them; a viewport that did not parse sits at the right edge."
       >
         <ColumnChart

@@ -133,9 +133,14 @@ export async function getAcquisitionReport(
   if (uniques === null) dataQuality.push("uniques-unavailable");
 
   let previousTotals: Record<string, number> | undefined;
+  let previousTrend: TrendPoint[] | undefined;
   if (compare) {
     const pr = await db
-      .select({ pv: sql<number>`COALESCE(SUM(${metricsDaily.pageviews}), 0)::int`.as("pv"), se: sql<number>`COALESCE(SUM(${metricsDaily.sessions}), 0)::int`.as("se") })
+      .select({
+        day: sql<string>`${metricsDaily.day}::text`.as("day"),
+        pv: sql<number>`COALESCE(SUM(${metricsDaily.pageviews}), 0)::int`.as("pv"),
+        se: sql<number>`COALESCE(SUM(${metricsDaily.sessions}), 0)::int`.as("se"),
+      })
       .from(metricsDaily)
       .where(
         and(
@@ -143,8 +148,22 @@ export async function getAcquisitionReport(
           gte(metricsDaily.day, prevFrom.toISOString().slice(0, 10)),
           lt(metricsDaily.day, fromDay)
         )
-      );
-    previousTotals = { sessions: Number(pr[0]?.se ?? 0), pageviews: Number(pr[0]?.pv ?? 0) };
+      )
+      .groupBy(metricsDaily.day)
+      .orderBy(metricsDaily.day);
+    const prevByDay = new Map(pr.map((r) => [String(r.day).slice(0, 10), r]));
+    // The same day-list the current trend uses, so the two lines align
+    // day-for-day on the chart's x-axis.
+    const prevPoints: { d: string; pageviews: number; sessions: number }[] =
+      days.map((d) => {
+        const r = prevByDay.get(d);
+        return { d, pageviews: Number(r?.pv ?? 0), sessions: Number(r?.se ?? 0) };
+      });
+    previousTrend = prevPoints;
+    previousTotals = {
+      sessions: prevPoints.reduce((a, t) => a + t.sessions, 0),
+      pageviews: prevPoints.reduce((a, t) => a + t.pageviews, 0),
+    };
     const prevU = await mergeUniques(redis, companyId, dayList(fromDay, rangeDays));
     if (prevU !== null) previousTotals.uniques = prevU;
   }
@@ -229,6 +248,7 @@ export async function getAcquisitionReport(
     compare: compare ? "previous-period" : "off",
     totals: { ...outTotals, ...(outUniques !== null ? { uniques: outUniques } : {}) },
     ...(previousTotals ? { previousTotals } : {}),
+    ...(previousTrend ? { previousTrend } : {}),
     trend,
     breakdowns: {
       channel: byChannel,

@@ -60,6 +60,19 @@ export function CompositionBar({
 }) {
   const total = rows.reduce((a, r) => a + Number(r.value ?? 0), 0);
   const colored = rows.filter((r) => Number(r.value ?? 0) > 0);
+  // The caption the chart exists to answer: who leads, and by how much.
+  const leader =
+    colored.length > 1
+      ? {
+          row: colored.reduce((a, b) =>
+            Number(b.value ?? 0) > Number(a.value ?? 0) ? b : a
+          ),
+          share: 0,
+        }
+      : null;
+  if (leader && total > 0) {
+    leader.share = (Number(leader.row.value ?? 0) / total) * 100;
+  }
 
   return (
     <Card className={cn("min-w-0", className)}>
@@ -67,6 +80,16 @@ export function CompositionBar({
         <CardTitle className="text-[15px] font-semibold">{title}</CardTitle>
         {description && (
           <CardDescription className="text-[13px]">{description}</CardDescription>
+        )}
+        {leader && leader.share >= 50 && (
+          <p className="mt-1 inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground">
+            <span
+              className="size-1.5 shrink-0 rounded-full bg-[hsl(var(--chart-1))]"
+              aria-hidden="true"
+            />
+            {leader.row.label} carries {leader.share.toFixed(1)}% of{" "}
+            {metricLabel.toLowerCase()} — the majority share.
+          </p>
         )}
       </CardHeader>
       <CardContent className="space-y-3">

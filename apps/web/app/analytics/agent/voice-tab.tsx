@@ -16,6 +16,7 @@ import dynamic from "next/dynamic";
 import { Microphone, PhoneCall } from "@phosphor-icons/react";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { VoiceAnalytics } from "@/lib/api-client";
+import { CompositionBar } from "@/components/analytics/composition-bar";
 import { DataQualityNote } from "@/components/analytics/data-quality-note";
 import { MetricGrid } from "@/components/analytics/metric-tile";
 import { MetricStory } from "@/components/analytics/metric-story";
@@ -56,6 +57,19 @@ export function VoiceTab({
         ]}
       />
 
+      <CompositionBar
+        title="Text vs voice"
+        description="Share of agent sessions that included a call; the rest typed. A call is not a question — the visit is the only unit both modalities share."
+        metricLabel="Agent sessions"
+        rows={[
+          { label: "Voice", value: Number(data.totals.textVsVoice ?? 0) },
+          {
+            label: "Text only",
+            value: Math.max(0, 100 - Number(data.totals.textVsVoice ?? 0)),
+          },
+        ]}
+      />
+
       <TrendCard
         title="Calls and turns"
         description="Per day: calls started (solid) and visitor utterances in ended calls (dashed)."
@@ -91,8 +105,7 @@ export function VoiceTab({
       />
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <PhoneCall className="size-3.5" aria-hidden="true" />
-        Voice share is the fraction of agent sessions that included a call; the
-        rest typed. Silent calls connected but ended with zero visitor turns.
+        Silent calls connected but ended with zero visitor turns.
       </p>
       <DataQualityNote notes={data.freshness.notes} />
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">

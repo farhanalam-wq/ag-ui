@@ -314,6 +314,12 @@ export interface AcquisitionReport {
   compare: "previous-period" | "off";
   totals: Record<string, number>;
   previousTotals?: Record<string, number>;
+  /**
+   * The previous period's daily totals, same day count, only when compare is
+   * on — the ghost line behind the current range. The totals above are the
+   * sum of these, so the chart and the delta pills cannot disagree.
+   */
+  previousTrend?: TrendPoint[];
   trend: TrendPoint[];
   breakdowns: {
     channel: BreakdownRow[];

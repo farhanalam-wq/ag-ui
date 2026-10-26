@@ -239,6 +239,8 @@ export interface AcquisitionAnalytics {
   compare: "previous-period" | "off";
   totals: Record<string, number>;
   previousTotals?: Record<string, number>;
+  /** Previous period's daily totals, same length as `trend`, only when compare is on. */
+  previousTrend?: { d: string; pageviews: number; sessions: number }[];
   trend: { d: string; pageviews: number; sessions: number }[];
   breakdowns: {
     channel: BreakdownRow[];

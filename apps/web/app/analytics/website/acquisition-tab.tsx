@@ -41,6 +41,14 @@ const ColumnChart = dynamic(
   { ssr: false, loading: () => <Skeleton className="h-[220px] w-full" /> }
 );
 
+const SeriesTrendChart = dynamic(
+  () =>
+    import("@/components/analytics/series-trend-chart").then(
+      (m) => m.SeriesTrendChart
+    ),
+  { ssr: false, loading: () => <Skeleton className="h-[280px] w-full" /> }
+);
+
 const ALL_CHANNELS = [
   "Direct",
   "Organic Social",
@@ -84,6 +92,50 @@ export function AcquisitionTab({
     // More traffic is the goal this tab watches; the pill says so by colour.
     return pct === null ? null : { pct, good: true };
   };
+
+  // Caption for the stacked chart: the biggest channel, and whether it grew
+  // or shrank between the two halves of the range. Momentum, not a total —
+  // the table above already has the totals.
+  const mixInsight = useMemo(() => {
+    const rows = data.breakdowns.channelTrend;
+    if (!rows || rows.length < 4) return null;
+    const half = Math.floor(rows.length / 2);
+    const perChannel = new Map<string, [number, number]>();
+    for (const c of ALL_CHANNELS) perChannel.set(c, [0, 0]);
+    rows.forEach((r, i) => {
+      for (const c of ALL_CHANNELS) {
+        const cur = perChannel.get(c)!;
+        cur[i < half ? 0 : 1] += Number(r[c] ?? 0);
+      }
+    });
+    const [top, totals] = [...perChannel.entries()].reduce((a, b) =>
+      b[1][0] + b[1][1] > a[1][0] + a[1][1] ? b : a
+    );
+    if (totals[0] + totals[1] === 0) return null;
+    const pct =
+      totals[0] === 0
+        ? null
+        : Math.round(((totals[1] - totals[0]) / totals[0]) * 1000) / 10;
+    const verb =
+      pct === null
+        ? `emerged in the second half (${totals[1]} sessions after none in the first)`
+        : pct >= 0
+          ? `grew ${pct}% between the range's halves`
+          : `fell ${Math.abs(pct)}% between the range's halves`;
+    return `${top} is the largest channel and ${verb}.`;
+  }, [data]);
+
+  // The compare ghost: both periods keyed to the same day-offset axis, since
+  // their real dates never overlap.
+  const compareRows = useMemo(
+    () =>
+      data.trend.map((t, i) => ({
+        d: t.d.slice(5),
+        current: t.sessions,
+        previous: data.previousTrend?.[i]?.sessions ?? 0,
+      })),
+    [data]
+  );
 
   return (
     <div className="space-y-4">
@@ -163,6 +215,7 @@ export function AcquisitionTab({
         data.breakdowns.channelTrend.length > 0 && (
           <TrendCard
             title="Channel mix over time"
+            insight={mixInsight ?? undefined}
             description="Sessions per day, stacked by channel — watch for one channel quietly taking over, or one collapsing."
             footer="A visit that touched two channels counts once in each, so columns can exceed the day's session total on multi-channel days."
           >
@@ -179,6 +232,36 @@ export function AcquisitionTab({
             />
           </TrendCard>
         )}
+
+      {compare && data.previousTrend && data.previousTrend.length > 0 && (
+        <TrendCard
+          title="Current vs previous period"
+          description={`Sessions per day — the last ${data.rangeDays} days (solid) against the equal-length period before it (dashed).`}
+          insight={(() => {
+            const pct = deltaPct(data.totals.sessions, data.previousTotals?.sessions);
+            return pct === null
+              ? undefined
+              : `Sessions are ${pct >= 0 ? "up" : "down"} ${Math.abs(pct)}% vs the previous period.`;
+          })()}
+        >
+          <SeriesTrendChart
+            data={compareRows}
+            refreshKey={refreshKey}
+            series={[
+              {
+                key: "current",
+                label: "Current period",
+                color: "hsl(var(--chart-1))",
+              },
+              {
+                key: "previous",
+                label: "Previous period",
+                color: "hsl(var(--chart-8))",
+              },
+            ]}
+          />
+        </TrendCard>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-2">
         <BreakdownTable

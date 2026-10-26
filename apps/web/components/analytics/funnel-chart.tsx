@@ -45,6 +45,18 @@ export function FunnelChart({
   className?: string;
 }) {
   const top = stages[0]?.count ?? 0;
+  // The caption: where the funnel leaks hardest. The stage whose survival of
+  // its predecessor is the lowest — that is the step worth working on.
+  let worst: { from: string; to: string; survival: number } | null = null;
+  for (let i = 1; i < stages.length; i++) {
+    const prev = stages[i - 1]!;
+    const cur = stages[i]!;
+    if (prev.count <= 0) continue;
+    const survival = Math.round((cur.count / prev.count) * 100);
+    if (!worst || survival < worst.survival) {
+      worst = { from: prev.stage, to: cur.stage, survival };
+    }
+  }
 
   return (
     <Card className={cn("min-w-0", className)}>
@@ -52,6 +64,16 @@ export function FunnelChart({
         <CardTitle className="text-[15px] font-semibold">{title}</CardTitle>
         {description && (
           <CardDescription className="text-[13px]">{description}</CardDescription>
+        )}
+        {worst && stages.length > 1 && (
+          <p className="mt-1 inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground">
+            <span
+              className="size-1.5 shrink-0 rounded-full bg-[hsl(var(--chart-6))]"
+              aria-hidden="true"
+            />
+            Biggest drop-off: {worst.from} → {worst.to} — only{" "}
+            {worst.survival}% carry through.
+          </p>
         )}
       </CardHeader>
       <CardContent className="space-y-1.5">

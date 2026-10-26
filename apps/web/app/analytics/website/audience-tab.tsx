@@ -59,6 +59,36 @@ export function AudienceTab({ data }: { data: AudienceAnalytics }) {
   const toShare = (rows: AudienceAnalytics["breakdowns"]["browser"]) =>
     rows.map((row) => ({ label: row.label, value: Number(row.sessions ?? 0) }));
 
+  // Caption for the devices chart: reading depth per device — the split is
+  // visible in the bars; the depth gap is the finding worth saying out loud.
+  const deviceInsight = useMemo(() => {
+    const usable = data.breakdowns.device.filter(
+      (d) => Number(d.sessions ?? 0) > 0
+    );
+    if (usable.length < 2) return null;
+    const depth = usable.map((d) => ({
+      label: d.label,
+      perSession: Number(d.pageviews ?? 0) / Number(d.sessions ?? 1),
+    }));
+    const sorted = [...depth].sort((a, b) => b.perSession - a.perSession);
+    const top = sorted[0]!;
+    const bottom = sorted[sorted.length - 1]!;
+    if (bottom.perSession <= 0) return null;
+    const gap = Math.round((top.perSession / bottom.perSession) * 10) / 10;
+    return gap > 1.05
+      ? `${top.label} visits read ${gap}× as deep as ${bottom.label} (${top.perSession.toFixed(1)} vs ${bottom.perSession.toFixed(1)} views/session).`
+      : null;
+  }, [data]);
+  // Caption for the hour chart: when the audience actually shows up.
+  const hourInsight = useMemo(() => {
+    const rows = hours.filter((h) => h.sessions > 0);
+    if (rows.length === 0) return null;
+    const peak = rows.reduce((a, b) => (b.sessions > a.sessions ? b : a));
+    const total = hours.reduce((a, h) => a + h.sessions, 0);
+    const share = total > 0 ? Math.round((peak.sessions / total) * 1000) / 10 : 0;
+    return `Traffic peaks at ${peak.label} — ${share}% of sessions start in that hour.`;
+  }, [hours]);
+
   return (
     <div className="space-y-4">
       <MetricGrid
@@ -92,6 +122,7 @@ export function AudienceTab({ data }: { data: AudienceAnalytics }) {
       <TrendCard
         title="Devices"
         description="Sessions (blue) vs views (grey) per device — the split, and how deep each kind of visit reads."
+        insight={deviceInsight ?? undefined}
         footer="Desktop vs mobile, bucketed from viewport width."
       >
         <ColumnChart
@@ -119,6 +150,7 @@ export function AudienceTab({ data }: { data: AudienceAnalytics }) {
       <TrendCard
         title="Hour of day"
         description="Sessions by the visitor's local hour, midnight to midnight — a day, not a leaderboard."
+        insight={hourInsight ?? undefined}
       >
         <ColumnChart
           data={hours}
