@@ -43,6 +43,12 @@ export interface BreakdownColumn {
   format?: "count" | "percent1";
 }
 
+/**
+ * The maximum share any one row takes, so a 40-cell table still answers
+ * "how dominant is the leader" — the question a ranked list exists for.
+ */
+const barColor = "bg-[hsl(var(--chart-1))]";
+
 export function BreakdownTable<T extends { label: string }>({
   title,
   description,
@@ -51,6 +57,7 @@ export function BreakdownTable<T extends { label: string }>({
   labelHeader,
   empty = "No data in this range.",
   footer,
+  barKey,
   className,
 }: {
   title: string;
@@ -61,8 +68,17 @@ export function BreakdownTable<T extends { label: string }>({
   labelHeader?: string;
   empty?: string;
   footer?: React.ReactNode;
+  /**
+   * When set, each label carries a small bar proportional to that row's
+   * share of the column's max — a table that also shows the shape. Use for
+   * ranked lists (top pages, referrers, channels); skip for lookup tables.
+   */
+  barKey?: string;
   className?: string;
 }) {
+  const max = barKey
+    ? Math.max(1, ...rows.map((r) => Number((r as Record<string, unknown>)[barKey] ?? 0)))
+    : 0;
   return (
     <Card className={cn("min-w-0", className)}>
       <CardHeader className="pb-3">
@@ -100,6 +116,23 @@ export function BreakdownTable<T extends { label: string }>({
                     title={row.label}
                   >
                     {row.label}
+                    {barKey && (
+                      <span className="mt-1 block h-1 w-full overflow-hidden rounded-full bg-muted">
+                        <span
+                          className={cn("block h-full rounded-full", barColor)}
+                          style={{
+                            width: `${Math.max(
+                              2,
+                              (Number(
+                                (row as Record<string, unknown>)[barKey] ?? 0
+                              ) /
+                                max) *
+                                100
+                            )}%`,
+                          }}
+                        />
+                      </span>
+                    )}
                   </TableCell>
                   {columns.map((c) => {
                     const value = (row as Record<string, unknown>)[c.key];

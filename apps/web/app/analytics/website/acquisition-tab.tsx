@@ -8,12 +8,13 @@
  * tell dark organic from direct, so search-engine referrers stay under
  * Referral with the host preserved (D6). Saying that on the tab is cheaper than
  * explaining a missing row later.
+ *
+ * No traffic-trend chart here: the Overview tab is that chart's home, and
+ * drawing the same daily pair twice on one surface would just repeat a number.
+ * What this tab adds that Overview cannot say is the *mix* — how the sessions
+ * divide by channel — and the tables underneath.
  */
 
-import { useMemo } from "react";
-import dynamic from "next/dynamic";
-import { ChartLine } from "@phosphor-icons/react";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -21,19 +22,12 @@ import {
 } from "@/components/ui/card";
 import type { AcquisitionAnalytics } from "@/lib/api-client";
 import { BreakdownTable } from "@/components/analytics/breakdown-table";
+import { CompositionBar } from "@/components/analytics/composition-bar";
 import { DataQualityNote } from "@/components/analytics/data-quality-note";
-import { formatDelta } from "@/components/analytics/format";
+import { deltaPct } from "@/components/analytics/format";
 import { MetricGrid } from "@/components/analytics/metric-tile";
 import { MetricStory } from "@/components/analytics/metric-story";
-import { TrendCard } from "@/components/analytics/trend-card";
-
-const TrafficTrendChart = dynamic(
-  () =>
-    import("@/components/analytics/traffic-trend-chart").then(
-      (m) => m.TrafficTrendChart
-    ),
-  { ssr: false, loading: () => <Skeleton className="h-[280px] w-full" /> }
-);
+import { ChartLine } from "@phosphor-icons/react";
 
 const ALL_CHANNELS = [
   "Direct",
@@ -45,7 +39,6 @@ const ALL_CHANNELS = [
 
 export function AcquisitionTab({
   data,
-  refreshKey,
   compare,
   onCompareChange,
   channels,
@@ -53,22 +46,23 @@ export function AcquisitionTab({
   onClearChannels,
 }: {
   data: AcquisitionAnalytics;
-  refreshKey: number;
+  /** Still accepted for symmetry with the other tabs; unused since the tab stopped duplicating the Overview trend. */
+  refreshKey?: number;
   compare: boolean;
   onCompareChange: (value: boolean) => void;
   channels: string[];
   onToggleChannel: (channel: string) => void;
   onClearChannels: () => void;
 }) {
-  const trend = useMemo(
-    () =>
-      data.trend.map((t) => ({
-        d: t.d,
-        pageviews: t.pageviews,
-        sessions: t.sessions,
-      })),
-    [data]
-  );
+  const mix = data.breakdowns.channel.map((row) => ({
+    label: row.label,
+    value: Number(row.sessions ?? 0),
+  }));
+  const delta = (key: "sessions" | "uniques" | "pageviews") => {
+    const pct = deltaPct(data.totals[key], data.previousTotals?.[key]);
+    // More traffic is the goal this tab watches; the pill says so by colour.
+    return pct === null ? null : { pct, good: true };
+  };
 
   return (
     <div className="space-y-4">
@@ -123,33 +117,26 @@ export function AcquisitionTab({
           {
             id: "sessions",
             value: data.totals.sessions,
-            hint: formatDelta(data.totals.sessions, data.previousTotals?.sessions) ?? undefined,
+            delta: delta("sessions"),
           },
           {
             id: "uniques",
             value: data.totals.uniques,
-            hint:
-              formatDelta(data.totals.uniques, data.previousTotals?.uniques) ??
-              undefined,
+            delta: delta("uniques"),
           },
           {
             id: "pageviews",
             value: data.totals.pageviews,
-            hint:
-              formatDelta(
-                data.totals.pageviews,
-                data.previousTotals?.pageviews
-              ) ?? undefined,
+            delta: delta("pageviews"),
           },
         ]}
       />
 
-      <TrendCard
-        title="Traffic trend"
-        description="Views vs sessions per day."
-      >
-        <TrafficTrendChart data={trend} refreshKey={refreshKey} />
-      </TrendCard>
+      <CompositionBar
+        title="Channel mix"
+        description="How the range's sessions divide by channel. Untagged visits are Direct."
+        rows={mix}
+      />
 
       <div className="grid gap-4 xl:grid-cols-2">
         <BreakdownTable
@@ -160,6 +147,7 @@ export function AcquisitionTab({
             { key: "pageviews", label: "Views" },
             { key: "sessions", label: "Sessions" },
           ]}
+          barKey="sessions"
         />
         <BreakdownTable
           title="Source / medium"
@@ -169,6 +157,7 @@ export function AcquisitionTab({
             { key: "pageviews", label: "Views" },
             { key: "sessions", label: "Sessions" },
           ]}
+          barKey="sessions"
         />
         <BreakdownTable
           title="Campaigns"
@@ -178,15 +167,18 @@ export function AcquisitionTab({
             { key: "pageviews", label: "Views" },
             { key: "sessions", label: "Sessions" },
           ]}
+          barKey="sessions"
         />
         <BreakdownTable
           title="Landing pages"
           description="The entry path of each session."
+          labelHeader="Path"
           rows={data.breakdowns.landingPage}
           columns={[
             { key: "pageviews", label: "Views" },
             { key: "sessions", label: "Sessions" },
           ]}
+          barKey="sessions"
         />
       </div>
 
