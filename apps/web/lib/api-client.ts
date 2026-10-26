@@ -378,6 +378,14 @@ export interface ChatStreamPayload {
   conversationId?: string;
   /** Host page path (embed only), so the conversation knows where it started. */
   path?: string;
+  /**
+   * Cookieless visit identity (embed only, threaded from the loader query
+   * params): random per-tab session id and persisting visitor id. The server
+   * stores them on the conversation row so the studio can resolve visit
+   * context — nothing fingerprintable travels.
+   */
+  session_hash?: string;
+  visitor_hash?: string;
 }
 
 export interface ChatStreamEvent {
@@ -561,6 +569,78 @@ export interface ErrorListResult {
   total: number;
   limit: number;
   offset: number;
+}
+
+export interface VisitorConversationRow {
+  id: string;
+  title: string;
+  path: string | null;
+  createdAt: string;
+  messageCount: number;
+  lastMessageAt: string | null;
+  ratingUp: number;
+  ratingDown: number;
+  device: string | null;
+  browser: string | null;
+  os: string | null;
+}
+
+export interface VisitorConversationFilters {
+  companyId: string;
+  /** ISO date/datetime. */
+  since?: string;
+  until?: string;
+  path?: string;
+  search?: string;
+  rating?: 1 | -1;
+  limit?: number;
+  offset?: number;
+}
+
+export interface VisitorConversationListResult {
+  total: number;
+  conversations: VisitorConversationRow[];
+}
+
+export interface VisitorTranscriptMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+  evidence: Array<{
+    sourceId?: string;
+    url?: string;
+    pageTitle?: string;
+    snippet?: string;
+    type?: string;
+    score?: number | null;
+  }> | null;
+  meta: Record<string, unknown> | null;
+  rating: number | null;
+}
+
+export interface VisitorTranscriptBundle {
+  company: { id: string; name: string };
+  conversation: {
+    id: string;
+    title: string;
+    path: string | null;
+    createdAt: string;
+    sessionHash: string | null;
+    visitorHash: string | null;
+  };
+  session: {
+    startedAt: string | null;
+    endedAt: string | null;
+    pageviewCount: number | null;
+    device: string | null;
+    browser: string | null;
+    os: string | null;
+    tzOffset: number | null;
+    converted: boolean | null;
+    revenue: string | null;
+  } | null;
+  messages: VisitorTranscriptMessage[];
 }
 
 export interface ErrorFilters {
@@ -949,6 +1029,20 @@ class ApiClient {
       this.analyticsRequest(
         `/api/analytics/audience?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
       ),
+  };
+
+  /**
+   * Visitors reads: conversation index + transcript bundles (spec §9.1).
+   */
+  visitors = {
+    conversations: async (filters: VisitorConversationFilters): Promise<VisitorConversationListResult> => {
+      const qs = toQuery({ ...filters });
+      return this.request(`/api/visitors/conversations${qs ? `?${qs}` : ""}`);
+    },
+
+    conversation: async (conversationId: string): Promise<VisitorTranscriptBundle> => {
+      return this.request(`/api/visitors/conversations/${encodeURIComponent(conversationId)}`);
+    },
   };
 
   /**
@@ -1392,6 +1486,28 @@ class ApiClient {
             // Ignore malformed partial chunks
           }
         }
+      }
+    },
+
+    /**
+     * Thumbs rating intake (POST /api/embed/:key/rate). Key-scoped: the
+     * server resolves the company from the key row, so the visitor surface
+     * needs no credentials. No credentials here either — the payload rides
+     * on the opaque key in the URL.
+     */
+    rateMessage: async (
+      widgetKey: string,
+      payload: { conversation_id: string; message_id: string; rating: 1 | -1 },
+      customBase?: string
+    ): Promise<void> => {
+      const base = this.embed.baseFor(customBase);
+      const res = await authedFetch(`${base}/api/embed/${encodeURIComponent(widgetKey)}/rate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        throw new Error(`Rate request failed (HTTP ${res.status})`);
       }
     },
   };

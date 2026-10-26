@@ -35,6 +35,7 @@ import {
   inArray,
   count,
   recordError,
+  rateVisitorMessage,
 } from "@ag-ui/database";
 import { generateWidgetKey, hashWidgetKey, logger, buildAnswerSystemPrompt, streamChatCompletionGenerator, buildMessageMeta } from "@ag-ui/shared";
 import { analyticsQueue, chatEnrichQueue, QUEUE_NAMES, type ConversationEnrichJobData } from "@ag-ui/queues";
@@ -400,8 +401,7 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
       detail: { summary: "Get widget config", description: "Resolves an opaque widget key to public company config and readiness." },
     }
   )
-  // 5. Public anonymous chat by opaque key (READY-gated + rate-limited SSE).
-  // 5b. Fire-and-forget tracking collector (pageviews/conversions/chat events).
+  // 5. Fire-and-forget tracking collector (pageviews/conversions/chat events).
   // Flow: key auth -> origin gate -> DNT respect -> track rate limit ->
   // edge-hash identity (raw IP never stored) -> validate -> enqueue -> 202.
   // Always 202 on intake (even when dropped) so pages never stall on us.
@@ -558,7 +558,58 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
       },
     }
   )
-  // 5. Public anonymous chat by opaque key (READY-gated + rate-limited SSE).
+  // 6. Rate a conversation answer (thumbs). Conversation data, not telemetry:
+  // rides the product path like chat, independent of `data-track`.
+  .post(
+    "/:key/rate",
+    async ({ params, body, set, request }) => {
+      const resolved = await resolveActiveKey(params.key);
+      if (resolved.error === "not_found") {
+        set.status = 404;
+        return { error: "Widget key not found" };
+      }
+      if (resolved.error === "revoked" || !resolved.row || !resolved.keyHash) {
+        set.status = 410;
+        return { error: "Widget key revoked" };
+      }
+
+      const ip = getClientIp(request);
+      const limit = await checkTrackRateLimit(resolved.keyHash, ip);
+      if (!limit.allowed) {
+        set.status = 429;
+        set.headers["retry-after"] = String(limit.retryAfterSec);
+        return { error: "Rate limited — retry shortly", retryAfterSec: limit.retryAfterSec };
+      }
+
+      const stored = await rateVisitorMessage({
+        // Server-resolved company scope: the widget key row decides whose
+        // conversation this is, never the client body.
+        companyId: resolved.row.companyId,
+        conversationId: body.conversation_id,
+        messageId: body.message_id,
+        rating: body.rating,
+      });
+      if (!stored) {
+        set.status = 404;
+        return { error: "Message not found" };
+      }
+      return { rated: true, rating: stored };
+    },
+    {
+      params: t.Object({ key: t.String() }),
+      body: t.Object({
+        conversation_id: t.String({ format: "uuid" }),
+        message_id: t.String({ format: "uuid" }),
+        // Thumbs only. Re-rating replaces the previous value (idempotent).
+        rating: t.Union([t.Literal(1), t.Literal(-1)]),
+      }),
+      detail: {
+        summary: "Rate a conversation message",
+        description: "Stores a thumbs up/down on one message from a widget-hosted conversation. Always owner-scoped via the widget key.",
+      },
+    }
+  )
+  // 7. Public anonymous chat by opaque key (READY-gated + rate-limited SSE).
   .post(
     "/:key/chat",
     async function* ({ params, body, set, request }) {

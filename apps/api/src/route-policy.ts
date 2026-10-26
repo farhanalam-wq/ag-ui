@@ -122,6 +122,10 @@ export const ROUTE_POLICIES: readonly RoutePolicyRule[] = [
   { method: "GET", path: "/api/operations/errors", policy: company("query") },
   { method: "GET", path: "/api/operations/activity", policy: company("query") },
 
+  // Visitors — Conversations (spec §9.1).
+  { method: "GET", path: "/api/visitors/conversations", policy: company("query") },
+  { method: "GET", path: "/api/visitors/conversations/:id", policy: company("derived"), note: "resolves ownership in-handler via resolveOwnedConversation" },
+
   // Embed admin.
   { method: "GET", path: "/api/embed/keys", policy: company("query") },
   { method: "POST", path: "/api/embed/keys", policy: company("body") },
@@ -133,6 +137,7 @@ export const ROUTE_POLICIES: readonly RoutePolicyRule[] = [
   // Embed public surface (key + origin gate).
   { method: "GET", path: "/api/embed/:key/config", policy: PUB, note: "key + origin gate" },
   { method: "POST", path: "/api/embed/:key/track", policy: PUB, note: "key + origin gate" },
+  { method: "POST", path: "/api/embed/:key/rate", policy: PUB, note: "key + origin gate + key-scope ownership" },
   { method: "POST", path: "/api/embed/:key/chat", policy: PUB, note: "key + origin gate" },
 
   // Voice.

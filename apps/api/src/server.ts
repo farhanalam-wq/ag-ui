@@ -16,6 +16,7 @@ import { voiceToolRoutes } from "./routes/voice-tool";
 import { uploadsRoutes } from "./routes/uploads";
 import { operationsRoutes } from "./routes/operations";
 import { authRoutes } from "./routes/auth";
+import { visitorsRoutes } from "./routes/visitors";
 import { authPlugin } from "./auth/plugin";
 
 const PORT = parseInt(process.env.PORT || "3001", 10);
@@ -90,7 +91,8 @@ export const app = new Elysia()
   .use(voiceRoutes)
   .use(voiceToolRoutes)
   .use(uploadsRoutes)
-  .use(operationsRoutes);
+  .use(operationsRoutes)
+  .use(visitorsRoutes);
 
 // Tests import `app` to enumerate routes; only the real entrypoint listens.
 if (process.env.NODE_ENV !== "test" && process.env.AG_UI_NO_LISTEN !== "1") {

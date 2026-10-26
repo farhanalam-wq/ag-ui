@@ -1,5 +1,6 @@
 /**
- * Phase 0 acceptance smoke for the chat-enrich pipeline (dev-only, local-only).
+ * End-to-end verification smoke for the chat-enrich pipeline (dev-only,
+ * local-only).
  *
  *   bun scripts/smoke-chat-enrich.ts
  *
@@ -28,7 +29,7 @@ const template = "50 devs. budget around five thousand a month, roll out this qu
 
 const [conv] = await db.insert(conversations).values({
   companyId: company.id,
-  title: "phase0 smoke " + randomUUID().slice(0, 8),
+  title: "enrich smoke " + randomUUID().slice(0, 8),
   path: "/pricing",
   sessionHash: "smoke-" + randomUUID(),
   visitorHash: "smoke-" + randomUUID(),

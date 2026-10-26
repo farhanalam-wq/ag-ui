@@ -23,6 +23,12 @@ export interface ChatMessage {
   stageMessage?: string;
   evidence?: EvidenceItem[];
   createdAt: Date;
+  /**
+   * Server-issued id from the `done` event. The client-side `id` is only a
+   * render key; persistence (and therefore rating) keys on this. Null for
+   * user messages and voice utterances.
+   */
+  messageId?: string;
 }
 
 export interface BrandTokens {
@@ -58,7 +64,14 @@ export function useCompanyChat() {
     async (
       text: string,
       companyIdOrKey: string,
-      options?: { apiBase?: string; channel?: "chat" | "embed"; path?: string }
+      options?: {
+        apiBase?: string;
+        channel?: "chat" | "embed";
+        path?: string;
+        /** Cookieless visit identity (embed only). Stored on the conversation. */
+        sessionHash?: string;
+        visitorHash?: string;
+      }
     ) => {
       if (!text.trim() || isStreaming) return;
 
@@ -97,7 +110,13 @@ export function useCompanyChat() {
       const streamFn =
         channel === "embed"
           ? (
-              payload: { message: string; conversationId?: string; path?: string },
+              payload: {
+                message: string;
+                conversationId?: string;
+                path?: string;
+                session_hash?: string;
+                visitor_hash?: string;
+              },
               callbacks: Parameters<typeof apiClient.chat.stream>[2],
               signal?: AbortSignal
             ) =>
@@ -109,7 +128,7 @@ export function useCompanyChat() {
                 options?.apiBase
               )
           : (
-              payload: { message: string; conversationId?: string; path?: string },
+              payload: { message: string; conversationId?: string },
               callbacks: Parameters<typeof apiClient.chat.stream>[2],
               signal?: AbortSignal
             ) => apiClient.chat.stream(companyIdOrKey, payload, callbacks, signal);
@@ -122,6 +141,15 @@ export function useCompanyChat() {
             // Host page, embed channel only. The playground has no page, and
             // the company chat endpoint does not accept the field.
             ...(channel === "embed" && options?.path ? { path: options.path } : {}),
+            // Visit identity, embed channel only. The server stamps them on
+            // the conversation row (first turn) so the studio can later show
+            // the visit context.
+            ...(channel === "embed" && options?.sessionHash
+              ? { session_hash: options.sessionHash }
+              : {}),
+            ...(channel === "embed" && options?.visitorHash
+              ? { visitor_hash: options.visitorHash }
+              : {}),
           },
           {
             onStatus: (data) => {
@@ -188,7 +216,9 @@ export function useCompanyChat() {
               }
               setMessages((prev) =>
                 prev.map((m) =>
-                  m.id === assistantMessageId ? { ...m, stage: "done" } : m
+                  m.id === assistantMessageId
+                    ? { ...m, stage: "done", messageId: data?.messageId ?? undefined }
+                    : m
                 )
               );
             },

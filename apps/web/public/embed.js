@@ -53,6 +53,46 @@
   var position = dataset.position === "bottom-left" ? "bottom-left" : "bottom-right";
   var side = position === "bottom-left" ? "left" : "right";
 
+  // --- Cookieless conversation identity -------------------------------------
+  // Computed unconditionally, independent of `data-track`: chat answers and
+  // their ratings are product data, and the studio resolves the visit context
+  // through these ids. The session id is per-tab (sessionStorage); the visitor
+  // id persists across tabs (localStorage). Both are random and opaque — no
+  // fingerprinting, no IP, nothing identifying.
+  var SESSION_KEY = "ag_sess";
+  var VISITOR_KEY = "ag_visitor";
+
+  function newEventId() {
+    try {
+      if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+    } catch (e) {
+      /* fall through */
+    }
+    return "ag-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 12);
+  }
+
+  var sessionId;
+  try {
+    sessionId = window.sessionStorage.getItem(SESSION_KEY);
+    if (!sessionId) {
+      sessionId = newEventId();
+      window.sessionStorage.setItem(SESSION_KEY, sessionId);
+    }
+  } catch (e) {
+    sessionId = newEventId();
+  }
+
+  var visitorId;
+  try {
+    visitorId = window.localStorage.getItem(VISITOR_KEY);
+    if (!visitorId) {
+      visitorId = newEventId();
+      window.localStorage.setItem(VISITOR_KEY, visitorId);
+    }
+  } catch (e) {
+    visitorId = newEventId();
+  }
+
   function setTooltip(text) {
     if (orb) orb.setAttribute("title", text);
   }
@@ -77,6 +117,9 @@
     if (themeSurface && themeText) {
       q += "&surface=" + encodeURIComponent(themeSurface) + "&text=" + encodeURIComponent(themeText);
     }
+    // Visit identity for the conversation row (chat + ratings). This is the
+    // product data path, so it rides along no matter how `data-track` is set.
+    q += "&sh=" + encodeURIComponent(sessionId) + "&vh=" + encodeURIComponent(visitorId);
     return webOrigin + "/embed/" + encodeURIComponent(widgetKey) + "?" + q;
   }
 
@@ -272,9 +315,10 @@
   // --- Cookieless traffic tracking (opt-in via data-track="on") -------------
   // ~1KB, zero dependencies. Pageviews (incl. SPA route changes) and
   // data-ag-convert clicks beacon to POST /api/embed/:key/track.
-  // Identity stays server-side: the snippet sends only a random per-tab
-  // session id; visitor hashing happens at the collector edge.
-  // Respects DNT both ways (skips here, collector drops regardless).
+  // Identity stays server-side: the snippet only carries the random opaque
+  // session/visitor ids computed above; hashing/salting happens at the
+  // collector edge. Respects DNT both ways (skips here, collector drops
+  // regardless).
   try {
     if (trackEnabled() && widgetKey) initTracking();
   } catch (e) {
@@ -292,26 +336,8 @@
   }
 
   function initTracking() {
-    var sessKey = "ag_sess";
-    var sessionId = null;
-    try {
-      sessionId = window.sessionStorage.getItem(sessKey);
-      if (!sessionId) {
-        sessionId = newEventId();
-        window.sessionStorage.setItem(sessKey, sessionId);
-      }
-    } catch (e) {
-      sessionId = newEventId();
-    }
-
-    function newEventId() {
-      try {
-        if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
-      } catch (e) {
-        /* fall through */
-      }
-      return "ag-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 12);
-    }
+    // sessionId and newEventId() are computed up top (unconditional); this
+    // function only contributes the beacon plumbing.
 
     function viewport() {
       try {
