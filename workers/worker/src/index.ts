@@ -363,6 +363,9 @@ logger.info("Background crawl worker listening on Redis queue: crawl-queue");
 // Enrichment worker (uploads -> minor versions) runs in the same process.
 import "./enrich-worker";
 
+// Post-chat derived data (leads + competitor tags) from the chat SSE paths.
+import "./chat-enrich-worker";
+
 // Brand extraction worker (dembrandt -> brand_stylesheets + brands).
 import "./brand-worker";
 

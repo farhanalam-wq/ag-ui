@@ -6,6 +6,8 @@ export * from "./embed-cache";
 export * from "./embeddings";
 export * from "./facts";
 export * from "./llm";
+export * from "./conversation-signals";
+export * from "./lead-extraction";
 export * from "./widget-key";
 export * from "./widget-theme";
 export * from "./analytics-catalogue";

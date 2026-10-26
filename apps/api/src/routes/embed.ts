@@ -36,8 +36,8 @@ import {
   count,
   recordError,
 } from "@ag-ui/database";
-import { generateWidgetKey, hashWidgetKey, logger, buildAnswerSystemPrompt, streamChatCompletionGenerator } from "@ag-ui/shared";
-import { analyticsQueue } from "@ag-ui/queues";
+import { generateWidgetKey, hashWidgetKey, logger, buildAnswerSystemPrompt, streamChatCompletionGenerator, buildMessageMeta } from "@ag-ui/shared";
+import { analyticsQueue, chatEnrichQueue, QUEUE_NAMES, type ConversationEnrichJobData } from "@ag-ui/queues";
 import {
   validateTrackEvent,
   hashVisitor,
@@ -664,6 +664,7 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
           data: { stage: "retrieving", message: "Performing hybrid search across knowledge base..." },
         };
 
+        const t0 = Date.now();
         const retrieved = await retrieveCompanyContext(company.id, userQuery);
         if (retrieved.brand) yield { event: "brand", data: retrieved.brand };
         yield { event: "evidence", data: retrieved.evidence };
@@ -678,6 +679,10 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
               // can the agent answer from". Null when the panel did not send
               // one — never inferred from a referer.
               path: normalizePagePath(body.path),
+              // Cookieless visit identity from the tracker hashes, same rules
+              // as `path`: stored only here, only on new conversations.
+              sessionHash: typeof body.session_hash === "string" ? body.session_hash : null,
+              visitorHash: typeof body.visitor_hash === "string" ? body.visitor_hash : null,
             })
             .returning();
           activeConvId = newConv.id;
@@ -722,8 +727,37 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
 
         const [savedMsg] = await db
           .insert(messages)
-          .values({ conversationId: activeConvId, role: "assistant", content: finalFullText, evidence: retrieved.evidence, visualSpec: null })
+          .values({
+            conversationId: activeConvId,
+            role: "assistant",
+            content: finalFullText,
+            evidence: retrieved.evidence,
+            meta: buildMessageMeta({
+              evidence: retrieved.evidence,
+              latencyMs: Date.now() - t0,
+            }),
+            visualSpec: null,
+          })
           .returning();
+
+        // Fire-and-forget derived pass (leads + competitor tags). Never
+        // awaited: a Redis hiccup must not punish the visitor.
+        try {
+          await chatEnrichQueue.add(QUEUE_NAMES.CHAT_ENRICH, {
+            companyId: company.id,
+            conversationId: activeConvId,
+            widgetKeyId: resolved.row?.id ?? null,
+            engine: "text",
+          } satisfies ConversationEnrichJobData);
+        } catch (enrichErr) {
+          logger.error(`[EMBED CHAT] enrich enqueue failed: ${(enrichErr as Error).message}`);
+          void recordError({
+            source: "chat",
+            message: `enrich enqueue failed: ${(enrichErr as Error).message}`,
+            context: { conversationId: activeConvId, companyId: company.id },
+            companyId: company.id,
+          });
+        }
 
         yield {
           event: "done",
@@ -759,6 +793,13 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
          * new conversation. Never the visitor's words.
          */
         path: t.Optional(t.String({ maxLength: 1024 })),
+        /**
+         * Cookieless visit identity computed by the tracker (same values it
+         * beacons to /track). Stored on new conversations only; never
+         * identifying on its own.
+         */
+        session_hash: t.Optional(t.String({ maxLength: 64 })),
+        visitor_hash: t.Optional(t.String({ maxLength: 64 })),
       }),
       detail: { summary: "Stream widget chat (SSE)", description: "Anonymous rate-limited streaming chat resolved via opaque widget key." },
     }
