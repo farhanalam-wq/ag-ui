@@ -18,6 +18,7 @@ import {
   companies,
   conversations,
   crawlJobs,
+  leads,
   widgetKeyDomains,
   widgetKeys,
 } from "./schema";
@@ -58,6 +59,11 @@ export interface OwnedCrawlJob {
 
 export interface OwnedWidgetKey {
   key: TenantWidgetKeyRow;
+  company: CompanyRow;
+}
+
+export interface OwnedLead {
+  lead: typeof leads.$inferSelect;
   company: CompanyRow;
 }
 
@@ -150,9 +156,25 @@ export async function resolveOwnedCrawlJob(
   return row ?? null;
 }
 
-/** Widget key -> company -> owner. */
-export async function resolveOwnedWidgetKey(
+/** Lead -> company -> owner (Leads docket PATCH writer scope). */
+export async function resolveOwnedLead(
   userId: string,
+  leadId: string
+): Promise<OwnedLead | null> {
+  if (!isUuid(userId) || !isUuid(leadId)) return null;
+
+  const [row] = await db
+    .select({ lead: leads, company: companies })
+    .from(leads)
+    .innerJoin(companies, eq(companies.id, leads.companyId))
+    .where(and(eq(leads.id, leadId), eq(companies.ownerId, userId)))
+    .limit(1);
+
+  return row ?? null;
+}
+
+/** Widget key -> company -> owner. */
+export async function resolveOwnedWidgetKey(  userId: string,
   keyId: string
 ): Promise<OwnedWidgetKey | null> {
   if (!isUuid(userId) || !isUuid(keyId)) return null;

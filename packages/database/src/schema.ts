@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, integer, index, uniqueIndex, boolean, unique, numeric, date, primaryKey, smallint } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, integer, index, uniqueIndex, boolean, unique, numeric, date, primaryKey, smallint, check } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 /**
@@ -181,8 +181,21 @@ export const conversations = pgTable("conversations", {
    */
   sessionHash: text("session_hash"),
   visitorHash: text("visitor_hash"),
+  /**
+   * What produced this conversation: typed chat (default, "text") or a voice
+   * call transcript ("voice", persisted from the STT lines at call end).
+   * Voice lines are reconstructions, not verbatim — the marker lets every
+   * consumer (docket badge, sheet label, clustering later) govern fidelity.
+   */
+  channel: text("channel").default("text").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => [
+  check(
+    "conversations_channel_check",
+    sql`${t.channel} in ('text', 'voice')`
+  ),
+  index("conversations_company_channel_created_idx").on(t.companyId, t.channel, t.createdAt),
+]);
 
 export const messages = pgTable("messages", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -257,9 +270,38 @@ export const leads = pgTable(
   (t) => [
     index("leads_company_status_created_idx").on(t.companyId, t.status, t.createdAt),
     index("leads_conversation_idx").on(t.conversationId),
+    check(
+      "leads_status_check",
+      sql`${t.status} in ('NEW', 'QUALIFIED', 'CONTACTED', 'DISMISSED')`
+    ),
     // Zero-form dedupe: one open lead per company per email address. The
     // enrich worker merges tags into an existing row instead of inserting.
     uniqueIndex("leads_company_email_unique").on(t.companyId, sql`lower(${t.email})`),
+  ]
+);
+
+export const webhookEvents = pgTable(
+  "webhook_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    /** Domain event type — "lead.captured" first. */
+    eventType: text("event_type").notNull(),
+    /** Event-specific JSON (ids, qs, counts) — never visitor PII beyond what
+     *  the event is about (a lead capture carries the lead id, not details). */
+    payload: jsonb("payload"),
+    /**
+     * 'RECORDED' = logged only. The delivery engine (deferred) flips rows to
+     * QUEUED -> SENT/FAILED and reads them as webhook-ish CRUD entries.
+     */
+    status: text("status").default("RECORDED").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("webhook_events_company_created_idx").on(t.companyId, t.createdAt),
+    index("webhook_events_type_idx").on(t.eventType),
   ]
 );
 

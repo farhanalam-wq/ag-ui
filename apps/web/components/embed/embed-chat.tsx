@@ -823,6 +823,12 @@ function EmbedChatInner({
               widgetKey={identity.kind === "key" ? identity.widgetKey : undefined}
               companyId={identity.kind === "company" ? identity.companyId : undefined}
               apiBase={apiBase}
+              path={hostPathRef.current ?? undefined}
+              visitIdentity={
+                identity.kind === "key"
+                  ? { sessionHash: sessionHashParam, visitorHash: visitorHashParam }
+                  : undefined
+              }
               onFinalLines={appendVoiceTranscript}
               onCallStart={() => postAgentEvent("voice_start")}
               onCallEnd={({ durationSec, turns }) =>

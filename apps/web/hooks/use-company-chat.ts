@@ -286,8 +286,10 @@ export function useCompanyChat() {
 
   /**
    * Append finalized voice-call utterances as plain text messages (v1).
-   * Local-only: no network, no SSE, no evidence, no persistence —
-   * voice answers never carry citations they were not grounded with.
+   * The local copy is the instant-optics path only — VoiceSession persists
+   * the same lines to the channel-marked voice conversation server-side,
+   * so the studio docket shows them. No evidence here: voice answers never
+   * carry citations they were not grounded with.
    */
   const appendVoiceTranscript = useCallback((lines: VoiceLine[]) => {
     const deduped = coalesceVoiceLines(lines);

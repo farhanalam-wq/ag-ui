@@ -52,6 +52,14 @@ BANT cues:
 - need: what they are trying to solve
 - timeline: urgency or dates ("this quarter", "next week")
 
+Contact details: extract an email/phone ONLY when the visitor offers it for the
+purpose of being contacted ("contact me at…", "you can reach me on…", "my
+number is …" in answer to how they may be reached). A contact string that is
+merely quoted, belongs to someone else, or is explicitly off-limits ("don't
+email that address") is NOT a lead — set null. If no contact details were
+offered for contact purposes, set email/phone null even if strings appear
+verbatim.
+
 An empty extraction (all nulls, empty lists) is a valid and common result.`;
 
 function cap(s: unknown, max: number): string | null {
@@ -63,6 +71,19 @@ function cap(s: unknown, max: number): string | null {
 function clamp01(n: unknown): number {
   const v = typeof n === "number" && Number.isFinite(n) ? n : 0;
   return Math.max(0, Math.min(1, v));
+}
+
+/**
+ * Phone hygiene: a lead phone number must plausibly dial. Keep the raw
+ * formatting the visitor used (parentheses, dashes, country codes), but
+ * require at least 7 digits underneath it. Punctuation-only strings and
+ * irrelevant numbers (order ids, dates) never become phone leads.
+ */
+export function sanitizePhone(raw: unknown): string | null {
+  const v = typeof raw === "string" ? raw.trim() : "";
+  if (v.length === 0 || v.length > 40) return null;
+  const digits = v.replace(/\D/g, "");
+  return digits.length >= 7 ? v : null;
 }
 
 function sanitize(raw: unknown): LeadExtraction {
@@ -86,7 +107,7 @@ function sanitize(raw: unknown): LeadExtraction {
       typeof obj.email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(obj.email.trim())
         ? obj.email.trim().slice(0, 200)
         : null,
-    phone: cap(obj.phone, 40),
+    phone: sanitizePhone(obj.phone),
     company: cap(obj.company, 160),
     bant: {
       budget: cap(bantRaw.budget, 240),

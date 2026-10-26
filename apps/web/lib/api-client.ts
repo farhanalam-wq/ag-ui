@@ -575,6 +575,8 @@ export interface VisitorConversationRow {
   id: string;
   title: string;
   path: string | null;
+  /** How the conversation was produced: "text" chat or "voice" call transcript. */
+  channel?: string | null;
   createdAt: string;
   messageCount: number;
   lastMessageAt: string | null;
@@ -625,6 +627,8 @@ export interface VisitorTranscriptBundle {
     id: string;
     title: string;
     path: string | null;
+    /** "text" | "voice" — voice transcripts render without evidence chips. */
+    channel: "text" | "voice";
     createdAt: string;
     sessionHash: string | null;
     visitorHash: string | null;
@@ -641,6 +645,54 @@ export interface VisitorTranscriptBundle {
     revenue: string | null;
   } | null;
   messages: VisitorTranscriptMessage[];
+}
+
+/** One docket row (spec §9.2). Confidence 0..1 from the extractor. */
+export interface VisitorLeadRow {
+  id: string;
+  contactName: string | null;
+  email: string | null;
+  phone: string | null;
+  /** BANT cues: {budget, authority, need, timeline} — verbatim quotes, nullable per key. */
+  bant: Record<string, string | null>;
+  techStack: string[];
+  extraTags: string[];
+  status: "NEW" | "QUALIFIED" | "CONTACTED" | "DISMISSED";
+  confidence: number | null;
+  firstMessage: string | null;
+  conversationId: string | null;
+  /** Title of the originating conversation (join in the list query). */
+  conversationTitle: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface VisitorLeadFilters {
+  companyId: string;
+  status?: VisitorLeadRow["status"];
+  /** ILIKE over contact name/email/phone/first message. */
+  search?: string;
+  /** Matches a value in tech_stack or extra_tags. */
+  tag?: string;
+  /** ISO date/datetime. */
+  since?: string;
+  until?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface VisitorLeadListResult {
+  total: number;
+  leads: VisitorLeadRow[];
+}
+
+export interface VisitorLeadDetail extends VisitorLeadRow {
+  conversation: { id: string; title: string; path: string | null } | null;
+}
+
+export interface VisitorLeadDetailResult {
+  company: { id: string; name: string };
+  lead: VisitorLeadDetail;
 }
 
 export interface ErrorFilters {
@@ -1032,7 +1084,9 @@ class ApiClient {
   };
 
   /**
-   * Visitors reads: conversation index + transcript bundles (spec §9.1).
+   * Visitors reads: conversation index + transcript bundles (spec §9.1),
+   * lead docket + status pipeline (spec §9.2). Illegal status moves are a
+   * 422 from the API — surfaced as a thrown, display-ready error.
    */
   visitors = {
     conversations: async (filters: VisitorConversationFilters): Promise<VisitorConversationListResult> => {
@@ -1042,6 +1096,26 @@ class ApiClient {
 
     conversation: async (conversationId: string): Promise<VisitorTranscriptBundle> => {
       return this.request(`/api/visitors/conversations/${encodeURIComponent(conversationId)}`);
+    },
+
+    leads: async (filters: VisitorLeadFilters): Promise<VisitorLeadListResult> => {
+      const qs = toQuery({ ...filters });
+      return this.request(`/api/visitors/leads${qs ? `?${qs}` : ""}`);
+    },
+
+    lead: async (leadId: string): Promise<VisitorLeadDetailResult> => {
+      return this.request(`/api/visitors/leads/${encodeURIComponent(leadId)}`);
+    },
+
+    updateLead: async (
+      leadId: string,
+      status: VisitorLeadRow["status"]
+    ): Promise<{ lead: VisitorLeadRow }> => {
+      return this.request(`/api/visitors/leads/${encodeURIComponent(leadId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
     },
   };
 

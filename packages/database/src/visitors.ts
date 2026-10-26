@@ -5,8 +5,8 @@
  * companyId. No PII: visitor identity is the cookieless session/visitor hash.
  */
 
-import { and, asc, desc, eq, gte, ilike, inArray, lte, sql } from "drizzle-orm";
-import { db, conversations, messages, sessions, messageFeedback } from "./index";
+import { and, asc, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
+import { db, conversations, messages, sessions, messageFeedback, leads } from "./index";
 
 export interface ConversationListFilters {
   companyId: string;
@@ -26,6 +26,8 @@ export interface ConversationListRow {
   id: string;
   title: string;
   path: string | null;
+  /** "text" chat or "voice" call transcript. */
+  channel: string;
   createdAt: Date;
   messageCount: number;
   lastMessageAt: Date | null;
@@ -80,6 +82,7 @@ export async function listVisitorConversations(
       id: conversations.id,
       title: conversations.title,
       path: conversations.path,
+      channel: conversations.channel,
       createdAt: conversations.createdAt,
       messageCount: sql<number>`(select count(*)::int from ${messages}
         where ${messages.conversationId} = ${conversations.id})`,
@@ -134,6 +137,7 @@ export interface TranscriptBundle {
     id: string;
     title: string;
     path: string | null;
+    channel: string;
     createdAt: Date;
     sessionHash: string | null;
     visitorHash: string | null;
@@ -224,6 +228,7 @@ export async function getVisitorTranscriptBundle(
       id: conversation.id,
       title: conversation.title,
       path: conversation.path,
+      channel: conversation.channel,
       createdAt: conversation.createdAt,
       sessionHash: conversation.sessionHash,
       visitorHash: conversation.visitorHash,
@@ -247,8 +252,7 @@ const RATING_VALUES = new Set([1, -1]);
  * Rate (or explicitly re-rate) one message. Returns the stored rating, or
  * null when the message/conversation do not exist or fall outside the
  * company scope. Ratings replace, never stack.
- */
-export async function rateVisitorMessage(opts: {
+ */export async function rateVisitorMessage(opts: {
   companyId: string;
   conversationId: string;
   messageId: string;
@@ -285,4 +289,217 @@ export async function rateVisitorMessage(opts: {
       set: { rating: opts.rating },
     });
   return opts.rating;
+}
+
+// ---------------------------------------------------------------------------
+// Leads (spec §9.2): the docket list, the status pipeline, the drawer detail.
+// Owner scope is the caller's responsibility; every query filters companyId.
+
+export interface VisitorLeadFilters {
+  companyId: string;
+  limit: number;
+  offset: number;
+  status?: string; // "NEW" | "QUALIFIED" | "CONTACTED" | "DISMISSED"
+  /** ILIKE over contact name/email/phone/first message. */
+  search?: string;
+  /** Value present in tech_stack or extra_tags (jsonb containment). */
+  tag?: string;
+  since?: Date;
+  until?: Date;
+}
+
+/** Legal status transitions for the docket pipeline. DISMISSED is terminal. */
+export const LEAD_STATUS_TRANSITIONS: Record<string, string[]> = {
+  NEW: ["QUALIFIED", "CONTACTED", "DISMISSED"],
+  QUALIFIED: ["CONTACTED", "DISMISSED"],
+  CONTACTED: ["DISMISSED"],
+  DISMISSED: [],
+};
+
+const LEAD_STATUSES = Object.keys(LEAD_STATUS_TRANSITIONS);
+
+export interface VisitorLeadRow {
+  id: string;
+  contactName: string | null;
+  email: string | null;
+  phone: string | null;
+  bant: Record<string, string | null>;
+  techStack: string[];
+  extraTags: string[];
+  status: string;
+  confidence: number | null;
+  firstMessage: string | null;
+  conversationId: string | null;
+  conversationTitle: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** Paged lead docket for the Visitors list. */
+export async function listVisitorLeads(
+  filters: VisitorLeadFilters
+): Promise<{ rows: VisitorLeadRow[]; total: number }> {
+  const conds = [eq(leads.companyId, filters.companyId)];
+  if (filters.status && LEAD_STATUSES.includes(filters.status)) {
+    conds.push(eq(leads.status, filters.status));
+  }
+  if (filters.since) conds.push(gte(leads.createdAt, filters.since));
+  if (filters.until) conds.push(lte(leads.createdAt, filters.until));
+  if (filters.search) {
+    const needle = `%${filters.search}%`;
+    const predicate = or(
+      ilike(leads.contactName, needle),
+      ilike(leads.email, needle),
+      ilike(leads.phone, needle),
+      ilike(leads.firstMessage, needle)
+    );
+    if (predicate) conds.push(predicate);
+  }
+  if (filters.tag) {
+    // jsonb containment: the tag may sit in the tech stack or the extractor
+    // tags (competitors etc). Postgres `@>` with the string as both sides.
+    conds.push(
+      sql`(
+        ${leads.techStack} @> ${JSON.stringify([filters.tag])}::jsonb
+        or ${leads.extraTags} @> ${JSON.stringify([filters.tag])}::jsonb
+      )`
+    );
+  }
+  const where = and(...conds);
+
+  const [totalRow] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(leads)
+    .where(where);
+  const total = totalRow?.count ?? 0;
+  if (total === 0) return { rows: [], total: 0 };
+
+  const rows = (await db
+    .select({
+      id: leads.id,
+      contactName: leads.contactName,
+      email: leads.email,
+      phone: leads.phone,
+      bant: leads.bant,
+      techStack: leads.techStack,
+      extraTags: leads.extraTags,
+      status: leads.status,
+      confidence: leads.confidence,
+      firstMessage: leads.firstMessage,
+      conversationId: leads.conversationId,
+      conversationTitle: conversations.title,
+      createdAt: leads.createdAt,
+      updatedAt: leads.updatedAt,
+    })
+    .from(leads)
+    .leftJoin(conversations, eq(conversations.id, leads.conversationId))
+    .where(where)
+    .orderBy(desc(leads.createdAt))
+    .limit(Math.min(filters.limit, 200))
+    .offset(filters.offset)) as VisitorLeadRow[];
+
+  return {
+    rows: rows.map((r) => ({
+      ...r,
+      // numeric comes back as string over the wire
+      confidence: r.confidence === null ? null : Number(r.confidence),
+      bant: (r.bant ?? {}) as Record<string, string | null>,
+      techStack: (r.techStack ?? []) as string[],
+      extraTags: (r.extraTags ?? []) as string[],
+    })),
+    total,
+  };
+}
+
+export type LeadStatusUpdateResult =
+  | { kind: "updated"; lead: VisitorLeadRow }
+  | { kind: "invalid"; message: string }
+  | { kind: "not-found" };
+
+/**
+ * Move one lead through the docket pipeline. Transitions are validated
+ * against LEAD_STATUS_TRANSITIONS (a same-status write is a no-op update,
+ * not a rejection — double-saves read as idempotent).
+ */
+export async function updateVisitorLeadStatus(opts: {
+  companyId: string;
+  leadId: string;
+  status: string;
+}): Promise<LeadStatusUpdateResult> {
+  const [lead] = await db
+    .select()
+    .from(leads)
+    .where(and(eq(leads.id, opts.leadId), eq(leads.companyId, opts.companyId)))
+    .limit(1);
+  if (!lead) return { kind: "not-found" };
+
+  const allowed = LEAD_STATUS_TRANSITIONS[lead.status] ?? [];
+  if (opts.status === lead.status) {
+    return { kind: "updated", lead: toLeadRow(lead) };
+  }
+  if (!LEAD_STATUSES.includes(opts.status)) {
+    return { kind: "invalid", message: `Unknown status ${opts.status}` };
+  }
+  if (!allowed.includes(opts.status)) {
+    return {
+      kind: "invalid",
+      message: `Cannot move a lead from ${lead.status} to ${opts.status}`,
+    };
+  }
+
+  const [updated] = await db
+    .update(leads)
+    .set({ status: opts.status, updatedAt: new Date() })
+    .where(eq(leads.id, opts.leadId))
+    .returning();
+  return { kind: "updated", lead: toLeadRow(updated) };
+}
+
+function toLeadRow(row: typeof leads.$inferSelect): VisitorLeadRow {
+  return {
+    id: row.id,
+    contactName: row.contactName,
+    email: row.email,
+    phone: row.phone,
+    bant: (row.bant ?? {}) as Record<string, string | null>,
+    techStack: (row.techStack ?? []) as string[],
+    extraTags: (row.extraTags ?? []) as string[],
+    status: row.status,
+    // numeric comes back as string over the wire
+    confidence: row.confidence === null ? null : Number(row.confidence),
+    firstMessage: row.firstMessage,
+    conversationId: row.conversationId,
+    conversationTitle: null,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+export interface VisitorLeadDetail extends VisitorLeadRow {
+  conversation: { id: string; title: string; path: string | null } | null;
+}
+
+/** The drawer payload: full lead plus the owning conversation for deep links. */
+export async function getVisitorLeadDetail(
+  companyId: string,
+  leadId: string
+): Promise<VisitorLeadDetail | null> {
+  const [lead] = await db
+    .select()
+    .from(leads)
+    .where(and(eq(leads.id, leadId), eq(leads.companyId, companyId)))
+    .limit(1);
+  if (!lead) return null;
+
+  let conversation: VisitorLeadDetail["conversation"] = null;
+  if (lead.conversationId) {
+    const [conv] = await db
+      .select({ id: conversations.id, title: conversations.title, path: conversations.path })
+      .from(conversations)
+      .where(eq(conversations.id, lead.conversationId))
+      .limit(1);
+    conversation = conv ?? null;
+  }
+
+  return { ...toLeadRow(lead), conversation };
 }

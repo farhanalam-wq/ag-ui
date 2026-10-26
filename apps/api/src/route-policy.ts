@@ -125,6 +125,9 @@ export const ROUTE_POLICIES: readonly RoutePolicyRule[] = [
   // Visitors — Conversations (spec §9.1).
   { method: "GET", path: "/api/visitors/conversations", policy: company("query") },
   { method: "GET", path: "/api/visitors/conversations/:id", policy: company("derived"), note: "resolves ownership in-handler via resolveOwnedConversation" },
+  { method: "GET", path: "/api/visitors/leads", policy: company("query") },
+  { method: "PATCH", path: "/api/visitors/leads/:id", policy: company("derived"), note: "resolves ownership in-handler via resolveOwnedLead" },
+  { method: "GET", path: "/api/visitors/leads/:id", policy: company("derived"), note: "resolves ownership in-handler via resolveOwnedLead" },
 
   // Embed admin.
   { method: "GET", path: "/api/embed/keys", policy: company("query") },
@@ -142,6 +145,7 @@ export const ROUTE_POLICIES: readonly RoutePolicyRule[] = [
 
   // Voice.
   { method: "POST", path: "/api/voice/token", policy: { kind: "voice-token" }, note: "widgetKey public / companyId session" },
+  { method: "POST", path: "/api/voice/transcript", policy: { kind: "voice-token" }, note: "widgetKey public + origin gate / companyId session" },
   { method: "POST", path: "/api/voice/tool/query", policy: PUB, note: "bearer secret" },
 ];
 

@@ -7,6 +7,7 @@ import {
   leads,
   messages,
   recordError,
+  webhookEvents,
 } from "@ag-ui/database";
 import {
   extractLeadFromConversation,
@@ -134,7 +135,32 @@ async function upsertLead(
       firstMessage: firstMessage?.slice(0, 500) ?? null,
       confidence: String(extraction.confidence),
     })
-    .returning();
+    .returning({ id: leads.id });
+
+  // The capture moment is a domain event: the deferred delivery engine (CRM
+  // handoff, §6 non-goals) reads these rows. Logged only — no fan-out, and a
+  // failed insert never voids the lead itself.
+  try {
+    await db.insert(webhookEvents).values({
+      companyId,
+      eventType: "lead.captured",
+      payload: {
+        lead_id: inserted.id,
+        conversation_id: conversationId,
+        email_present: Boolean(extraction.email),
+        confidence: extraction.confidence,
+      },
+    });
+  } catch (eventErr) {
+    logger.error(`[CHAT ENRICH WORKER] lead.captured event write failed: ${(eventErr as Error).message}`);
+    void recordError({
+      source: "worker",
+      message: eventErr instanceof Error ? eventErr.message : String(eventErr),
+      context: { stage: "lead-captured-event", conversationId },
+      companyId,
+    });
+  }
+
   return { action: "created" as const, id: inserted.id };
 }
 
@@ -167,57 +193,79 @@ async function markEnriched(conversationId: string): Promise<void> {
     .where(and(eq(messages.conversationId, conversationId), eq(messages.role, "user")));
 }
 
+/**
+ * One conversation's derived-data pass, shared by the queue handler and the
+ * dev-only backfill script: extract lead signals (upsert/merge), tag
+ * competitor mentions on the latest user turn, and mark user turns
+ * extraction-processed. Idempotent — already-enriched conversations skip.
+ */
+export async function enrichConversation(opts: {
+  companyId: string;
+  conversationId: string;
+}): Promise<
+  | { status: "skipped"; reason: "already-enriched" | "no-full-turn" | "no-extraction" }
+  | {
+      status: "enriched";
+      lead: { action: "created" | "updated"; id: string } | null;
+      competitors: number;
+    }
+> {
+  const { companyId, conversationId } = opts;
+
+  const conversation = await loadContext(companyId, conversationId);
+  if (!conversation) throw new Error(`Conversation not found: ${conversationId}`);
+
+  if (await alreadyEnriched(conversationId)) {
+    logger.info(`[CHAT ENRICH WORKER] ${conversationId} already enriched, skipping`);
+    return { status: "skipped", reason: "already-enriched" };
+  }
+
+  const rows = await db
+    .select({ role: messages.role, content: messages.content, meta: messages.meta })
+    .from(messages)
+    .where(eq(messages.conversationId, conversationId))
+    .orderBy(asc(messages.createdAt))
+    .limit(MAX_TRANSCRIPT_MESSAGES);
+  if (rows.length < 2) {
+    logger.info(`[CHAT ENRICH WORKER] ${conversationId} has no full turn — skipping`);
+    await markEnriched(conversationId);
+    return { status: "skipped", reason: "no-full-turn" };
+  }
+
+  // Extract (over the whole visible transcript so cumulative context builds
+  // dossiers across turns). No OPENAI_API_KEY → null → code below treats the
+  // conversation as processed without inserting anything.
+  const firstUser = rows.find((r) => r.role === "user");
+  const extraction = await extractLeadFromConversation(
+    rows.map((r) => ({ role: r.role as "user" | "assistant", content: r.content }))
+  );
+  if (!extraction) return { status: "skipped", reason: "no-extraction" };
+
+  let leadResult: { action: "created" | "updated"; id: string } | null = null;
+  if (hasLeadSignals(extraction) && extraction.confidence >= MIN_LEAD_CONFIDENCE) {
+    leadResult = await upsertLead(companyId, conversationId, firstUser?.content ?? null, extraction);
+    logger.info(
+      `[CHAT ENRICH WORKER] Lead ${leadResult.action}: ${leadResult.id} (conv ${conversationId})`
+    );
+  }
+
+  await tagCompetitors(conversationId, extraction?.competitors ?? []);
+  await markEnriched(conversationId);
+
+  logger.info(`[CHAT ENRICH WORKER] Completed ${conversationId}`);
+  return {
+    status: "enriched",
+    lead: leadResult,
+    competitors: extraction?.competitors.length ?? 0,
+  };
+}
+
 export const chatEnrichWorker = new Worker<ConversationEnrichJobData>(
   QUEUE_NAMES.CHAT_ENRICH,
   async (job) => {
-    const { companyId, conversationId, widgetKeyId, engine } = job.data;
+    const { companyId, conversationId } = job.data;
     logger.info(`[CHAT ENRICH WORKER] Starting conversation ${conversationId} (job ${job.id})`);
-
-    const conversation = await loadContext(companyId, conversationId);
-    if (!conversation) throw new Error(`Conversation not found: ${conversationId}`);
-
-    if (await alreadyEnriched(conversationId)) {
-      logger.info(`[CHAT ENRICH WORKER] ${conversationId} already enriched, skipping`);
-      return { status: "skipped" };
-    }
-
-    const rows = await db
-      .select({ role: messages.role, content: messages.content, meta: messages.meta })
-      .from(messages)
-      .where(eq(messages.conversationId, conversationId))
-      .orderBy(asc(messages.createdAt))
-      .limit(MAX_TRANSCRIPT_MESSAGES);
-    if (rows.length < 2) {
-      logger.info(`[CHAT ENRICH WORKER] ${conversationId} has no full turn — skipping`);
-      await markEnriched(conversationId);
-      return { status: "skipped" };
-    }
-
-    // Extract (over the whole visible transcript so cumulative context builds
-    // dossiers across turns). No OPENAI_API_KEY → null → code below treats the
-    // conversation as processed without inserting anything.
-    const firstUser = rows.find((r) => r.role === "user");
-    const extraction = await extractLeadFromConversation(
-      rows.map((r) => ({ role: r.role as "user" | "assistant", content: r.content }))
-    );
-
-    let leadResult: { action: "created" | "updated"; id: string } | null = null;
-    if (extraction && hasLeadSignals(extraction) && extraction.confidence >= MIN_LEAD_CONFIDENCE) {
-      leadResult = await upsertLead(companyId, conversationId, firstUser?.content ?? null, extraction);
-      logger.info(
-        `[CHAT ENRICH WORKER] Lead ${leadResult.action}: ${leadResult.id} (conv ${conversationId})`
-      );
-    }
-
-    await tagCompetitors(conversationId, extraction?.competitors ?? []);
-    await markEnriched(conversationId);
-
-    logger.info(`[CHAT ENRICH WORKER] Completed ${conversationId}`);
-    return {
-      status: "enriched",
-      lead: leadResult,
-      competitors: extraction?.competitors.length ?? 0,
-    };
+    return enrichConversation({ companyId, conversationId });
   },
   {
     connection: redisConnection,

@@ -24,7 +24,10 @@ export interface CorsPolicy {
 }
 
 const EMBED_PREFIX = "/api/embed/";
-const VOICE_TOKEN_PATH = "/api/voice/token";
+// Dual routes: dashboard company path vs public widget-key path. Treated as
+// the embed surface for any non-dashboard origin (the handler's origin gate
+// then decides whether the key may serve that page).
+const VOICE_DUAL_PATHS = new Set(["/api/voice/token", "/api/voice/transcript"]);
 const VOICE_TOOL_PREFIX = "/api/voice/tool/";
 
 function originOf(value: string | null): string | null {
@@ -65,7 +68,7 @@ export function corsPolicyFor(
   // request is exactly APP_URL; everything else is treated as the embed
   // surface so the widget still gets an allow-origin header (and then the
   // handler's origin gate decides whether the key may serve that page).
-  if (pathname === VOICE_TOKEN_PATH) {
+  if (VOICE_DUAL_PATHS.has(pathname)) {
     const dashboard = Boolean(requestOrigin && requestOrigin === appOrigin);
     return dashboard
       ? { surface: "dashboard", allowOrigin: appOrigin, credentials: true }

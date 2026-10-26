@@ -22,6 +22,7 @@ import {
   ChatCircleText,
   CheckCircle,
   MagnifyingGlass,
+  Microphone,
   ThumbsDown,
   ThumbsUp,
   X,
@@ -237,11 +238,20 @@ function TranscriptSheet({
     <Sheet open={conversationId !== null} onOpenChange={onOpenChange}>
       <SheetContent className="flex w-full flex-col gap-0 sm:max-w-lg">
         <SheetHeader className="border-b">
-          <SheetTitle className="text-base">
+          <SheetTitle className="text-base flex items-center gap-1.5">
+            {bundle?.conversation.channel === "voice" && (
+              <Microphone
+                className="size-4 text-muted-foreground"
+                aria-hidden="true"
+                weight="fill"
+              />
+            )}
             {bundle?.conversation.title ?? "Transcript"}
           </SheetTitle>
           <SheetDescription className="text-xs">
-            {bundle?.conversation.path ?? "Unknown entry page"}
+            {bundle?.conversation.channel === "voice"
+              ? "Voice session — spoken lines transcribed by speech-to-text, no citations"
+              : bundle?.conversation.path ?? "Unknown entry page"}
             {bundle ? ` · started ${formatTime(bundle.conversation.createdAt)}` : ""}
           </SheetDescription>
         </SheetHeader>
@@ -572,7 +582,16 @@ function ConversationsView() {
                           onClick={() => setSelectedId(row.id)}
                         >
                           <TableCell className="max-w-[340px]">
-                            <div className="truncate font-medium">{row.title}</div>
+                            <div className="flex items-center gap-1.5">
+                              {row.channel === "voice" && (
+                                <Microphone
+                                  className="size-3.5 shrink-0 text-muted-foreground"
+                                  aria-label="Voice conversation"
+                                  weight="fill"
+                                />
+                              )}
+                              <div className="truncate font-medium">{row.title}</div>
+                            </div>
                             {row.path && (
                               <div className="truncate font-mono text-xs text-muted-foreground">
                                 {row.path}
