@@ -41,6 +41,9 @@ storage/
 qdrant_storage/
 *.sqlite
 *.db
+# Pre-migration pg_dump backups (see SETUP.md §2.4a) — contain real data
+backups/
+*.sql
 
 # Test / coverage / debug
 coverage/
