@@ -28,7 +28,11 @@ export default function ContactPage() {
             </div>
             <div className="contact-detail">
               <span>Helpful context</span>
-              <p>Consider including the outcome you are aiming for, the teams or customers involved, what you have already tried, and any important constraints. Please leave out confidential, sensitive, or personal information.</p>
+              <p>A concise outline is enough: the outcome you want, who is affected, what you have tried, and any timing or practical constraints. You can also note whether you are exploring an idea or have a defined initiative. Do not include confidential, sensitive, or personal information, internal documents, or information about another person.</p>
+            </div>
+            <div className="contact-detail">
+              <span>Choosing a topic</span>
+              <p>Select the closest area in the form: business strategy, digital transformation, customer experience, data and operations, or something else. If several areas overlap, choose one and briefly describe the connection in your own words.</p>
             </div>
             <h3>Questions before you get in touch?</h3>
             <details>
@@ -36,8 +40,16 @@ export default function ContactPage() {
               <p>Topics may include <Link href="/services">business strategy, digital transformation, customer experience, data, and operations</Link>. You can also describe a related question in your own words.</p>
             </details>
             <details>
+              <summary>What should I prepare?</summary>
+              <p>Think about the decision or change in front of you, the people it affects, what a useful outcome would be, and any known constraints. A detailed brief, budget, or project plan is not needed for this form.</p>
+            </details>
+            <details>
               <summary>Is this form connected to a team?</summary>
-              <p>No. This is an illustrative form only. Submitting it displays an on-page confirmation; it does not send or save your message, and no response can be arranged through this page.</p>
+              <p>No. This is an illustrative form only. Submitting it displays an on-page confirmation; the form does not transmit or store your entries, and it cannot arrange a response. The entries remain in your browser page until you leave or refresh it; browser features such as autofill are controlled separately.</p>
+            </details>
+            <details>
+              <summary>What if I entered something by mistake?</summary>
+              <p>No message is sent when you submit. You can clear the fields or leave or refresh the page; this form does not provide a way to retrieve or send an entry. Please do not use it to share sensitive or confidential details.</p>
             </details>
             <details>
               <summary>Where can I learn more first?</summary>

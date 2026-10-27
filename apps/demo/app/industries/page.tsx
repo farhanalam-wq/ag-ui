@@ -3,41 +3,97 @@ import Link from "next/link";
 import { PageIntro } from "@/components/page-intro";
 import { industries } from "@/lib/content";
 
-const industryGuidance = {
+type IndustryGuidance = {
+  challenges: string;
+  applications: string[];
+  scenario: string;
+  outcomes: string[];
+  question: string;
+};
+
+const industryGuidance: Record<string, IndustryGuidance> = {
   "Financial services": {
-    context: "Work may cross customer-facing teams, operations, risk, and digital channels. The challenge is often to make a journey easier to follow while respecting the controls and hand-offs that apply to the service.",
+    challenges: "Customer journeys can span onboarding, servicing, operations, and digital channels, with reviews or control checks adding hand-offs. Improving clarity means understanding who owns each decision and what information can be shared at each step.",
+    applications: [
+      "Map an application or account-servicing journey, including status updates and exception routes.",
+      "Clarify ownership between customer-facing, operational, and control teams.",
+      "Review how policy or process changes are communicated across channels.",
+    ],
     scenario: "Illustrative scenario: a provider could map how a customer moves from an initial application through review and ongoing support, then identify where status updates or clearer ownership would reduce uncertainty.",
-    value: "A more explicit view of responsibilities and decision points can help teams improve service continuity without treating control requirements as an afterthought.",
+    outcomes: [
+      "A clearer view of where customers need information or support during a service journey.",
+      "More explicit hand-offs, decision points, and escalation ownership for teams to assess.",
+    ],
     question: "Where do customers or employees lose visibility as a request moves between teams?",
   },
   "Healthcare and life sciences": {
-    context: "Services can involve patients, providers, administrative teams, and multiple points of coordination. A useful view considers the experience of people seeking care alongside the processes that support safe, timely service.",
+    challenges: "Care and life-sciences operations involve different professional roles, sensitive information, and dependencies between people and processes. Improvements need to consider privacy, safety, evidence requirements, and local clinical or operational responsibilities.",
+    applications: [
+      "Trace administrative steps around referrals, appointments, or follow-up communication.",
+      "Clarify how information and responsibility move between care or research operations teams.",
+      "Review service navigation and support information from the perspective of patients or participants.",
+    ],
     scenario: "Illustrative scenario: a care organization could trace the administrative steps around a referral, identify where information or ownership changes hands, and explore ways to make the next step clearer to the people involved.",
-    value: "Making dependencies and communication points visible can help teams focus improvement on coordination and navigation, while keeping local responsibilities and constraints in view.",
+    outcomes: [
+      "A shared picture of coordination gaps and information needs across a defined pathway.",
+      "Practical improvement options that can be assessed with appropriate clinical, privacy, and operational owners.",
+    ],
     question: "Which hand-offs create the most uncertainty for patients, providers, or support teams?",
   },
   "Manufacturing and supply chains": {
-    context: "Planning, production, procurement, logistics, and after-sales support can depend on decisions made across different teams and time horizons. Visibility into those dependencies matters when conditions or priorities change.",
+    challenges: "Plans depend on linked decisions across procurement, production, logistics, and service. Changes to demand, materials, capacity, or product specifications can affect downstream work, while safety, quality, and physical constraints limit what can change quickly.",
+    applications: [
+      "Map how a demand or engineering change moves from planning through production and fulfilment.",
+      "Clarify how supplier or inventory exceptions are escalated and communicated.",
+      "Review decision ownership and information needs across production and after-sales service.",
+    ],
     scenario: "Illustrative scenario: a manufacturer could follow how a change to an order affects planning and downstream operations, then clarify which teams need to know about the change and when.",
-    value: "Clearer decision paths and information needs can help teams coordinate responses and spot process friction before it becomes a recurring operational issue.",
+    outcomes: [
+      "A more visible view of dependencies, exception routes, and decision owners.",
+      "Improvement options that account for operational constraints and can be evaluated by local teams.",
+    ],
     question: "What information would help teams anticipate the downstream effects of a change?",
   },
   "Public and social services": {
-    context: "People may access support through different channels and have different circumstances, while service teams work within defined responsibilities and limited capacity. Clarity, accessibility, and joined-up pathways are important considerations.",
+    challenges: "People may have different access needs and routes to support, while services must work within eligibility rules, statutory responsibilities, budgets, and capacity. A pathway that is clear to one group may still create barriers or gaps for another.",
+    applications: [
+      "Review how people find, understand, and request a service across channels.",
+      "Map referral and case hand-offs between teams or partner services.",
+      "Test whether eligibility information and next steps are understandable and accessible.",
+    ],
     scenario: "Illustrative scenario: a service team could review the steps a resident takes to request support, ask where eligibility or next steps are unclear, and test a simpler way to explain the process.",
-    value: "A clearer pathway can make it easier for people to understand what to expect and help service teams identify where coordination or communication needs attention.",
+    outcomes: [
+      "A clearer account of barriers, hand-offs, and communication needs in a defined service pathway.",
+      "Prioritized changes that service owners can assess against accessibility, accountability, and delivery constraints.",
+    ],
     question: "Can people understand the next step, including when they need support through another service?",
   },
   "Technology and business services": {
-    context: "As offerings evolve, product, sales, delivery, customer success, and support teams may need to adjust how they work together. The operating model should keep pace with what customers are being offered.",
+    challenges: "Offers and delivery models can change faster than the processes that support them. Product, sales, delivery, customer success, and support teams need a shared view of commitments, ownership, service dependencies, and the point at which a request falls outside the standard offer.",
+    applications: [
+      "Map a new or changing service from customer commitment through delivery and ongoing support.",
+      "Clarify hand-offs, escalation paths, and ownership for non-standard requests.",
+      "Align service descriptions and internal delivery steps as an offering evolves.",
+    ],
     scenario: "Illustrative scenario: a service provider could map a new offering from initial commitment through delivery and support, then resolve gaps in ownership or information between teams.",
-    value: "Connecting the customer promise to the processes that deliver it can help teams make responsibilities clearer and adapt ways of working as services change.",
+    outcomes: [
+      "A more explicit connection between customer commitments and the processes intended to deliver them.",
+      "Clearer roles and decision points for teams reviewing how an offer should evolve.",
+    ],
     question: "Does the path from customer commitment to delivery have clear owners and hand-offs?",
   },
   "Consumer and retail": {
-    context: "People may move between digital and in-person interactions as they discover products, make a purchase, receive an order, or seek support. Availability, fulfilment, and service information all shape how connected that journey feels.",
+    challenges: "Customers often move between discovery, purchase, fulfilment, returns, and support across online and in-person channels. Product availability, delivery expectations, seasonal demand, and exception handling all affect whether information stays consistent.",
+    applications: [
+      "Trace a purchase journey across product information, availability, fulfilment, and support.",
+      "Review how stock or delivery exceptions are communicated across customer and store channels.",
+      "Map returns or post-purchase support to find repeated effort and unclear ownership.",
+    ],
     scenario: "Illustrative scenario: a retailer could examine how a customer moves from online product information to store availability and a later support request, then look for gaps that create repeated effort.",
-    value: "A connected view of the journey can help teams prioritize improvements across channels rather than optimizing one interaction in isolation.",
+    outcomes: [
+      "A connected view of customer-facing information and operational hand-offs across channels.",
+      "Specific opportunities for teams to evaluate against fulfilment capacity and customer-service needs.",
+    ],
     question: "Where does information or support become inconsistent when customers switch channels?",
   },
 } as const;
@@ -58,24 +114,35 @@ export default function IndustriesPage() {
       />
       <section className="section industries-section">
         <div className="container">
-          <div className="section-heading"><h2>Experience shaped by context.</h2><p>We bring a practical transformation lens to the customer, operational, and organizational questions that arise in different industries.</p></div>
+          <div className="section-heading"><h2>Experience shaped by context.</h2><p>We bring a practical transformation lens to the customer, operational, and organizational questions that arise in different industries. The applications and scenarios below are illustrative; they do not describe past or current sector client engagements.</p></div>
           <div className="industry-grid">
-            {industries.map((industry, index) => (
-              <article className={`industry-item industry-item-${index + 1}`} key={industry.title}>
-                <span className="industry-index">0{index + 1}</span>
-                <h3>{industry.title}</h3>
-                <p>{industry.description}</p>
-                <div className="industry-focus"><span>Example focus</span><strong>{industry.focus}</strong></div>
-                <h4>What this context can involve</h4>
-                <p>{industryGuidance[industry.title as keyof typeof industryGuidance].context}</p>
-                <h4>Illustrative scenario</h4>
-                <p>{industryGuidance[industry.title as keyof typeof industryGuidance].scenario}</p>
-                <h4>Potential value</h4>
-                <p>{industryGuidance[industry.title as keyof typeof industryGuidance].value}</p>
-                <h4>Question to explore</h4>
-                <p>{industryGuidance[industry.title as keyof typeof industryGuidance].question}</p>
-              </article>
-            ))}
+            {industries.map((industry, index) => {
+              const guidance = industryGuidance[industry.title];
+              if (!guidance) {
+                throw new Error(`Missing industry guidance for "${industry.title}"`);
+              }
+
+              const sectionId = industry.title.toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+              return (
+                <article className={`industry-item industry-item-${index + 1}`} id={sectionId} key={industry.title}>
+                  <span className="industry-index">0{index + 1}</span>
+                  <h3>{industry.title}</h3>
+                  <p>{industry.description}</p>
+                  <div className="industry-focus"><span>Example focus</span><strong>{industry.focus}</strong></div>
+                  <h4>Sector-specific challenges</h4>
+                  <p>{guidance.challenges}</p>
+                  <h4>Practical applications</h4>
+                  <ul>{guidance.applications.map((application) => <li key={application}>{application}</li>)}</ul>
+                  <h4>Illustrative scenario</h4>
+                  <p>{guidance.scenario}</p>
+                  <h4>Potential outcomes</h4>
+                  <ul>{guidance.outcomes.map((outcome) => <li key={outcome}>{outcome}</li>)}</ul>
+                  <h4>Question to explore</h4>
+                  <p>{guidance.question}</p>
+                </article>
+              );
+            })}
           </div>
         </div>
       </section>

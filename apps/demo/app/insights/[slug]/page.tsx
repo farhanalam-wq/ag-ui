@@ -34,7 +34,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
           <div className="article-meta"><span>{article.category}</span><time>{article.date}</time><span>{article.readingTime}</span></div>
           <h1>{article.title}</h1>
           <p className="article-deck">{article.summary}</p>
-          <p className="article-author">By Alderwick Editorial Team</p>
+          <p className="article-author">By {article.author}</p>
         </header>
         <div className="article-hero-image" role="img" aria-label={article.imageAlt} style={{ backgroundImage: `url("${article.image}")` }} />
         <div className="article-body prose">
@@ -45,6 +45,15 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
               {section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
             </section>
           ))}
+          <section>
+            <h2>Frequently asked questions</h2>
+            {article.faqs.map((faq) => (
+              <section key={faq.question}>
+                <h3>{faq.question}</h3>
+                <p>{faq.answer}</p>
+              </section>
+            ))}
+          </section>
           <div className="article-endnote">
             <p>Good change starts with a useful conversation.</p>
             <Link className="text-link" href="/contact">Talk with us <span aria-hidden="true">→</span></Link>

@@ -17,7 +17,7 @@ export default function HomePage() {
             <p className="eyebrow">Business transformation, made practical</p>
             <h1>Make complex work feel <span>clear.</span></h1>
             <p className="hero-description">
-              Alderwick Advisory helps organizations turn difficult change into focused action people can carry forward. We bring strategy, customer experience, and operations into the same conversation, so teams can see what needs to change and decide what to do next.
+              Alderwick Advisory is a business transformation practice helping organizations turn difficult change into focused action people can carry forward. We connect strategy, customer experience, and operations so teams can understand what needs to change, weigh practical options, and decide what to do next.
             </p>
             <div className="hero-actions">
               <Link className="button" href="/contact">Talk with us <span aria-hidden="true">↗</span></Link>
@@ -44,10 +44,10 @@ export default function HomePage() {
           <div>
             <h2>Clarity is more than a plan. It is the ability to move forward together.</h2>
             <p>
-              We connect business priorities to the customer experiences, operating choices, and everyday decisions that bring them to life. That means looking beyond the stated ambition to understand how work happens now, where people encounter friction, and which choices will make a practical difference.
+              We connect business priorities to the customer experiences, operating choices, and everyday decisions that bring them to life. Rather than treating a goal as a plan, we look at how work happens now, where people encounter friction, what constraints shape the choices, and which next step can make a practical difference.
             </p>
             <p>
-              As an illustrative example, an organization looking to improve a customer service journey might examine both the steps customers take and the processes employees rely on to support them. The right next move depends on what that work reveals.
+              Illustrative example: an organization looking to improve a customer service journey could trace the steps customers take alongside the information and handoffs employees rely on. That view might reveal that a confusing customer step is connected to an internal process; the team could then compare options such as clearer guidance, a changed handoff, or both. The useful response depends on what the evidence and operating constraints support.
             </p>
           </div>
           <Link className="arrow-link" href="/about" aria-label="Learn more about Alderwick Advisory">↗</Link>
@@ -81,10 +81,10 @@ export default function HomePage() {
             <p className="eyebrow">How we work</p>
             <h2>Progress that respects the realities of your business.</h2>
             <p>
-              Change is shaped by people, systems, and constraints. We bring those realities into the work early, so recommendations are useful beyond the presentation room.
+              Change is shaped by people, systems, and constraints. We bring those realities into the work early, so recommendations can be weighed against available capacity, decision rights, and the conditions teams will face when putting them into practice.
             </p>
             <p>
-              In an illustrative situation, a team introducing a new process may need to account for existing tools, decision rights, and busy operational cycles—not just the proposed workflow. Making those factors visible helps people weigh options and shape a path they can maintain.
+              Illustrative example: a team considering a new process might map where a task changes hands, identify which tools and decisions each handoff depends on, and compare a small adjustment with a broader redesign. Making dependencies visible helps the team choose a manageable starting point and see what would need to be learned before expanding the change.
             </p>
             <ul className="check-list">
               <li>Start with the outcomes people need and how they will recognize progress</li>
@@ -103,9 +103,9 @@ export default function HomePage() {
             <p>When direction and delivery connect, teams can spend less time navigating confusion and more time improving the work itself. The value is not a promise of instant change; it is a clearer basis for making choices, learning, and adjusting as the work progresses.</p>
           </div>
           <div className="benefit-list">
-            <div><span>01</span><div><h3>Decisions with direction</h3><p>Give teams a clearer basis for choosing what to prioritize and what can wait. A shared view of outcomes, constraints, and open questions can help turn a broad ambition into a manageable next decision.</p></div></div>
-            <div><span>02</span><div><h3>Services that make sense</h3><p>Reduce unnecessary friction across the moments that matter to customers and employees. Looking across the full journey can reveal where handoffs, unclear information, or internal processes make a service harder to use.</p></div></div>
-            <div><span>03</span><div><h3>Change people can sustain</h3><p>Build ownership and feedback into the way new practices take root. Teams need room to learn what works in day-to-day conditions and adapt when evidence or circumstances change.</p></div></div>
+            <div><span>01</span><div><h3>Decisions with direction</h3><p>When priorities compete, make the intended outcomes, dependencies, and constraints explicit. Teams can then distinguish what needs a decision now from what can wait, and sequence work around the capacity they actually have.</p></div></div>
+            <div><span>02</span><div><h3>Services that make sense</h3><p>When a service feels fragmented, look across the customer steps as well as the information and handoffs behind them. That fuller view can help teams target the source of friction instead of optimizing one step while leaving the wider experience unclear.</p></div></div>
+            <div><span>03</span><div><h3>Change people can sustain</h3><p>When a plan risks stalling after agreement, clarify who owns the next decisions and how feedback will shape them. Teams gain a practical way to test a change in real working conditions, learn what needs adjustment, and decide whether to extend it.</p></div></div>
           </div>
         </div>
       </section>

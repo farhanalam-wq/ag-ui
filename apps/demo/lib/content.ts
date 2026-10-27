@@ -3,17 +3,24 @@ export type ArticleSection = {
   paragraphs: string[];
 };
 
+export type ArticleFaq = {
+  question: string;
+  answer: string;
+};
+
 export type Article = {
   slug: string;
   title: string;
   category: string;
   date: string;
+  author: string;
   readingTime: string;
   summary: string;
   image: string;
   imageAlt: string;
   introduction: string;
   sections: ArticleSection[];
+  faqs: ArticleFaq[];
 };
 
 export const articles: Article[] = [
@@ -22,7 +29,8 @@ export const articles: Article[] = [
     title: "Turning strategy into everyday decisions",
     category: "Strategy",
     date: "October 8, 2026",
-    readingTime: "4 min read",
+    author: "Alderwick Editorial Team",
+    readingTime: "5 min read",
     summary: "A strategy becomes actionable when priorities clarify everyday choices, shape resource decisions, and give teams a practical way to learn from results.",
     image: "https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1400&q=85",
     imageAlt: "Colleagues working through plans together around a table",
@@ -50,10 +58,17 @@ export const articles: Article[] = [
         ],
       },
       {
-        heading: "A practical way to begin",
+        heading: "A five-step working session for one priority",
         paragraphs: [
-          "Select one priority and bring together the people closest to a recurring decision it affects. Review a recent example: what information was available, which options were considered, who had authority, and what made the choice difficult? Agree on a small adjustment to guidance or process, then check whether it helps in the next few comparable decisions.",
+          "Bring together the people closest to one recurring decision affected by the priority. Work through five steps: (1) name the decision and the outcome it should support; (2) review a recent, ordinary example; (3) identify the information, authority, and constraints that shaped it; (4) agree on one small change to guidance, process, or ownership; and (5) set a date to review a few comparable decisions. Capture the rule in the place people already use to do the work, rather than creating a parallel strategy document.",
           "Hypothetical example: a regional service team must choose between resolving straightforward requests quickly and reserving capacity for complex cases. Leaders could clarify how to identify complexity, set a threshold for escalation, and review whether the rule leaves customers waiting unnecessarily. This is an illustration, not a report of a particular organization's experience.",
+        ],
+      },
+      {
+        heading: "Know what decision rules cannot solve",
+        paragraphs: [
+          "A clear priority will not remove every conflict or substitute for information, capacity, or expertise that a team does not have. If the same decision keeps escalating, investigate whether authority is unclear, the policy is incomplete, or the team needs a resource decision. Do not frame a structural constraint as an individual failure to follow the strategy.",
+          "Rules can also become stale as customer needs and operating conditions change. Treat them as a useful starting point, not a script: state when judgment is expected, how exceptions are raised, and who can revise the guidance. A short review cycle helps keep the direction steady while allowing the method to improve.",
         ],
       },
       {
@@ -64,13 +79,24 @@ export const articles: Article[] = [
         ],
       },
     ],
+    faqs: [
+      {
+        question: "How many priorities should guide everyday decisions?",
+        answer: "There is no universal number. Start with the small set leaders can explain and resource consistently, then test whether teams can use them to make real choices. If priorities routinely compete without a way to resolve the conflict, clarify the trade-off rather than adding another slogan.",
+      },
+      {
+        question: "How can leaders tell whether a strategy is changing work?",
+        answer: "Look at recurring decisions and the conditions around them: what work gets capacity, which exceptions are handled differently, and whether teams can explain why. Use measures as prompts for inquiry, alongside examples from the work; no single indicator proves that a strategy is taking hold.",
+      },
+    ],
   },
   {
     slug: "a-practical-guide-to-digital-transformation",
     title: "A practical guide to digital transformation",
     category: "Transformation",
     date: "September 17, 2026",
-    readingTime: "4 min read",
+    author: "Alderwick Editorial Team",
+    readingTime: "5 min read",
     summary: "A practical transformation starts with a service or operational need, then aligns technology, process, ownership, and learning around a better outcome.",
     image: "https://images.unsplash.com/photo-1521737711867-e3b97375f902?auto=format&fit=crop&w=1400&q=85",
     imageAlt: "A team collaborating in a bright, modern workspace",
@@ -98,10 +124,17 @@ export const articles: Article[] = [
         ],
       },
       {
-        heading: "Deliver in learnable steps",
+        heading: "Deliver in learnable steps, not just milestones",
         paragraphs: [
           "Break delivery into steps that produce something people can use and assess. Each step should test a meaningful question: does the change solve the stated need, can the team operate it, and are important risks controlled? Keep a route to pause or adjust if results or new information do not support the original plan.",
           "Hypothetical example: an organization is considering a digital appointment-request process. A limited trial with a defined group could test whether instructions are understandable, how staff handle incomplete requests, and whether the existing scheduling process can absorb the work. The example is illustrative, not a claim about a real organization.",
+        ],
+      },
+      {
+        heading: "A five-step path from need to sustained service",
+        paragraphs: [
+          "Use this sequence to keep the effort grounded: (1) describe the user or operational need and how it is currently met; (2) map the journey, including exceptions and handoffs; (3) identify the riskiest assumptions and test them with the people affected; (4) deliver a bounded change with named operational owners and support; and (5) review outcomes and unintended effects before deciding whether to adapt, extend, or stop. Record the decision at each step so new information can change the plan.",
+          "The sequence is a guide, not a promise that delivery will be linear. Legal, security, accessibility, procurement, integration, or policy constraints may require additional review or a different order. Bring the relevant specialists in early enough to shape options, while keeping the core question—whether the service need is being met—visible throughout.",
         ],
       },
       {
@@ -112,11 +145,28 @@ export const articles: Article[] = [
         ],
       },
       {
+        heading: "Balance ambition with delivery limits",
+        paragraphs: [
+          "A pilot can expose usability and process issues, but it may not represent every user, operating condition, or integration challenge. State what the trial can and cannot tell you, who was included, and what evidence is still needed before a broader rollout. Avoid treating a successful demonstration as proof of long-term reliability or adoption.",
+          "There are real trade-offs in sequencing. A tightly controlled release can reduce exposure but delay benefits; a shared platform can support consistency but demand difficult migration and change work. Compare options against the original need, ongoing support capacity, and the cost of reversibility—not novelty alone.",
+        ],
+      },
+      {
         heading: "Takeaways for the next step",
         paragraphs: [
           "Write down the user or operational need in concrete terms before committing to a technology answer. Map the work around it, test consequential assumptions early, and make responsibilities and trade-offs visible to the people affected.",
           "Deliver in steps that create evidence, not just activity. Success is a service that works better in practice and has the ownership to keep working—not simply a system that has gone live.",
         ],
+      },
+    ],
+    faqs: [
+      {
+        question: "Should an organization select technology before mapping the service?",
+        answer: "Usually, first understand the need and the work around it. A known platform or policy constraint may narrow the options, but mapping handoffs and exceptions helps distinguish a genuine capability gap from a process problem that software alone would not resolve.",
+      },
+      {
+        question: "What should a transformation pilot prove?",
+        answer: "A pilot should answer a defined set of questions about the intended outcome, usability, operational support, and important risks. It cannot prove every future condition; document its scope and limits, then decide what further testing or safeguards are needed before expanding.",
       },
     ],
   },
@@ -125,7 +175,8 @@ export const articles: Article[] = [
     title: "Building customer experiences across channels",
     category: "Customer experience",
     date: "August 26, 2026",
-    readingTime: "4 min read",
+    author: "Alderwick Editorial Team",
+    readingTime: "5 min read",
     summary: "Connected service depends on preserving context, clarifying ownership, and making handoffs work across digital and human channels.",
     image: "https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=1400&q=85",
     imageAlt: "A service team discussing customer needs in a meeting",
@@ -139,17 +190,24 @@ export const articles: Article[] = [
         ],
       },
       {
-        heading: "Make continuity practical",
+        heading: "Make continuity practical at each handoff",
         paragraphs: [
           "Continuity depends on clear ownership for the next step and a dependable way to carry relevant context forward. Define what information is necessary for a handoff, who can access it, and how the customer will know that the request has moved. Collect only information that serves a clear purpose, and handle it in line with applicable privacy and access requirements.",
           "Set expectations in plain language: what will happen next, who is responsible, and when the customer should act or expect an update. If a handoff is delayed, provide a recovery route rather than leaving the person to guess. These small agreements help channels feel connected even when their tools and teams differ.",
         ],
       },
       {
+        heading: "A five-step review of a cross-channel journey",
+        paragraphs: [
+          "Choose one customer need and walk through the journey as a person would: (1) identify the starting point and the successful outcome; (2) list each channel, team, and decision involved; (3) mark where context, ownership, or expectations change; (4) agree on the smallest useful improvement and who will deliver it; and (5) follow the whole journey after the change, including the route for people who need assistance. Invite staff who handle exceptions as well as those who design the standard process.",
+          "Hypothetical example: someone begins a change-of-address request online but cannot verify one detail. A connected service might preserve the completed information, explain why a staff check is needed, and let the next colleague see what remains unresolved. This illustrates a design principle; it does not describe an actual service or its results.",
+        ],
+      },
+      {
         heading: "Balance consistency with judgment",
         paragraphs: [
           "A common process can make a service easier to understand, but rigid standardization can fail people whose circumstances do not fit the default. Decide which information and outcomes must be consistent, and where staff need discretion to respond to context. Make escalation paths clear so that flexibility does not depend on knowing the right person.",
-          "Hypothetical example: a customer starts a change-of-address request online but cannot verify one detail. A connected service might preserve the completed information, explain why a staff check is needed, and let the next colleague see what remains unresolved. This is an illustration of a design principle, not a report of an actual service.",
+          "Continuity has limits: not every channel can share every detail, and more data is not automatically better. Collect and transfer only information needed for the next step, define access and retention appropriately, and explain when a customer will need to repeat information. Where systems cannot connect, clear staff guidance and an honest explanation can still make the handoff more understandable.",
         ],
       },
       {
@@ -160,11 +218,28 @@ export const articles: Article[] = [
         ],
       },
       {
+        heading: "Check for unintended effects before scaling",
+        paragraphs: [
+          "Improving one channel can shift effort to another. A shorter online form might create more follow-up calls; stricter consistency might make an exception harder to resolve. Before extending a change, review customer feedback and operational signals across the journey, and ask who may have found the new route less accessible or less clear.",
+          "Use feedback carefully. A small number of comments can reveal a problem worth investigating, but they do not establish how common it is. Pair individual accounts with service observations and available operational information, and be transparent about what remains uncertain.",
+        ],
+      },
+      {
         heading: "Takeaways for the next step",
         paragraphs: [
           "Start with a customer need and follow it across channels. Clarify who owns each handoff, what context should travel, and how a person can recover when a step does not go as planned.",
           "Keep the experience consistent where it matters, but leave room for sound judgment and accessible alternatives. Then use customer and operational feedback together to improve the full journey over time.",
         ],
+      },
+    ],
+    faqs: [
+      {
+        question: "Does a connected experience mean every channel should work the same way?",
+        answer: "No. Channels can have different strengths and constraints. The goal is to make the outcome, next step, ownership, and essential information coherent, while preserving appropriate choices and human support where they are needed.",
+      },
+      {
+        question: "How should teams prioritize journey improvements?",
+        answer: "Start where customers or staff repeatedly encounter uncertainty, repeated effort, or a failed handoff. Confirm the issue with more than one perspective, consider accessibility and privacy implications, and choose a change that can be assessed across the full journey rather than within one channel alone.",
       },
     ],
   },

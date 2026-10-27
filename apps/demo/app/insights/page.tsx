@@ -24,7 +24,7 @@ export default function InsightsPage() {
               <span role="img" aria-label={featured.imageAlt} style={{ backgroundImage: `url("${featured.image}")` }} />
             </Link>
             <div className="featured-article-copy">
-              <div className="article-meta"><span>{featured.category}</span><time>{featured.date}</time><span>{featured.readingTime}</span><span>Alderwick Editorial Team</span></div>
+              <div className="article-meta"><span>{featured.category}</span><time>{featured.date}</time><span>{featured.readingTime}</span><span>{featured.author}</span></div>
               <h2><Link href={`/insights/${featured.slug}`}>{featured.title}</Link></h2>
               <p>{featured.summary}</p>
               <Link className="text-link" href={`/insights/${featured.slug}`}>Read the article <span aria-hidden="true">→</span></Link>
@@ -37,7 +37,7 @@ export default function InsightsPage() {
                 <Link className="article-image" href={`/insights/${article.slug}`} aria-label={`Read ${article.title}`}>
                   <span role="img" aria-label={article.imageAlt} style={{ backgroundImage: `url("${article.image}")` }} />
                 </Link>
-                <div className="article-meta"><span>{article.category}</span><time>{article.date}</time><span>{article.readingTime}</span><span>Alderwick Editorial Team</span></div>
+                <div className="article-meta"><span>{article.category}</span><time>{article.date}</time><span>{article.readingTime}</span><span>{article.author}</span></div>
                 <h3><Link href={`/insights/${article.slug}`}>{article.title}</Link></h3>
                 <p>{article.summary}</p>
                 <Link className="text-link" href={`/insights/${article.slug}`}>Read article <span aria-hidden="true">→</span></Link>

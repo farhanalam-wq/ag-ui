@@ -13,7 +13,7 @@ export function ContactForm() {
   return (
     <form className="contact-form" onSubmit={handleSubmit}>
       <p className="form-showcase-note">
-        Illustrative form only: entries are not sent to anyone or saved. Do not enter confidential, sensitive, or personal information.
+        Illustrative form only: all four fields are required to display the confirmation. Use placeholder text, not real contact details or confidential or sensitive information; entries are not transmitted or stored by this form.
       </p>
       <div className="form-grid">
         <label>
@@ -42,11 +42,11 @@ export function ContactForm() {
       </label>
       <div className="form-submit-row">
         <button className="button" type="submit">Preview inquiry <span aria-hidden="true">↗</span></button>
-        <span className="form-privacy">Nothing you enter is transmitted or stored by this form.</span>
+        <span className="form-privacy">This form does not transmit or store entries. Browser autofill, if enabled, is managed by your browser.</span>
       </div>
       {submitted ? (
         <p className="form-confirmation" role="status">
-          Your sample inquiry has been previewed. No information has been sent or saved, and no reply will be generated.
+          The on-page confirmation is shown. No information has been sent or saved by this form, and no reply will be generated.
         </p>
       ) : null}
     </form>
