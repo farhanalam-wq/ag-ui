@@ -241,6 +241,8 @@ export interface IntelRadarAnalytics {
   totals: Record<string, number>;
   /** Daily counts — questions, highIntent, blindspot, unanswered. */
   trend: { d: string; questions: number; highIntent: number; blindspot: number; unanswered: number }[];
+  /** Intent mix over every scanned question; "Unclassified" is the General bucket. */
+  intentBreakdown: { intent: string; questions: number }[];
   clusters: IntelCluster[];
   competitors: IntelCompetitor[];
   /** True when the message scan hit its cap; figures are the most recent slice. */

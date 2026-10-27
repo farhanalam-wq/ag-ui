@@ -59,6 +59,7 @@ export function BreakdownTable<T extends { label: string }>({
   footer,
   barKey,
   insight,
+  onRowSelect,
   className,
 }: {
   title: string;
@@ -80,6 +81,12 @@ export function BreakdownTable<T extends { label: string }>({
    * finding computed from the data by the tab, not a definition.
    */
   insight?: React.ReactNode;
+  /**
+   * When set, rows are interactive: click or Enter opens the row's detail
+   * (a Sheet, per the interaction contract). The table itself stays a table
+   * when this is absent — most breakdowns are lookup lists, not drills.
+   */
+  onRowSelect?: (row: T) => void;
   className?: string;
 }) {
   const max = barKey
@@ -122,7 +129,26 @@ export function BreakdownTable<T extends { label: string }>({
             </TableHeader>
             <TableBody>
               {rows.map((row, i) => (
-                <TableRow key={`${row.label}-${i}`}>
+                <TableRow
+                  key={`${row.label}-${i}`}
+                  onClick={onRowSelect ? () => onRowSelect(row) : undefined}
+                  tabIndex={onRowSelect ? 0 : undefined}
+                  onKeyDown={
+                    onRowSelect
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            onRowSelect(row);
+                          }
+                        }
+                      : undefined
+                  }
+                  className={cn(
+                    onRowSelect &&
+                      "cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  )}
+                  aria-label={onRowSelect ? `Open details for ${row.label}` : undefined}
+                >
                   <TableCell
                     className={cn(
                       "max-w-[280px] truncate",

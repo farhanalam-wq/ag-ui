@@ -363,6 +363,23 @@ export async function getIntelRadar(
   }
   const trend = [...trendMap.values()].sort((a, b) => a.d.localeCompare(b.d));
 
+  // The intent mix: over every scanned question, not a top slice, so the
+  // shares are legitimate. Unclassified questions keep their bucket — they
+  // are the volume the vocabulary does not name yet.
+  const intentCounts = new Map<string, number>();
+  for (const q of paired) {
+    if (q.intents.length === 0) {
+      intentCounts.set("Unclassified", (intentCounts.get("Unclassified") ?? 0) + 1);
+      continue;
+    }
+    for (const intent of q.intents) {
+      intentCounts.set(intent, (intentCounts.get(intent) ?? 0) + 1);
+    }
+  }
+  const intentBreakdown = [...intentCounts.entries()]
+    .map(([intent, qs]) => ({ intent, questions: qs }))
+    .sort((a, b) => b.questions - a.questions);
+
   const clusters = buildClusters(paired);
   const competitors = buildCompetitors(paired, rows);
 
@@ -388,6 +405,7 @@ export async function getIntelRadar(
     rangeDays,
     totals: radarTotals(questions, answered, grounded, highIntent, voiceQuestions),
     trend,
+    intentBreakdown,
     clusters,
     competitors,
     scanCapped,

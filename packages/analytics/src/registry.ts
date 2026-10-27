@@ -472,12 +472,23 @@ export interface IntelCompetitor {
   quotes: string[];
 }
 
+export interface IntelIntentSlice {
+  /** Display intent label, or "Unclassified" when no keyword matched. */
+  intent: string;
+  questions: number;
+}
+
 export interface IntelRadarReport {
   kind: "intel-radar";
   companyId: string;
   rangeDays: number;
   totals: Record<string, number>;
   trend: TrendPoint[];
+  /**
+   * Intent mix over every scanned question — the full set, not a top slice,
+   * so the shares are legitimate. "Unclassified" is the General bucket.
+   */
+  intentBreakdown: IntelIntentSlice[];
   clusters: IntelCluster[];
   competitors: IntelCompetitor[];
   /** True when the message scan hit its cap; the figures are the most recent slice. */
