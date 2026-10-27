@@ -305,6 +305,48 @@ export const webhookEvents = pgTable(
   ]
 );
 
+/**
+ * Intelligence → Signals. One FAQ + JSON-LD patch drafted (on demand) from a
+ * blindspot cluster's question, grounded in what the company's knowledge base
+ * retrieved for it. `cluster_key` is the report's normalized question key, so
+ * a draft and its source cluster can never disagree about which questions it
+ * answers. Status is the human-approval gate: nothing is ever published by
+ * this table — approval is a state the CMS connector (Phase 2) will read.
+ */
+export const signalDrafts = pgTable(
+  "signal_drafts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    /** The Intent Radar cluster key this draft answers (normalized wording). */
+    clusterKey: text("cluster_key").notNull(),
+    /** The display question the draft was generated from. */
+    question: text("question").notNull(),
+    /** 'DRAFT' → 'APPROVED' | 'DISMISSED' (revertable to 'DRAFT'). */
+    status: text("status").default("DRAFT").notNull(),
+    /** { question, answer, sources: [{ title, url }] } — answer verbatim from retrieval. */
+    faq: jsonb("faq"),
+    /** The public FAQPage JSON-LD built from the FAQ (no internal metadata). */
+    jsonld: jsonb("jsonld"),
+    /** The model that produced the answer, for provenance. */
+    model: text("model"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    // One draft per cluster per company: regenerating returns the existing
+    // row instead of stacking near-duplicates for the reviewer.
+    uniqueIndex("signal_drafts_company_cluster_unique").on(t.companyId, t.clusterKey),
+    index("signal_drafts_company_status_idx").on(t.companyId, t.status, t.updatedAt),
+    check(
+      "signal_drafts_status_check",
+      sql`${t.status} in ('DRAFT', 'APPROVED', 'DISMISSED')`
+    ),
+  ]
+);
+
 export const intentClusterRuns = pgTable(
   "intent_cluster_runs",
   {

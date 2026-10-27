@@ -7,6 +7,7 @@ export * from "./embeddings";
 export * from "./facts";
 export * from "./llm";
 export * from "./conversation-signals";
+export * from "./signals-draft";
 export * from "./lead-extraction";
 export * from "./widget-key";
 export * from "./widget-theme";

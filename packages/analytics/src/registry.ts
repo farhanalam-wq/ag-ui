@@ -434,6 +434,58 @@ export interface AgentQuestionsReport {
 }
 
 /**
+ * Intelligence → Intent Radar. Where the agent reports are counts and refuse
+ * to read question text, this is the surface where the questions come back —
+ * normalized into clusters, tagged with the shared intent vocabulary, and
+ * paired with whether the answer that followed had evidence behind it.
+ *
+ * Clusters and competitor mentions come from a bounded message scan, so they
+ * carry no share-of-total claim; the totals above them are the full count.
+ * `avgSimilarity` is null when none of a cluster's answers reported a
+ * retrieval score — absence, not zero.
+ */
+export interface IntelCluster {
+  /** Normalized question text — the grouping key, stable across reports. */
+  key: string;
+  /** The most recent original wording in the cluster, for display. */
+  question: string;
+  volume: number;
+  conversations: number;
+  /** Detected intent labels, first-seen order. Empty means unclassified. */
+  intents: string[];
+  answered: number;
+  grounded: number;
+  /** Answered but the reply carried no evidence — the blindspot count. */
+  blindspot: number;
+  /** No assistant reply followed the question. */
+  unanswered: number;
+  /** Mean retrieval confidence of the paired replies. Null when none reported one. */
+  avgSimilarity: number | null;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+export interface IntelCompetitor {
+  name: string;
+  mentions: number;
+  /** Up to three verbatim snippets from the conversations that mentioned it. */
+  quotes: string[];
+}
+
+export interface IntelRadarReport {
+  kind: "intel-radar";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  trend: TrendPoint[];
+  clusters: IntelCluster[];
+  competitors: IntelCompetitor[];
+  /** True when the message scan hit its cap; the figures are the most recent slice. */
+  scanCapped: boolean;
+  freshness: Freshness;
+}
+
+/**
  * The freshness envelope every report carries.
  *
  * The rollup lag is **measured, not assumed**: the rollup tick stamps the

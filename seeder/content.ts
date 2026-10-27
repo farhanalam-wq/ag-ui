@@ -12,6 +12,11 @@
 
 import { faker } from "@faker-js/faker";
 import {
+  buildMessageMeta,
+  mergeMessageMeta,
+  type CompetitorMention,
+} from "../packages/shared/src/index";
+import {
   db,
   brands,
   brandStylesheets,
@@ -655,6 +660,9 @@ const ANSWER_TEMPLATES = [
     `Yes — ${company.name} can help with that. The relevant material lives under ${company.pages[2]!.title}. If you need a commercial answer, contact support@${company.domain} and the team will follow up.`,
 ];
 
+/** Competitor names the demo conversations occasionally raise, with a verbatim quote. */
+const SEEDED_COMPETITORS = ["Intercom", "Chatbase", "Drift", "Zendesk"];
+
 async function seedConversations(company: SeededCompany, latestDocIds: string[]): Promise<number> {
   const rng = rngFor(`${company.key}:conversations`);
   const total = 1_200 + randInt(rng, 0, 300);
@@ -684,29 +692,52 @@ async function seedConversations(company: SeededCompany, latestDocIds: string[])
     for (let turn = 0; turn < turns; turn++) {
       const isUser = turn % 2 === 0;
       ms += randInt(rng, 8_000, 75_000);
-      const text = isUser
-        ? (turn === 0 ? question : faker.lorem.sentence())
-        : ANSWER_TEMPLATES[turn % ANSWER_TEMPLATES.length]!(question, company);
+
+      let text: string;
+      let userMeta: Record<string, unknown> | null = null;
+      if (isUser) {
+        if (turn === 0) {
+          text = question;
+        } else if (rng() < 0.12) {
+          // A competitor mention the enrich worker would have tagged:
+          // name in the turn, verbatim snippet in the meta (the Intelligence
+          // radar reads exactly this shape).
+          const name = SEEDED_COMPETITORS[randInt(rng, 0, SEEDED_COMPETITORS.length - 1)]!;
+          text = `${name} handles this for us — how is yours different?`;
+          userMeta = mergeMessageMeta({}, {
+            competitors: [{ name, quote: `${name} handles this for us` }] as CompetitorMention[],
+          });
+        } else {
+          text = faker.lorem.sentence();
+        }
+        // Seeded conversations are marked enriched so a stray queue run
+        // never reprocesses them into the lead ledger.
+        userMeta = mergeMessageMeta(userMeta ?? {}, { extraction_ran: true });
+      } else {
+        text = ANSWER_TEMPLATES[turn % ANSWER_TEMPLATES.length]!(question, company);
+      }
+
       const grounded = !isUser && rng() < 0.88;
       const withVisual = !isUser && rng() < 0.08;
+      const evidence = grounded
+        ? [
+            {
+              sourceId: latestDocIds[(i + turn) % latestDocIds.length] ?? latestDocIds[0],
+              url: `${company.url}${company.pages[(i + turn) % company.pages.length]!.path}`,
+              pageTitle: company.pages[(i + turn) % company.pages.length]!.title,
+              snippet: faker.lorem.sentence(),
+              type: "chunk",
+              score: 0.71 + rng() * 0.27,
+            },
+          ]
+        : null;
 
       messageRows.push({
         id: uuidFor("message", company.key, i, turn),
         conversationId: id,
         role: isUser ? "user" : "assistant",
         content: text,
-        evidence: grounded
-          ? [
-              {
-                sourceId: latestDocIds[(i + turn) % latestDocIds.length] ?? latestDocIds[0],
-                url: `${company.url}${company.pages[(i + turn) % company.pages.length]!.path}`,
-                pageTitle: company.pages[(i + turn) % company.pages.length]!.title,
-                snippet: faker.lorem.sentence(),
-                type: "chunk",
-                score: 0.71 + rng() * 0.27,
-              },
-            ]
-          : null,
+        evidence,
         visualSpec: withVisual
           ? {
               type: "stats",
@@ -720,6 +751,16 @@ async function seedConversations(company: SeededCompany, latestDocIds: string[])
               },
             }
           : null,
+        // Assistant rows carry the same persist-time meta the chat path
+        // writes (top_similarity read from the evidence scores), so the
+        // radar's confidence column demos truthfully.
+        meta: isUser
+          ? userMeta
+          : buildMessageMeta({
+              evidence,
+              model: "gpt-4o-mini",
+              latencyMs: randInt(rng, 500, 2600),
+            }),
         createdAt: new Date(ms),
       });
       messageCount++;

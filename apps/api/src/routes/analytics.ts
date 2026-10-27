@@ -19,6 +19,7 @@ import {
   getAgentOverview,
   getAgentQuestions,
   getAgentQualityReport,
+  getIntelRadar,
   validateReportQuery,
   REPORTS,
   withAnalyticsCache,
@@ -456,6 +457,32 @@ export const analyticsRoutes = new Elysia({ prefix: "/api/analytics" })
         summary: "Agent voice",
         description:
           "Voice calls, turns, duration, silent-call rate, and the text-vs-voice share. Counts only: no transcript or speech content is stored.",
+      },
+    }
+  )
+  .get(
+    "/intel/radar",
+    async (ctx) => {
+      const { query, set } = ctx;
+      const company = await requireCompany(ctx, "query");
+      const days = parseWindowDays(query.range);
+      if (days === null) {
+        set.status = 422;
+        return { error: RANGE_ERROR };
+      }
+      return report(set, company, {
+        label: "Intel radar",
+        errorMessage: "Intent radar unavailable - try again shortly",
+        cacheKey: `ana:v3:intel-radar:${company.id}:${days}d`,
+        compute: () => getIntelRadar(company.id, days),
+      });
+    },
+    {
+      query: t.Object({ companyId: t.String(), range: t.Optional(t.String()) }),
+      detail: {
+        summary: "Intent Radar",
+        description:
+          "Questions asked, clustered by identical wording with the shared intent vocabulary; blindspot and unanswered pairing; competitor mentions from chat-time tags. Question text is the product here — this is the surface where it returns.",
       },
     }
   )

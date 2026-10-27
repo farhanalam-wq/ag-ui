@@ -202,6 +202,84 @@ export interface VoiceAnalytics {
   freshness: Freshness;
 }
 
+/* ------------------------------------------------------------------ */
+/* Intelligence — Intent Radar + Signals (spec §8).                     */
+/* ------------------------------------------------------------------ */
+
+export interface IntelCluster {
+  /** Normalized question text — the grouping key, stable across reports. */
+  key: string;
+  /** The most recent original wording in the cluster, for display. */
+  question: string;
+  volume: number;
+  conversations: number;
+  /** Detected intent labels; empty means unclassified. */
+  intents: string[];
+  answered: number;
+  grounded: number;
+  /** Answered but the reply carried no evidence — the blindspot count. */
+  blindspot: number;
+  /** No assistant reply followed the question. */
+  unanswered: number;
+  /** Mean retrieval confidence of the paired replies. Null when none reported one. */
+  avgSimilarity: number | null;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+export interface IntelCompetitor {
+  name: string;
+  mentions: number;
+  /** Up to three verbatim snippets from the conversations that mentioned it. */
+  quotes: string[];
+}
+
+export interface IntelRadarAnalytics {
+  kind: "intel-radar";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  /** Daily counts — questions, highIntent, blindspot, unanswered. */
+  trend: { d: string; questions: number; highIntent: number; blindspot: number; unanswered: number }[];
+  clusters: IntelCluster[];
+  competitors: IntelCompetitor[];
+  /** True when the message scan hit its cap; figures are the most recent slice. */
+  scanCapped: boolean;
+  freshness: Freshness;
+}
+
+export type SignalDraftStatus = "DRAFT" | "APPROVED" | "DISMISSED";
+
+export interface SignalDraftRow {
+  id: string;
+  companyId: string;
+  clusterKey: string;
+  question: string;
+  status: SignalDraftStatus;
+  /** The drafted FAQ; null until generated. */
+  faq: { question: string; answer: string; sources: { title: string; url: string }[] } | null;
+  /** The public FAQPage JSON-LD, ready for a page's <head> or a CMS field. */
+  jsonld: unknown | null;
+  /** The model that produced the answer, for provenance. */
+  model: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface SignalDraftList {
+  drafts: SignalDraftRow[];
+}
+
+export interface SignalDraftGenerateResult {
+  existing: boolean;
+  draft: SignalDraftRow;
+}
+
+export interface SignalDraftRefusal {
+  error: "no-source" | "insufficient-source";
+  message: string;
+}
+
 export interface ConversionAnalytics {
   companyId: string;
   rangeDays: number;
@@ -817,6 +895,37 @@ class ApiClient {
   }
 
   /**
+   * Intelligence read/write: same error surface as analyticsRequest, plus a
+   * method/body, plus refusal bodies (`no-source`, `insufficient-source`)
+   * carried as the ApiError message — a refusal is an answer the UI shows,
+   * not a stack trace.
+   */
+  private async intelligenceRequest<T>(path: string, init?: RequestInit): Promise<T> {
+    const res = await authedFetch(`${this.baseUrl}${path}`, init);
+    if (res.ok) return (await res.json()) as T;
+    let body: { error?: string; message?: string; details?: unknown } | null = null;
+    try {
+      body = await res.json();
+    } catch {
+      /* not JSON */
+    }
+    const retryAfter = Number(res.headers.get("retry-after"));
+    throw new ApiError(
+      res.status,
+      res.status === 422
+        ? "invalid"
+        : res.status === 404
+          ? "not-found"
+          : res.status === 429
+            ? "rate-limited"
+            : "upstream",
+      body?.message ?? body?.error ?? `Intelligence request failed: HTTP ${res.status}`,
+      body?.details,
+      Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined
+    );
+  }
+
+  /**
    * Auth endpoints. The API sets/clears the `ag_session` cookie itself, so the
    * client only serializes the body; credentials are included by `authedFetch`.
    * Errors surface with the API's `{ error }` message whenever present —
@@ -1086,6 +1195,47 @@ class ApiClient {
     audience: (companyId: string, range = "30d"): Promise<AudienceAnalytics> =>
       this.analyticsRequest(
         `/api/analytics/audience?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      ),
+  };
+
+  /**
+   * Intelligence endpoints (spec §8): the Intent Radar read + the Signals
+   * draft lifecycle. Draft generation is an on-demand, human-triggered LLM
+   * call; refusals (no-source / insufficient-source) arrive as ApiErrors
+   * whose message is display-ready.
+   */
+  intelligence = {
+    radar: (companyId: string, range = "14d"): Promise<IntelRadarAnalytics> =>
+      this.analyticsRequest(
+        `/api/analytics/intel/radar?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      ),
+
+    drafts: (companyId: string): Promise<SignalDraftList> =>
+      this.analyticsRequest(`/api/analytics/intel/drafts?companyId=${encodeURIComponent(companyId)}`),
+
+    generateDraft: async (
+      companyId: string,
+      clusterKey: string,
+      question: string
+    ): Promise<SignalDraftGenerateResult> =>
+      this.intelligenceRequest(`/api/analytics/intel/drafts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId, clusterKey, question }),
+      }),
+
+    setDraftStatus: async (
+      companyId: string,
+      draftId: string,
+      status: SignalDraftStatus
+    ): Promise<{ draft: SignalDraftRow }> =>
+      this.intelligenceRequest(
+        `/api/analytics/intel/drafts/${encodeURIComponent(draftId)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ companyId, status }),
+        }
       ),
   };
 
