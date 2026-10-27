@@ -55,12 +55,19 @@ import { MetricGrid } from "@/components/analytics/metric-tile";
 import { MetricStory } from "@/components/analytics/metric-story";
 import { CompositionBar } from "@/components/analytics/composition-bar";
 import { BreakdownTable } from "@/components/analytics/breakdown-table";
+import { TrendCard } from "@/components/analytics/trend-card";
 import { useEChartsTheme } from "@/components/charts/echarts-theme";
 
 // ECharts island: the bubble layout is why ECharts is on this page at all.
 const EChart = dynamic(
   () => import("@/components/charts/echarts").then((m) => m.EChart),
   { ssr: false, loading: () => <Skeleton className="h-[280px] w-full" /> }
+);
+
+// Recharts island: the per-day stacked composition.
+const RadarTrendChart = dynamic(
+  () => import("./radar-trend-chart").then((m) => m.RadarTrendChart),
+  { ssr: false, loading: () => <Skeleton className="h-[220px] w-full" /> }
 );
 
 const BUBBLE_CLUSTERS = 18;
@@ -284,6 +291,38 @@ export function RadarView({ data }: { data: IntelRadarAnalytics }) {
     return answered > 0 ? (Number(t.blindspot) / answered) * 100 : null;
   });
 
+  /* ---------------------------------------------------------------- */
+  /* The daily composition: what held up, what didn't, what never      */
+  /* got an answer. Only drawn from two days on — a single day is a    */
+  /* bar the sparklines already draw smaller.                          */
+  /* ---------------------------------------------------------------- */
+  const trendRows = useMemo(
+    () =>
+      data.trend.map((t) => ({
+        d: t.d,
+        sourced: Math.max(
+          0,
+          Number(t.questions) - Number(t.blindspot) - Number(t.unanswered)
+        ),
+        blindspot: Number(t.blindspot),
+        noReply: Number(t.unanswered),
+      })),
+    [data]
+  );
+
+  const trendInsight = useMemo(() => {
+    if (trendRows.length < 2) return null;
+    const peak = trendRows.reduce((a, t) =>
+      t.sourced + t.blindspot + t.noReply > a.sourced + a.blindspot + a.noReply
+        ? t
+        : a
+    );
+    const peakTotal = peak.sourced + peak.blindspot + peak.noReply;
+    return `Busiest day ${peak.d} with ${peakTotal.toLocaleString()} question${
+      peakTotal === 1 ? "" : "s"
+    }; blindspots have been ${Number(data.totals.blindspotRate ?? 0).toLocaleString()}% of answered questions across the window.`;
+  }, [trendRows, data]);
+
   const empty =
     Number(data.totals.questions ?? 0) === 0 &&
     data.competitors.length === 0;
@@ -332,6 +371,17 @@ export function RadarView({ data }: { data: IntelRadarAnalytics }) {
               },
             ]}
           />
+
+          {trendInsight && (
+            <TrendCard
+              title="Questions per day"
+              description="Each day's questions, stacked by how the agent's answers stood up."
+              insight={trendInsight}
+              footer="Sourced = the reply had retrieved evidence behind it. Blindspot = answered without evidence. No reply = nothing answered at all — a different failure from a blindspot. Days without questions don't appear as columns; the axis lists only days in the scan."
+            >
+              <RadarTrendChart data={trendRows} />
+            </TrendCard>
+          )}
 
           <CompositionBar
             title="What visitors ask for"

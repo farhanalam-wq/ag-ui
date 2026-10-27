@@ -12,10 +12,12 @@
 
 import { faker } from "@faker-js/faker";
 import {
+  buildFaqJsonLd,
   buildMessageMeta,
   mergeMessageMeta,
   type CompetitorMention,
 } from "../packages/shared/src/index";
+import { normalizeClusterKey } from "../packages/analytics/src/index";
 import {
   db,
   brands,
@@ -31,6 +33,7 @@ import {
   errorEvents,
   facts,
   messages,
+  signalDrafts,
   users,
   widgetKeyDomains,
   widgetKeys,
@@ -772,6 +775,143 @@ async function seedConversations(company: SeededCompany, latestDocIds: string[])
   return messageCount;
 }
 
+/* ------------------------------------------------------------------ drafts */
+
+/**
+ * Example Signals drafts, one per approval state, keyed by company and
+ * question index into `CompanySpec.questions`. The cluster key is computed
+ * with the radar's own `normalizeClusterKey`, so a seeded draft and a
+ * deep-linked "Draft an FAQ in Signals" request for the same wording meet —
+ * the demo loop closes instead of stacking a second draft.
+ *
+ * Honesty rules the seed follows: `model` says "seed-demo" (no model ran —
+ * claiming gpt-4o-mini wrote these would be the exact fabrication the
+ * module polices), and every answer only says what the referenced seeded
+ * pages plausibly contain.
+ */
+const SEED_DRAFTS: Record<
+  string,
+  Array<{
+    questionIndex: number;
+    status: "DRAFT" | "APPROVED" | "DISMISSED";
+    answer: string;
+    sourcePages: number[];
+  }>
+> = {
+  northstar: [
+    {
+      questionIndex: 1,
+      status: "DRAFT",
+      answer:
+        "Pricing scales with usage rather than seats: each plan includes a monthly ingestion allowance, and teams above it are billed per additional million events at the rates published on the Pricing page. Volume commitments beyond the published tiers sit on the Enterprise plan, where the allowance is negotiated. The tier table and the overage rates are on the Pricing page.",
+      sourcePages: [1, 15],
+    },
+    {
+      questionIndex: 3,
+      status: "APPROVED",
+      answer:
+        "The Team plan covers shared alerting with 14-day trace retention. Enterprise adds SSO/SCIM, 90-day retention, a private deployment option and a named support engineer. Both plans use the same ingestion pricing; the differences are governance and retention, not features per seat.",
+      sourcePages: [1, 15],
+    },
+    {
+      questionIndex: 4,
+      status: "DISMISSED",
+      answer:
+        "Trace retention depends on your plan: 14 days on Team, 90 days on Enterprise. Longer windows are on the roadmap but cannot be scheduled today — if a compliance requirement needs more, contact sales and the team will confirm what is possible.",
+      sourcePages: [15, 1],
+    },
+  ],
+  harbor: [
+    {
+      questionIndex: 1,
+      status: "DRAFT",
+      answer:
+        "Shipping is calculated at checkout from the order's weight and destination. Standard delivery within the US is free on orders over $120, and the full table of rates is on the Shipping and returns page; international rates are quoted per region in the same place.",
+      sourcePages: [13],
+    },
+    {
+      questionIndex: 2,
+      status: "APPROVED",
+      answer:
+        "You can return any unused item within 30 days of delivery for a full refund, using the prepaid label included with the order. Made-to-order pieces are final sale. The full policy, including condition requirements, is on the Shipping and returns page.",
+      sourcePages: [13],
+    },
+    {
+      questionIndex: 6,
+      status: "DISMISSED",
+      answer:
+        "Several pieces in the table and lighting collections can be made to order in adjusted dimensions. Lead times run six to ten weeks, and custom pieces are final sale. Send your dimensions through the contact page and the workshop will confirm what is possible.",
+      sourcePages: [11, 12, 6],
+    },
+  ],
+  lumen: [
+    {
+      questionIndex: 2,
+      status: "DRAFT",
+      answer:
+        "Brand strategy engagements start from a fixed-scope sprint and scale with the number of workstreams; most projects land within the ranges published on the Services page. The exact figure depends on research depth and deliverables, and we quote after the first call.",
+      sourcePages: [14, 13],
+    },
+    {
+      questionIndex: 3,
+      status: "APPROVED",
+      answer:
+        "A full rebrand typically runs eight to twelve weeks end to end: two to three weeks of strategy, four to six of design, and the remainder for rollout and guidelines. The phase breakdown is described on the Services page.",
+      sourcePages: [13],
+    },
+    {
+      questionIndex: 8,
+      status: "DISMISSED",
+      answer:
+        "Yes — after launch we offer a quarterly retainer covering design QA, campaign assets, and evolution of the system as it is used. Retainer scope is outlined on the Services page, and the hours are agreed each quarter.",
+      sourcePages: [13],
+    },
+  ],
+};
+
+/** sourcePages indexes into the company's `pages` spec. */
+function pageSource(
+  company: SeededCompany,
+  index: number
+): { title: string; url: string } {
+  const page = company.pages[index] ?? company.pages[0]!;
+  return { title: page.title, url: `${company.url}${page.path}` };
+}
+
+async function seedDrafts(company: SeededCompany): Promise<number> {
+  const specs = SEED_DRAFTS[company.key] ?? [];
+  if (specs.length === 0) return 0;
+
+  // Stagger the timestamps so the queue reads as a history, not a burst:
+  // the draft created first, decided later; review is the freshest state.
+  const updatedAtDays: Record<"DRAFT" | "APPROVED" | "DISMISSED", number> = {
+    DRAFT: 1,
+    APPROVED: 2,
+    DISMISSED: 6,
+  };
+
+  const rows: Array<typeof signalDrafts.$inferInsert> = specs.map((spec, i) => {
+    const question = company.questions[spec.questionIndex]!;
+    const sources = spec.sourcePages.map((p) => pageSource(company, p));
+    return {
+      companyId: company.id,
+      clusterKey: normalizeClusterKey(question),
+      question,
+      status: spec.status,
+      faq: { question, answer: spec.answer, sources },
+      jsonld: buildFaqJsonLd(question, spec.answer),
+      // Truthful provenance: no model ran here. The UI renders
+      // "drafted by seed-demo", which is exactly what happened.
+      model: "seed-demo",
+      createdAt: daysAgo(7 + i, 10 + i, 15),
+      updatedAt: daysAgo(updatedAtDays[spec.status], 14 + i, 30),
+    };
+  });
+
+  await db.insert(signalDrafts).values(rows).onConflictDoNothing();
+  return rows.length;
+}
+
 /* ------------------------------------------------------------------ errors */
 
 async function seedErrors(company: SeededCompany): Promise<number> {
@@ -836,6 +976,7 @@ export async function seedCompanyContent(
   await seedBrand(company);
   await seedWidgetKeys(company, owner);
   const messages = await seedConversations(company, docIds);
+  const drafts = await seedDrafts(company);
   const errors = await seedErrors(company);
-  return { messages, errors };
+  return { messages, errors, drafts };
 }
