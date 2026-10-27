@@ -41,6 +41,30 @@ export function AgentQualityTab({
 }) {
   const trend = useMemo(() => data.trend.map((t) => ({ ...t })), [data]);
 
+  // Caption for the answers chart: volume momentum, halves of the range.
+  const answersInsight = useMemo(() => {
+    if (data.trend.length < 4) return null;
+    const half = Math.floor(data.trend.length / 2);
+    const sum = (rows: typeof data.trend) =>
+      rows.reduce((a, t) => a + Number(t.answers ?? 0), 0);
+    const first = sum(data.trend.slice(0, half));
+    const second = sum(data.trend.slice(half));
+    if (first === 0 && second === 0) return null;
+    if (first === 0) return `All ${second} answers arrived in the second half of the range.`;
+    const pct = Math.round(((second - first) / first) * 1000) / 10;
+    return `Answers ${pct >= 0 ? "rose" : "fell"} ${Math.abs(pct)}% from the first to the second half of the range.`;
+  }, [data]);
+  // Caption for the rate chart: the weakest day — dated and factual, never a
+  // cause claim (the cause belongs to whoever reads it, as with anomalies).
+  const rateInsight = useMemo(() => {
+    const rated = data.trend.filter((t) => Number(t.answers ?? 0) > 0);
+    if (rated.length < 2) return null;
+    const worst = rated.reduce((a, b) =>
+      Number(b.groundedAnswerRate ?? 0) < Number(a.groundedAnswerRate ?? 0) ? b : a
+    );
+    return `Weakest day: ${worst.d.slice(5)} grounded ${Number(worst.groundedAnswerRate).toFixed(1)}% of ${Number(worst.answers)} answers.`;
+  }, [data]);
+
   return (
     <div className="space-y-4">
       <MetricGrid
@@ -49,9 +73,15 @@ export function AgentQualityTab({
           {
             id: "groundedAnswerRate",
             value: data.totals.groundedAnswerRate,
+            sparkline: data.trend.map((t) =>
+              Number(t.answers ?? 0) > 0 ? Number(t.groundedAnswerRate ?? 0) : null
+            ),
           },
           { id: "answersWithoutEvidence", value: data.totals.answersWithoutEvidence },
-          { id: "answerTimeP50", value: data.totals.answerTimeP50Sec },
+          {
+            id: "answerTimeP50",
+            value: data.totals.answerTimeP50Sec,
+          },
           { id: "answerTimeP95", value: data.totals.answerTimeP95Sec },
         ]}
       />
@@ -59,6 +89,7 @@ export function AgentQualityTab({
       <TrendCard
         title="Answers and grounding"
         description="Per day: answers written (solid) and answers that cited a source (dashed)."
+        insight={answersInsight ?? undefined}
       >
         <SeriesTrendChart
           data={trend}
@@ -81,6 +112,7 @@ export function AgentQualityTab({
       <TrendCard
         title="Grounding rate"
         description="Grounded share of that day's answers — the quality signal the counts above only imply."
+        insight={rateInsight ?? undefined}
         footer="Days with answers but no grounded ones read 0%; days without answers do not exist in the report."
       >
         <SeriesTrendChart
@@ -107,6 +139,7 @@ export function AgentQualityTab({
           { key: "groundedAnswers", label: "Grounded" },
           { key: "groundedAnswerRate", label: "Rate", format: "percent1" },
         ]}
+        barKey="answers"
         empty="No answers in this range."
       />
 

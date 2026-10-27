@@ -58,6 +58,7 @@ export function BreakdownTable<T extends { label: string }>({
   empty = "No data in this range.",
   footer,
   barKey,
+  insight,
   className,
 }: {
   title: string;
@@ -74,6 +75,11 @@ export function BreakdownTable<T extends { label: string }>({
    * ranked lists (top pages, referrers, channels); skip for lookup tables.
    */
   barKey?: string;
+  /**
+   * The takeaway, one sentence — same contract as TrendCard's caption: a
+   * finding computed from the data by the tab, not a definition.
+   */
+  insight?: React.ReactNode;
   className?: string;
 }) {
   const max = barKey
@@ -85,6 +91,15 @@ export function BreakdownTable<T extends { label: string }>({
         <CardTitle className="text-[15px] font-semibold">{title}</CardTitle>
         {description && (
           <CardDescription className="text-[13px]">{description}</CardDescription>
+        )}
+        {insight && (
+          <p className="mt-1 inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground">
+            <span
+              className="size-1.5 shrink-0 rounded-full bg-[hsl(var(--chart-1))]"
+              aria-hidden="true"
+            />
+            {insight}
+          </p>
         )}
       </CardHeader>
       <CardContent>
