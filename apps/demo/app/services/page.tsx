@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PageIntro } from "@/components/page-intro";
 import { services } from "@/lib/content";
+import { routeSlug } from "@/lib/route-slug";
 
 type ServiceGuidance = {
   scope: string;
@@ -28,9 +29,9 @@ const serviceGuidance: Record<string, ServiceGuidance> = {
       "Sequencing initiatives when capacity or investment is constrained.",
       "Clarifying how an operating-model or portfolio choice supports the organization’s direction.",
     ],
-    example: "Illustrative example: a leadership team with several growth ideas could compare them against customer needs, available capacity, and long-term direction before choosing a sequence of work.",
-    benefit: "The intended benefit is a shared basis for prioritization and clearer ownership, so teams can assess new requests against agreed choices rather than treating every opportunity as equally urgent.",
-    boundaries: "Strategy work supports decision-making; it does not guarantee commercial performance, replace leaders’ accountability, or remove the need to revisit choices as conditions change.",
+    example: "Hypothetical scenario, not a client case: a leadership team weighing several growth ideas could compare them against customer needs, available capacity, and long-term direction before choosing a sequence of work.",
+    benefit: "The intended benefit is a shared basis for prioritization and decision-making, with agreed criteria teams can use to assess new requests and revisit choices as conditions change.",
+    boundaries: "Strategy work supports decision-making; it does not guarantee commercial performance or transfer leaders’ accountability for the choices they make.",
     faqs: [
       {
         question: "How is strategy different from a plan?",
@@ -56,8 +57,8 @@ const serviceGuidance: Record<string, ServiceGuidance> = {
       "Redesigning a process that is being moved into a digital channel.",
       "Coordinating governance, training, and operational readiness around a technology rollout.",
     ],
-    example: "Illustrative example: before introducing a new case-management tool, a team could map how requests move today, identify hand-offs that cause delay, and plan training around the redesigned process.",
-    benefit: "A joined-up view can make dependencies and adoption needs visible earlier, helping teams coordinate technical delivery with service operations and the people affected by change.",
+    example: "Hypothetical scenario, not a client case: before introducing a new case-management tool, a team could map how requests move today, identify hand-offs that may cause delay, and plan training around a redesigned process.",
+    benefit: "A joined-up view can surface dependencies and adoption needs, helping teams sequence technology work alongside process changes, operational readiness, and support for affected people.",
     boundaries: "This work is not a software product, a promise to implement or host a particular platform, or a substitute for specialist security, legal, or regulatory assurance. Technology is one possible part of the response, not the starting assumption.",
     faqs: [
       {
@@ -84,8 +85,8 @@ const serviceGuidance: Record<string, ServiceGuidance> = {
       "Improving transitions between digital self-service and human support.",
       "Aligning customer-facing teams around consistent information and escalation paths.",
     ],
-    example: "Illustrative example: a service team could trace a customer’s route from an initial question to resolution, then identify where clearer instructions or a better hand-off would remove avoidable effort.",
-    benefit: "A shared journey view can help teams prioritize changes around customer needs and decide how to learn whether those changes are useful in practice.",
+    example: "Hypothetical scenario, not a client case: a service team could trace a customer’s route from an initial question to resolution, then identify where clearer instructions or a better hand-off might reduce avoidable effort.",
+    benefit: "A shared journey view can help teams pinpoint gaps in information or hand-offs, prioritize changes around customer needs, and decide how to learn whether those changes are useful.",
     boundaries: "Journey work informs service improvement but is not a guarantee of customer satisfaction or a substitute for formal accessibility, compliance, or consumer-protection reviews where those are required.",
     faqs: [
       {
@@ -112,8 +113,8 @@ const serviceGuidance: Record<string, ServiceGuidance> = {
       "Aligning operational measures with the decisions teams need to make.",
       "Clarifying escalation routes and ownership when work falls outside expected conditions.",
     ],
-    example: "Illustrative example: a team could compare its current performance measures with the decisions it needs to make, then simplify reporting and clarify who acts when a threshold is reached.",
-    benefit: "Clearer responsibilities and more relevant decision signals can help teams see where action is needed and focus measurement on operational use rather than reporting alone.",
+    example: "Hypothetical scenario, not a client case: a team could compare its current performance measures with the decisions it needs to make, then simplify reporting and clarify who should act when a threshold is reached.",
+    benefit: "Clearer responsibilities and decision-relevant measures can help teams identify where action is needed and focus reporting on operational use.",
     boundaries: "The work does not by itself validate every source record, replace operational owners, or require a new data platform. Specialist data engineering, system implementation, or assurance may need separate scoping.",
     faqs: [
       {
@@ -152,7 +153,7 @@ export default function ServicesPage() {
                 throw new Error(`Missing service guidance for "${service.title}"`);
               }
 
-              const sectionId = service.title.toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+              const sectionId = routeSlug(service.title);
 
               return (
                 <article className="service-detail" id={sectionId} key={service.number}>
@@ -171,7 +172,7 @@ export default function ServicesPage() {
                     <ol>{guidance.workflow.map((step) => <li key={step}>{step}</li>)}</ol>
                     <h4>Typical use cases</h4>
                     <ul>{guidance.useCases.map((useCase) => <li key={useCase}>{useCase}</li>)}</ul>
-                    <h4>Illustrative example</h4>
+                    <h4>Hypothetical example</h4>
                     <p>{guidance.example}</p>
                     <h4>Potential benefit</h4>
                     <p>{guidance.benefit}</p>
@@ -184,6 +185,9 @@ export default function ServicesPage() {
                         <p>{faq.answer}</p>
                       </div>
                     ))}
+                    <Link className="text-link" href={`/services/${sectionId}`}>
+                      View {service.title} details <span aria-hidden="true">→</span>
+                    </Link>
                   </div>
                 </article>
               );

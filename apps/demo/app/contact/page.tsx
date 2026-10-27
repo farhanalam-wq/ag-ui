@@ -5,7 +5,7 @@ import { PageIntro } from "@/components/page-intro";
 
 export const metadata: Metadata = {
   title: "Contact us",
-  description: "Get in touch with Alderwick Advisory to talk through a business, customer experience, or transformation challenge.",
+  description: "Illustrative contact page for Alderwick Advisory. The example address is not a working inbox, and the form does not send or save inquiries.",
 };
 
 export default function ContactPage() {
@@ -13,18 +13,18 @@ export default function ContactPage() {
     <main id="main-content">
       <PageIntro
         title="Contact Alderwick Advisory"
-        description="Explore the right next step for a business, customer experience, or transformation challenge. The contact details and form on this page are illustrative, not live."
+        description="Alderwick Advisory’s focus is making complex change easier to understand and act on. The contact details here are illustrative, and the form does not send or save inquiries."
       />
       <section className="section contact-section">
         <div className="container contact-grid">
           <div className="contact-copy">
             <p className="eyebrow">Start with the challenge</p>
-            <h2>A useful first conversation begins with what needs to change.</h2>
-            <p>Describe the decision, service, or way of working you are exploring, and what a better outcome could look like. You do not need a finished brief: a few points about the context and the people affected are enough to frame the question.</p>
+            <h2>A useful inquiry begins with what needs to change.</h2>
+            <p>For a real inquiry channel, describe the decision, service, or way of working you are exploring, and what a better outcome could look like. You do not need a finished brief: a few points about the context, the people affected, and practical constraints are enough to frame the question.</p>
             <div className="contact-detail">
-              <span>Illustrative contact detail</span>
-              <a href="mailto:hello@alderwick.example">hello@alderwick.example</a>
-              <small>This reserved example address is not a working inbox and does not reach Alderwick Advisory.</small>
+              <span>Illustrative, nonworking contact detail</span>
+              <span>hello@alderwick.example</span>
+              <small>This reserved example address is not a working inbox. Do not use it to contact Alderwick Advisory.</small>
             </div>
             <div className="contact-detail">
               <span>Helpful context</span>
@@ -45,11 +45,11 @@ export default function ContactPage() {
             </details>
             <details>
               <summary>Is this form connected to a team?</summary>
-              <p>No. This is an illustrative form only. Submitting it displays an on-page confirmation; the form does not transmit or store your entries, and it cannot arrange a response. The entries remain in your browser page until you leave or refresh it; browser features such as autofill are controlled separately.</p>
+              <p>No. This is an illustrative form only. Submitting it displays an on-page confirmation; the form does not transmit or save your entries, and it cannot arrange a response. While the page remains open, entries are visible in its fields; browser autofill and page-restoration behavior are controlled separately.</p>
             </details>
             <details>
               <summary>What if I entered something by mistake?</summary>
-              <p>No message is sent when you submit. You can clear the fields or leave or refresh the page; this form does not provide a way to retrieve or send an entry. Please do not use it to share sensitive or confidential details.</p>
+              <p>No message is sent when you submit. You can clear the fields or leave or refresh the page; this form does not provide a way to retrieve or send an entry. Please use sample text only, not sensitive or confidential details.</p>
             </details>
             <details>
               <summary>Where can I learn more first?</summary>

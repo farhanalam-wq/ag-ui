@@ -1,6 +1,7 @@
 export type ArticleSection = {
   heading: string;
   paragraphs: string[];
+  steps?: string[];
 };
 
 export type ArticleFaq = {
@@ -13,6 +14,7 @@ export type Article = {
   title: string;
   category: string;
   date: string;
+  datePublished: string;
   author: string;
   readingTime: string;
   summary: string;
@@ -20,6 +22,7 @@ export type Article = {
   imageAlt: string;
   introduction: string;
   sections: ArticleSection[];
+  takeaways: string[];
   faqs: ArticleFaq[];
 };
 
@@ -29,6 +32,7 @@ export const articles: Article[] = [
     title: "Turning strategy into everyday decisions",
     category: "Strategy",
     date: "October 8, 2026",
+    datePublished: "2026-10-08",
     author: "Alderwick Editorial Team",
     readingTime: "5 min read",
     summary: "A strategy becomes actionable when priorities clarify everyday choices, shape resource decisions, and give teams a practical way to learn from results.",
@@ -60,8 +64,15 @@ export const articles: Article[] = [
       {
         heading: "A five-step working session for one priority",
         paragraphs: [
-          "Bring together the people closest to one recurring decision affected by the priority. Work through five steps: (1) name the decision and the outcome it should support; (2) review a recent, ordinary example; (3) identify the information, authority, and constraints that shaped it; (4) agree on one small change to guidance, process, or ownership; and (5) set a date to review a few comparable decisions. Capture the rule in the place people already use to do the work, rather than creating a parallel strategy document.",
+          "Bring together the people closest to one recurring decision affected by the priority. Capture the resulting guidance where people already do the work, rather than creating a parallel strategy document.",
           "Hypothetical example: a regional service team must choose between resolving straightforward requests quickly and reserving capacity for complex cases. Leaders could clarify how to identify complexity, set a threshold for escalation, and review whether the rule leaves customers waiting unnecessarily. This is an illustration, not a report of a particular organization's experience.",
+        ],
+        steps: [
+          "Name the decision and the outcome it should support.",
+          "Review a recent, ordinary example.",
+          "Identify the information, authority, and constraints that shaped it.",
+          "Agree on one small change to guidance, process, or ownership.",
+          "Set a date to review a few comparable decisions.",
         ],
       },
       {
@@ -71,13 +82,11 @@ export const articles: Article[] = [
           "Rules can also become stale as customer needs and operating conditions change. Treat them as a useful starting point, not a script: state when judgment is expected, how exceptions are raised, and who can revise the guidance. A short review cycle helps keep the direction steady while allowing the method to improve.",
         ],
       },
-      {
-        heading: "Takeaways for the next step",
-        paragraphs: [
-          "Start with a real decision rather than another strategy summary. Make the intended trade-off understandable, give teams enough authority and context to act, and remove operating signals that pull in the opposite direction.",
-          "Then keep a regular learning loop: ask where the guidance helped, where it created an unintended consequence, and what should change. Strategy becomes more durable when people can use it with confidence in ordinary moments—and when leaders are willing to refine it in response to what those moments reveal.",
-        ],
-      },
+    ],
+    takeaways: [
+      "Start with a real decision rather than another strategy summary.",
+      "Make the intended trade-off understandable, give teams enough authority and context to act, and remove operating signals that pull in the opposite direction.",
+      "Keep a regular learning loop: ask where guidance helped, where it created an unintended consequence, and what should change.",
     ],
     faqs: [
       {
@@ -95,6 +104,7 @@ export const articles: Article[] = [
     title: "A practical guide to digital transformation",
     category: "Transformation",
     date: "September 17, 2026",
+    datePublished: "2026-09-17",
     author: "Alderwick Editorial Team",
     readingTime: "5 min read",
     summary: "A practical transformation starts with a service or operational need, then aligns technology, process, ownership, and learning around a better outcome.",
@@ -133,8 +143,15 @@ export const articles: Article[] = [
       {
         heading: "A five-step path from need to sustained service",
         paragraphs: [
-          "Use this sequence to keep the effort grounded: (1) describe the user or operational need and how it is currently met; (2) map the journey, including exceptions and handoffs; (3) identify the riskiest assumptions and test them with the people affected; (4) deliver a bounded change with named operational owners and support; and (5) review outcomes and unintended effects before deciding whether to adapt, extend, or stop. Record the decision at each step so new information can change the plan.",
+          "Use this sequence to keep the effort grounded. Record the decision at each step so new information can change the plan.",
           "The sequence is a guide, not a promise that delivery will be linear. Legal, security, accessibility, procurement, integration, or policy constraints may require additional review or a different order. Bring the relevant specialists in early enough to shape options, while keeping the core question—whether the service need is being met—visible throughout.",
+        ],
+        steps: [
+          "Describe the user or operational need and how it is currently met.",
+          "Map the journey, including exceptions and handoffs.",
+          "Identify the riskiest assumptions and test them with the people affected.",
+          "Deliver a bounded change with named operational owners and support.",
+          "Review outcomes and unintended effects before deciding whether to adapt, extend, or stop.",
         ],
       },
       {
@@ -151,13 +168,11 @@ export const articles: Article[] = [
           "There are real trade-offs in sequencing. A tightly controlled release can reduce exposure but delay benefits; a shared platform can support consistency but demand difficult migration and change work. Compare options against the original need, ongoing support capacity, and the cost of reversibility—not novelty alone.",
         ],
       },
-      {
-        heading: "Takeaways for the next step",
-        paragraphs: [
-          "Write down the user or operational need in concrete terms before committing to a technology answer. Map the work around it, test consequential assumptions early, and make responsibilities and trade-offs visible to the people affected.",
-          "Deliver in steps that create evidence, not just activity. Success is a service that works better in practice and has the ownership to keep working—not simply a system that has gone live.",
-        ],
-      },
+    ],
+    takeaways: [
+      "Write down the user or operational need in concrete terms before committing to a technology answer.",
+      "Map the work around it, test consequential assumptions early, and make responsibilities and trade-offs visible to the people affected.",
+      "Deliver in steps that create evidence, not just activity; a service needs clear ownership after launch.",
     ],
     faqs: [
       {
@@ -175,6 +190,7 @@ export const articles: Article[] = [
     title: "Building customer experiences across channels",
     category: "Customer experience",
     date: "August 26, 2026",
+    datePublished: "2026-08-26",
     author: "Alderwick Editorial Team",
     readingTime: "5 min read",
     summary: "Connected service depends on preserving context, clarifying ownership, and making handoffs work across digital and human channels.",
@@ -199,8 +215,15 @@ export const articles: Article[] = [
       {
         heading: "A five-step review of a cross-channel journey",
         paragraphs: [
-          "Choose one customer need and walk through the journey as a person would: (1) identify the starting point and the successful outcome; (2) list each channel, team, and decision involved; (3) mark where context, ownership, or expectations change; (4) agree on the smallest useful improvement and who will deliver it; and (5) follow the whole journey after the change, including the route for people who need assistance. Invite staff who handle exceptions as well as those who design the standard process.",
+          "Choose one customer need and walk through the journey as a person would. Invite staff who handle exceptions as well as those who design the standard process.",
           "Hypothetical example: someone begins a change-of-address request online but cannot verify one detail. A connected service might preserve the completed information, explain why a staff check is needed, and let the next colleague see what remains unresolved. This illustrates a design principle; it does not describe an actual service or its results.",
+        ],
+        steps: [
+          "Identify the starting point and the successful outcome.",
+          "List each channel, team, and decision involved.",
+          "Mark where context, ownership, or expectations change.",
+          "Agree on the smallest useful improvement and who will deliver it.",
+          "Follow the whole journey after the change, including the route for people who need assistance.",
         ],
       },
       {
@@ -224,13 +247,11 @@ export const articles: Article[] = [
           "Use feedback carefully. A small number of comments can reveal a problem worth investigating, but they do not establish how common it is. Pair individual accounts with service observations and available operational information, and be transparent about what remains uncertain.",
         ],
       },
-      {
-        heading: "Takeaways for the next step",
-        paragraphs: [
-          "Start with a customer need and follow it across channels. Clarify who owns each handoff, what context should travel, and how a person can recover when a step does not go as planned.",
-          "Keep the experience consistent where it matters, but leave room for sound judgment and accessible alternatives. Then use customer and operational feedback together to improve the full journey over time.",
-        ],
-      },
+    ],
+    takeaways: [
+      "Start with a customer need and follow it across channels; clarify handoff ownership and what context should travel.",
+      "Make a clear recovery route available when a step does not go as planned.",
+      "Keep the experience consistent where it matters, leave room for judgment and accessible alternatives, and learn from customer and operational feedback.",
     ],
     faqs: [
       {

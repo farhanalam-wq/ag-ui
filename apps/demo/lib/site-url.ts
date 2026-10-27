@@ -1,8 +1,8 @@
-export function getSiteUrl() {
+export function getSiteUrl(allowLocalFallback = false) {
   const configuredUrl = process.env.SITE_URL;
   const rawUrl =
     configuredUrl ??
-    (process.env.NODE_ENV === "production" ? undefined : "http://localhost:3001");
+    (allowLocalFallback ? "http://localhost:3002" : undefined);
 
   if (!rawUrl) {
     throw new Error("Set SITE_URL to the canonical website origin.");

@@ -13,7 +13,7 @@ export function ContactForm() {
   return (
     <form className="contact-form" onSubmit={handleSubmit}>
       <p className="form-showcase-note">
-        Illustrative form only: all four fields are required to display the confirmation. Use placeholder text, not real contact details or confidential or sensitive information; entries are not transmitted or stored by this form.
+        Illustrative front-end only: all four fields are required to display an on-page confirmation. Use sample text, not real contact details or confidential or sensitive information; this form does not send or save entries. Browser autofill is controlled separately.
       </p>
       <div className="form-grid">
         <label>
@@ -41,12 +41,12 @@ export function ContactForm() {
         <textarea name="message" rows={5} required />
       </label>
       <div className="form-submit-row">
-        <button className="button" type="submit">Preview inquiry <span aria-hidden="true">↗</span></button>
+        <button className="button" type="submit">Show confirmation <span aria-hidden="true">↗</span></button>
         <span className="form-privacy">This form does not transmit or store entries. Browser autofill, if enabled, is managed by your browser.</span>
       </div>
       {submitted ? (
         <p className="form-confirmation" role="status">
-          The on-page confirmation is shown. No information has been sent or saved by this form, and no reply will be generated.
+          This on-page confirmation is the only result. No information has been sent or saved by this form, and no reply will be generated.
         </p>
       ) : null}
     </form>

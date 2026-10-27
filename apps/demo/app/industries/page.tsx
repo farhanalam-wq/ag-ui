@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageIntro } from "@/components/page-intro";
+import { companyProfile } from "@/lib/company-profile";
 import { industries } from "@/lib/content";
+import { routeSlug } from "@/lib/route-slug";
 
 type IndustryGuidance = {
   challenges: string;
@@ -114,7 +116,7 @@ export default function IndustriesPage() {
       />
       <section className="section industries-section">
         <div className="container">
-          <div className="section-heading"><h2>Experience shaped by context.</h2><p>We bring a practical transformation lens to the customer, operational, and organizational questions that arise in different industries. The applications and scenarios below are illustrative; they do not describe past or current sector client engagements.</p></div>
+          <div className="section-heading"><h2>Connect priorities to practical change.</h2><p>{companyProfile.overview} The applications and scenarios below are illustrative, not accounts of past or current client engagements. Potential outcomes are possibilities to assess in each organization’s context, not guaranteed results.</p></div>
           <div className="industry-grid">
             {industries.map((industry, index) => {
               const guidance = industryGuidance[industry.title];
@@ -122,7 +124,7 @@ export default function IndustriesPage() {
                 throw new Error(`Missing industry guidance for "${industry.title}"`);
               }
 
-              const sectionId = industry.title.toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+              const sectionId = routeSlug(industry.title);
 
               return (
                 <article className={`industry-item industry-item-${index + 1}`} id={sectionId} key={industry.title}>
@@ -140,6 +142,9 @@ export default function IndustriesPage() {
                   <ul>{guidance.outcomes.map((outcome) => <li key={outcome}>{outcome}</li>)}</ul>
                   <h4>Question to explore</h4>
                   <p>{guidance.question}</p>
+                  <Link className="text-link" href={`/industries/${sectionId}`}>
+                    Explore {industry.title} details <span aria-hidden="true">→</span>
+                  </Link>
                 </article>
               );
             })}

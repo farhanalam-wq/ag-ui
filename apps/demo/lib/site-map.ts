@@ -1,3 +1,6 @@
+import { articles, industries, services } from "@/lib/content";
+import { routeSlug } from "@/lib/route-slug";
+
 export const sitePageGroups = [
   {
     title: "Company",
@@ -19,3 +22,15 @@ export const sitePageGroups = [
     ],
   },
 ] as const;
+
+export const articleCategories = [
+  ...new Set(articles.map((article) => article.category)),
+];
+
+export const publicSitePaths = [
+  ...sitePageGroups.flatMap((group) => group.pages.map((page) => page.href)),
+  ...services.map((service) => `/services/${routeSlug(service.title)}`),
+  ...industries.map((industry) => `/industries/${routeSlug(industry.title)}`),
+  ...articleCategories.map((category) => `/insights/category/${routeSlug(category)}`),
+  ...articles.map((article) => `/insights/${article.slug}`),
+];

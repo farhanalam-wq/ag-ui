@@ -17,7 +17,7 @@ export default function PrivacyPage() {
           <article className="prose legal-copy">
             <p className="legal-updated">Draft status: illustrative material; publication date and review history must be confirmed by the adopting organization.</p>
             <p>This page outlines subjects that a privacy notice may need to explain. It is not an adopted policy and makes no claim about how Alderwick Advisory or any other organization collects, uses, shares, or protects personal information. Before adapting the material, map the real site, forms, vendors, and data flows; then tailor every statement to evidence and applicable law.</p>
-            <p>On this page, the illustrative inquiry form only displays an on-screen confirmation when submitted. It does not transmit or persist the entered content. That description applies to this page’s current form behavior only, not to another site or any separate service.</p>
+            <p>On this page, the illustrative inquiry form only displays an on-screen confirmation when submitted. It does not send or save the entered content. That description applies to this page’s current form behavior only, not to another site or any separate service.</p>
             <h2>Who and what the notice covers</h2>
             <p>Identify the legal entity responsible for the relevant processing, the website or services covered, and any important limits to the notice’s scope. Explain key terms in plain language and identify where a different notice or contract may apply.</p>
             <h2>Information collected and its source</h2>
