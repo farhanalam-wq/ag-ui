@@ -53,7 +53,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
       </article>
       <section className="related-articles section">
         <div className="container"><div className="section-heading"><h2>Continue exploring</h2><p>More perspectives from Alderwick Advisory on making change practical.</p></div>
-          <div className="related-links">{articles.filter((item) => item.slug !== article.slug).map((item) => <Link href={`/insights/${item.slug}`} key={item.slug}><span>{item.category}</span><strong>{item.title}</strong><span aria-hidden="true">↗</span></Link>)}</div>
+          <div className="related-links">{articles.filter((item) => item.slug !== article.slug).map((item) => <Link href={`/insights/${item.slug}`} key={item.slug}><span>{item.category} · {item.readingTime}</span><strong>{item.title}</strong><span>{item.summary}</span><span aria-hidden="true">↗</span></Link>)}</div>
         </div>
       </section>
     </main>

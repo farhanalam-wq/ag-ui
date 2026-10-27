@@ -17,7 +17,7 @@ export default function HomePage() {
             <p className="eyebrow">Business transformation, made practical</p>
             <h1>Make complex work feel <span>clear.</span></h1>
             <p className="hero-description">
-              Alderwick Advisory helps organizations turn difficult change into focused action people can carry forward.
+              Alderwick Advisory helps organizations turn difficult change into focused action people can carry forward. We bring strategy, customer experience, and operations into the same conversation, so teams can see what needs to change and decide what to do next.
             </p>
             <div className="hero-actions">
               <Link className="button" href="/contact">Talk with us <span aria-hidden="true">↗</span></Link>
@@ -44,7 +44,10 @@ export default function HomePage() {
           <div>
             <h2>Clarity is more than a plan. It is the ability to move forward together.</h2>
             <p>
-              We connect business priorities to the customer experiences, operating choices, and everyday decisions that bring them to life.
+              We connect business priorities to the customer experiences, operating choices, and everyday decisions that bring them to life. That means looking beyond the stated ambition to understand how work happens now, where people encounter friction, and which choices will make a practical difference.
+            </p>
+            <p>
+              As an illustrative example, an organization looking to improve a customer service journey might examine both the steps customers take and the processes employees rely on to support them. The right next move depends on what that work reveals.
             </p>
           </div>
           <Link className="arrow-link" href="/about" aria-label="Learn more about Alderwick Advisory">↗</Link>
@@ -55,7 +58,7 @@ export default function HomePage() {
         <div className="container">
           <div className="section-heading">
             <h2>Support for the moments that shape what comes next.</h2>
-            <p>From setting a direction to changing how work gets done, we help teams make progress on their most important challenges.</p>
+            <p>From setting a direction to changing how work gets done, we help teams make progress on their most important challenges. Explore the areas below to see where a focused conversation could help clarify priorities, uncover options, or connect plans to delivery.</p>
           </div>
           <div className="service-preview-grid">
             {services.slice(0, 3).map((service) => (
@@ -80,10 +83,13 @@ export default function HomePage() {
             <p>
               Change is shaped by people, systems, and constraints. We bring those realities into the work early, so recommendations are useful beyond the presentation room.
             </p>
+            <p>
+              In an illustrative situation, a team introducing a new process may need to account for existing tools, decision rights, and busy operational cycles—not just the proposed workflow. Making those factors visible helps people weigh options and shape a path they can maintain.
+            </p>
             <ul className="check-list">
-              <li>Start with the outcomes people need</li>
-              <li>Make decisions and trade-offs visible</li>
-              <li>Build a path teams can maintain</li>
+              <li>Start with the outcomes people need and how they will recognize progress</li>
+              <li>Make assumptions, decisions, and trade-offs visible while options are still open</li>
+              <li>Build ownership, feedback, and practical next steps into the path forward</li>
             </ul>
             <Link className="text-link" href="/about">Get to know us <span aria-hidden="true">→</span></Link>
           </div>
@@ -94,12 +100,12 @@ export default function HomePage() {
         <div className="container benefit-layout">
           <div className="benefit-heading">
             <h2>Better change creates room for better work.</h2>
-            <p>When direction and delivery connect, teams can spend less time navigating confusion and more time improving the work itself.</p>
+            <p>When direction and delivery connect, teams can spend less time navigating confusion and more time improving the work itself. The value is not a promise of instant change; it is a clearer basis for making choices, learning, and adjusting as the work progresses.</p>
           </div>
           <div className="benefit-list">
-            <div><span>01</span><div><h3>Decisions with direction</h3><p>Give teams a clearer basis for choosing what to prioritize and what can wait.</p></div></div>
-            <div><span>02</span><div><h3>Services that make sense</h3><p>Reduce unnecessary friction across the moments that matter to customers and employees.</p></div></div>
-            <div><span>03</span><div><h3>Change people can sustain</h3><p>Build ownership and feedback into the way new practices take root.</p></div></div>
+            <div><span>01</span><div><h3>Decisions with direction</h3><p>Give teams a clearer basis for choosing what to prioritize and what can wait. A shared view of outcomes, constraints, and open questions can help turn a broad ambition into a manageable next decision.</p></div></div>
+            <div><span>02</span><div><h3>Services that make sense</h3><p>Reduce unnecessary friction across the moments that matter to customers and employees. Looking across the full journey can reveal where handoffs, unclear information, or internal processes make a service harder to use.</p></div></div>
+            <div><span>03</span><div><h3>Change people can sustain</h3><p>Build ownership and feedback into the way new practices take root. Teams need room to learn what works in day-to-day conditions and adapt when evidence or circumstances change.</p></div></div>
           </div>
         </div>
       </section>
@@ -107,7 +113,7 @@ export default function HomePage() {
       <section className="section insights-preview">
         <div className="container">
           <div className="section-heading section-heading-row">
-            <div><p className="eyebrow">Ideas for moving forward</p><h2>Useful perspectives on meaningful change.</h2></div>
+            <div><p className="eyebrow">Ideas for moving forward</p><h2>Useful perspectives on meaningful change.</h2><p>Explore practical ways to frame a challenge, ask better questions, and connect good intentions to work people can act on.</p></div>
             <Link className="text-link" href="/insights">All insights <span aria-hidden="true">→</span></Link>
           </div>
           <div className="article-preview-grid">

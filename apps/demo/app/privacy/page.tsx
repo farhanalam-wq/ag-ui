@@ -1,38 +1,42 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { PageIntro } from "@/components/page-intro";
 
 export const metadata: Metadata = {
   title: "Privacy policy",
-  description: "Sample privacy policy for the Alderwick Advisory website. Review and adapt before publication.",
+  description: "Illustrative privacy-notice draft covering information, purposes, choices, and other topics to adapt and review before publication.",
 };
 
 export default function PrivacyPage() {
   return (
     <main id="main-content">
-      <PageIntro title="Privacy policy" description="A sample privacy policy describing how a company website might communicate its approach to personal information." />
+      <PageIntro title="Privacy policy" description="Illustrative draft material explaining common topics a privacy notice may need to address. It is not a statement of an operating organization’s data practices." />
       <section className="legal-section section">
         <div className="container legal-layout">
-          <aside className="legal-notice"><strong>Sample content for review</strong><p>This policy is illustrative only. It has not been tailored to an operating business, its systems, or applicable legal requirements. Obtain qualified review before publication.</p></aside>
+          <aside className="legal-notice"><strong>Illustrative draft — qualified review required</strong><p>This material is for explanation and drafting support only. It is not a complete privacy policy, legal advice, or a description of verified business practices. Adapt it to the actual organization, data flows, jurisdictions, and applicable requirements, and have qualified privacy and legal professionals review it before use.</p></aside>
           <article className="prose legal-copy">
-            <p className="legal-updated">Sample policy date: October 2026</p>
-            <p>This sample policy describes the structure and tone of a website privacy notice. The website shown here is a showcase experience. Its sample inquiry form does not transmit or store submitted information.</p>
-            <h2>Information a real website may collect</h2>
-            <p>An operating website may receive information that a visitor chooses to provide, such as a name, business email address, and the contents of a message. The information collected depends on the features that the organization actually operates.</p>
-            <p>Website operators may also process technical information such as browser type, device details, and pages visited. This sample does not assert that Alderwick Advisory uses analytics, advertising tools, or tracking technologies.</p>
-            <h2>How information may be used</h2>
-            <p>A real organization should explain its specific purposes, such as responding to an inquiry, delivering a requested service, protecting its website, or meeting a legal obligation. It should not describe uses that are not part of its actual practices.</p>
-            <h2>Sharing and service providers</h2>
-            <p>Some organizations use service providers to host websites, manage communications, or support business operations. A published policy should identify relevant categories of providers and explain the safeguards and contractual arrangements that apply.</p>
-            <h2>Retention and security</h2>
-            <p>Personal information should be retained only as long as necessary for documented business or legal purposes. Organizations should describe their retention approach accurately and use appropriate technical and organizational safeguards.</p>
-            <h2>Choices and privacy rights</h2>
-            <p>Depending on where a person lives, they may have rights to access, correct, delete, or restrict certain uses of their information. A real policy should explain the rights that apply, how to make a request, and how the organization will respond.</p>
-            <h2>Children’s information</h2>
-            <p>A real organization should state whether its services are intended for children and describe its approach to information relating to children, consistent with applicable law.</p>
-            <h2>Changes to this notice</h2>
-            <p>If an organization changes its data practices, it should update its policy and explain when the changes take effect. The date and change history should reflect the organization’s actual review process.</p>
-            <h2>Contact about privacy</h2>
-            <p>Before publication, replace this sample section with the correct contact route for privacy questions and requests. Do not rely on the sample contact information without confirming it is monitored and appropriate.</p>
+            <p className="legal-updated">Draft status: illustrative material; publication date and review history must be confirmed by the adopting organization.</p>
+            <p>This page outlines subjects that a privacy notice may need to explain. It is not an adopted policy and makes no claim about how Alderwick Advisory or any other organization collects, uses, shares, or protects personal information. Before adapting the material, map the real site, forms, vendors, and data flows; then tailor every statement to evidence and applicable law.</p>
+            <p>On this page, the illustrative inquiry form only displays an on-screen confirmation when submitted. It does not transmit or persist the entered content. That description applies to this page’s current form behavior only, not to another site or any separate service.</p>
+            <h2>Who and what the notice covers</h2>
+            <p>Identify the legal entity responsible for the relevant processing, the website or services covered, and any important limits to the notice’s scope. Explain key terms in plain language and identify where a different notice or contract may apply.</p>
+            <h2>Information collected and its source</h2>
+            <p>Describe the specific categories of personal information actually handled, whether it comes directly from a person, a device, another organization, or another source, and which features require it. A real notice might need to distinguish information entered into a form from technical logs or information received through a service provider; include only categories verified for the organization.</p>
+            <h2>Purposes and legal grounds</h2>
+            <p>For each relevant use, explain the purpose and the applicable legal basis where required. Possible purposes can include answering a request or operating a requested service, but these are examples, not claims about the practices on this site. Explain whether providing information is optional or required and what happens if it is not provided, where that is relevant.</p>
+            <h2>Cookies and similar technologies</h2>
+            <p>Inventory cookies, pixels, local storage, analytics, embedded media, and similar technologies that the real site uses. Explain their purposes, controls, and any consent choices required in the relevant locations. Do not state that tracking is or is not used until the site and its dependencies have been checked.</p>
+            <h2>Recipients, service providers, and transfers</h2>
+            <p>Explain when information may be disclosed, the recipient categories and reasons, and any safeguards for international transfers that apply. If vendors host the site, provide analytics, or support communications, confirm their roles and the organization’s agreements before describing them.</p>
+            <h2>Retention and protection</h2>
+            <p>Set out realistic retention periods or the criteria used to determine them, based on the organization’s actual systems and legal obligations. Describe security measures only at a level that is accurate and safe to publish; do not imply that any measure eliminates risk.</p>
+            <h2>Individual choices and rights</h2>
+            <p>Explain the rights and choices available in each relevant jurisdiction, any limits or exceptions, how to submit a request, what information is needed to verify it, and how to complain to a relevant regulator when applicable. Provide a contact route that the organization has confirmed is monitored and able to handle these requests.</p>
+            <h2>Children’s information and sensitive data</h2>
+            <p>State the intended audience and explain how the organization handles information about children or sensitive categories if relevant. Confirm applicable age thresholds, consent rules, and safeguards with qualified counsel rather than relying on generic wording.</p>
+            <h2>Changes and privacy questions</h2>
+            <p>Describe how material updates will be communicated and show the actual effective date and review history. Before publication, replace this guidance with the organization’s confirmed details for privacy inquiries and requests. The <Link href="/contact">contact page</Link> currently contains an illustrative address and a form that does not send messages, so neither should be used to make a real privacy request.</p>
+            <p>For the companion illustrative website-terms material, see <Link href="/terms">Terms of use</Link>; use the <Link href="/sitemap">sitemap</Link> to find the other public pages.</p>
           </article>
         </div>
       </section>
