@@ -297,6 +297,26 @@ Read `docs/auth-tenancy.md` §5, §9, and §12.1 before touching crawl ownership
 
 - Branch policy: all of 21a-21e happens on feature branch `feat/widget-studio` cut from `main`, never directly on `main`. `main` stays deployable throughout. Merge into `main` only after 21b screenshot-diff + 21c/21d/21e acceptance is green via reviewed PR; delete the branch after merge.
 
+## 22. ✅ Fix: Intelligence routes missing from route-policy manifest — 500s on Intent Radar + Signals (P0)
+
+- Files: `apps/api/src/route-policy.ts`.
+- Symptom: every request to `/api/analytics/intel/radar` and `/api/analytics/intel/drafts` (GET/POST/PATCH) answered 500 `{error: "Route policy missing"}` — the auth plugin (`auth/plugin.ts`) 500s any route absent from the manifest before a handler runs. Both Intelligence pages failed for every company.
+- Fix: declared the four intel routes with `company("query")` (radar, drafts GET) and `company("body")` (drafts POST/PATCH, matching the routes' `requireCompany(ctx, "body")`); the per-tenant read-budget guard already runs in the routes' `onBeforeHandle`.
+- Process fix (the real lesson): the verification loop must run `bun test apps/api` alongside `bun test packages` — the route-policy drift test existed and would have failed loudly in Phase A; it was never invoked.
+- Acceptance: `bun test apps/api` drift test ("declares every live route exactly once") passes with the four routes declared; no other undeclared route surfaced. ✅ verified (40 API tests green).
+
+## 23. Robots.txt opt-in compliance in the ingestion pipeline (P0)
+
+- Files: new `packages/crawler/src/robots.ts`; `packages/crawler/src/discovery.ts`; `packages/crawler/src/index.ts` (`CrawlOptions`); `apps/api/src/routes/crawler.ts`; `packages/ingest/src/pipeline.ts` + `discover.ts`; `apps/web/lib/api-client.ts`; `apps/web/components/ingestion/ingestion-studio.tsx`.
+- Opt-in only: `useRobots` defaults to **false** everywhere (UI checkbox, API bodies, pipeline option, `CrawlOptions`). When false, robots.txt is never fetched and discovery is byte-identical to today's behavior.
+- When true: robots.txt fetched once returning `{sitemaps, rules}` (today `discoverFromRobotsTxt` fetches it and discards the rules). Rules per RFC 9309: most-specific matching `User-agent` group (`ag-ui-crawler` named group, else `*`), longest-pattern-wins, Allow beats Disallow on ties, `*` wildcard and `$` anchor. Disallowed candidates (llms.txt URLs, sitemap entries, homepage nav links, root) are dropped and counted, never queued.
+- Unreachable robots (5xx / network error): flag `robotsUnreachable` and proceed no-robots — owner-self-ingestion tooling, fail-open by decision (RFC's fail-closed on 5xx deliberately not adopted).
+- Surfaces: `DiscoveryInfo` += `robotsChecked`, `robotsSkipped`, `robotsUnreachable?`. Ingest pipeline fetch phase re-checks each URL against the rules before fetching (defense for mid-crawl-discovered links and UI-selected URLs) and reports skips in the SSE progress stream. `CompanyCrawler.crawl` gets an optional flag, default false — worker behavior preserved.
+- UI (`ingestion-studio.tsx`): checkbox "Respect robots.txt" next to the URL input, default off; rides both the `discover` and `ingest` calls so selection and crawl agree. Result lines: "Skipped N URLs flagged in robots.txt" (N > 0 only); "robots.txt unreachable — crawling without it" on failure. Sitemap-upload/manual tab stays unfiltered (owner-curated by hand).
+- `Crawl-delay` parsed and surfaced only, never enforced — `hostGapMs` remains the single politeness knob.
+- Tests: `packages/crawler/src/robots.test.ts` — `*` group, named-group specificity, longest-match, Allow/Disallow ties, `$` anchor, no-rules → allowed, malformed → fail-open; filter helper tested pure (style of `discovery-sitemap.test.ts`).
+- Acceptance: parser/filter tests green; checkbox off → identical discovery behavior; checkbox on → skipped count reported and disallowed URLs never fetched.
+
 ## Demo verification checklist (run in order) (P0) (Verification)
 
 Ran Oct 2026 against nescafe.com scoped to 100 pages (instead of the resend 50/1000 below):

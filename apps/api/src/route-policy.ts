@@ -118,6 +118,13 @@ export const ROUTE_POLICIES: readonly RoutePolicyRule[] = [
   { method: "GET", path: "/api/analytics/agent/questions", policy: company("query") },
   { method: "GET", path: "/api/analytics/agent/voice", policy: company("query") },
 
+  // Intelligence — Intent Radar + Signals drafts. The read budget guard
+  // (including the generate call) runs in the routes' onBeforeHandle.
+  { method: "GET", path: "/api/analytics/intel/radar", policy: company("query") },
+  { method: "GET", path: "/api/analytics/intel/drafts", policy: company("query") },
+  { method: "POST", path: "/api/analytics/intel/drafts", policy: company("body"), note: "draft generation; ownership from body companyId" },
+  { method: "PATCH", path: "/api/analytics/intel/drafts/:id", policy: company("body"), note: "approval gate; ownership re-checked in-handler" },
+
   // Operations.
   { method: "GET", path: "/api/operations/errors", policy: company("query") },
   { method: "GET", path: "/api/operations/activity", policy: company("query") },
