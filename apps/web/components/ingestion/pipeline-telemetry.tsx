@@ -42,6 +42,12 @@ export interface PipelineProgressData {
   chunks?: number;
   facts?: number;
   message?: string;
+  /** Crawl-failure summary (final CRAWLING event): grouped reasons + top examples. */
+  failures?: {
+    total: number;
+    groups: { reason: string; count: number }[];
+    items: { url: string; stage: string; status?: number | null; error: string; attempts: number }[];
+  };
 }
 
 export interface PipelineResultData {
@@ -53,6 +59,12 @@ export interface PipelineResultData {
   insertedDocs: number;
   chunkCount: number;
   factCount: number;
+  /** Crawl-failure summary: grouped reasons + top example URLs (may be absent when 0 failed). */
+  failures?: {
+    total: number;
+    groups: { reason: string; count: number }[];
+    items: { url: string; stage: string; status?: number | null; error: string; attempts: number }[];
+  };
   brand?: {
     logoUrl?: string | null;
     tokens?: {
@@ -141,6 +153,9 @@ export function PipelineTelemetry({
   const currentStage = progress?.stage || phase || "INITIALIZING";
   const isDone = !!result || currentStage === "READY";
   const isFailed = !!error;
+  // Crawl-failure reasons (TASKS.md #24): the done payload carries them on
+  // success paths; the last CRAWLING event carries them during/after runs.
+  const failureSummary = result?.failures ?? progress?.failures;
   const showAppearance =
     appearanceActive ||
     currentStage === "EXTRACTING_APPEARANCE" ||
@@ -276,6 +291,46 @@ export function PipelineTelemetry({
               </p>
             </div>
           </div>
+          {/* Why pages failed (TASKS.md #24): grouped reasons + top examples. */}
+          {failureSummary && failureSummary.total > 0 && (
+            <div className="mt-4 space-y-2 border-t pt-3">
+              <p className="text-[13px] text-muted-foreground">
+                Why{" "}
+                {failureSummary.total === 1
+                  ? "1 page"
+                  : `${failureSummary.total} pages`}{" "}
+                failed
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {failureSummary.groups.map((g) => (
+                  <Badge
+                    key={g.reason}
+                    variant="outline"
+                    className="rounded-full text-xs font-normal"
+                  >
+                    {g.reason} ×{g.count}
+                  </Badge>
+                ))}
+              </div>
+              {failureSummary.items.length > 0 && (
+                <ul className="min-w-0 space-y-0.5 font-mono text-xs text-muted-foreground">
+                  {failureSummary.items.map((f) => (
+                    <li
+                      key={f.url}
+                      className="min-w-0 truncate"
+                      title={`${f.url} — ${f.error}`}
+                    >
+                      <span className="text-destructive/80">✗</span>{" "}
+                      {typeof f.status === "number" && f.status > 0
+                        ? `HTTP ${f.status}`
+                        : `[${f.stage}]`}{" "}
+                      <span className="text-foreground/80">{f.url}</span> — {f.error}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
           <p className="mt-4 border-t pt-3 text-[13px] text-muted-foreground">
             {chunks > 0
               ? `${chunks.toLocaleString()} search chunks ready. `
@@ -298,9 +353,16 @@ export function PipelineTelemetry({
           <p className="mt-1 font-mono text-xs text-muted-foreground">
             {error}
           </p>
+          {failureSummary && failureSummary.total > 0 && (
+            <p className="mt-2 text-[13px] text-muted-foreground">
+              Failure reasons:{" "}
+              {failureSummary.groups
+                .map((g) => `${g.reason} ×${g.count}`)
+                .join(" · ")}
+            </p>
+          )}
           <p className="mt-1 text-[13px] text-muted-foreground">
-            Check the activity log below for the per-page failure list —
-            common causes are bot protection (403), JS-only pages (retry
+            Common causes are bot protection (403), JS-only pages (retry
             with Playwright), or timeouts. Retry with fewer pages, or cancel
             the stuck job and start fresh.
           </p>

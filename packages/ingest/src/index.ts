@@ -5,6 +5,7 @@ export * from "./fetch";
 export * from "./discover";
 export * from "./select";
 export * from "./crawl";
+export * from "./summarize";
 export * from "./populate";
 export * from "./pipeline";
 export * from "./query";

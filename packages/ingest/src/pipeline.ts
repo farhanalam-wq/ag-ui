@@ -5,6 +5,7 @@ import { validateSafeUrl, inferCategory, calculatePriority, fetchRobotsTxt } fro
 import { discoverPages, printDiscovery } from "./discover";
 import { applyMaxPages, parseSelection } from "./select";
 import { crawlPages } from "./crawl";
+import { summarizeFailures, type FailureSummary } from "./summarize";
 import { populateDb } from "./populate";
 import {
   db,
@@ -138,6 +139,8 @@ export interface IngestPipelineResult {
   insertedDocs: number;
   chunkCount: number;
   factCount: number;
+  /** Crawl-failure summary (TASKS.md #24) — grouped reasons + top examples. */
+  failures?: FailureSummary;
   timings: {
     discoveryMs: number;
     crawlMs: number;
@@ -526,6 +529,29 @@ export async function runIngestPipeline(
       console.log(`  - [${f.stage}] ${f.url} (${st}, attempts=${f.attempts}): ${f.error}`);
     }
   }
+  // One final progress event carrying the failure summary (TASKS.md #24):
+  // grouped reasons + top example URLs, emitted before any all-failed
+  // throw so the hard-failure UI also has real reasons to show.
+  const failureSummary = summarizeFailures(stats.deadLetters);
+  if (failureSummary.total > 0) {
+    try {
+      await opts.onProgress?.({
+        stage: "CRAWLING",
+        jobId: jobContext?.crawlJobId,
+        companyId: jobContext?.companyId,
+        snapshotId: jobContext?.snapshotId,
+        crawled: selected.length,
+        docs: docs.length,
+        failed: failureSummary.total,
+        skippedThin: stats.skippedThin,
+        totalSelected: selected.length,
+        failures: failureSummary,
+        message: `Crawl finished: ${docs.length} docs, ${failureSummary.total} failed`,
+      });
+    } catch {
+      // Non-blocking
+    }
+  }
   if (opts.dryRun || docs.length === 0) {
     if (!opts.dryRun && docs.length === 0 && jobContext) {
       // Every page dead-lettered (WAF/403, JS shell, timeouts). Fail loudly
@@ -555,6 +581,7 @@ export async function runIngestPipeline(
       insertedDocs: docs.length,
       chunkCount: 0,
       factCount: 0,
+      failures: failureSummary,
       timings: { discoveryMs: info.ms, crawlMs: stats.ms as number, dbMs: 0, totalMs: Date.now() - tStart },
     };
   }
@@ -646,6 +673,7 @@ export async function runIngestPipeline(
     insertedDocs: res.insertedDocs,
     chunkCount: res.chunkCount,
     factCount: res.factCount,
+    failures: failureSummary,
     timings: {
       discoveryMs: info.ms,
       crawlMs: stats.ms as number,

@@ -5,6 +5,8 @@ import type { DiscoveredPage, RobotsRules } from "@ag-ui/crawler";
 
 export type { DiscoveredPage };
 
+import type { FailureSummary } from "./summarize";
+
 export interface PipelineProgressEvent {
   stage: "DISCOVERING" | "CRAWLING" | "PARSING" | "EMBEDDING" | "EXTRACTING" | "EXTRACTING_APPEARANCE" | "READY";
   jobId?: string;
@@ -18,6 +20,11 @@ export interface PipelineProgressEvent {
   chunks?: number;
   facts?: number;
   message?: string;
+  /**
+   * Crawl-failure summary (TASKS.md #24) — present on the final CRAWLING
+   * event and on READY events where the crawl stats are in scope.
+   */
+  failures?: FailureSummary;
 }
 
 export interface CliOptions {

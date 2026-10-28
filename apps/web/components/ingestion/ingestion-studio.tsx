@@ -332,6 +332,11 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
               ) {
                 next.totalSelected = p.totalSelected;
               }
+              // The failure summary rides one final CRAWLING event; later
+              // terminal events must not drop it.
+              if (p?.failures && !next.failures) {
+                next.failures = p.failures;
+              }
               return next as any;
             });
             if (prog.stage === "EXTRACTING_APPEARANCE") setAppearanceActive(true);
