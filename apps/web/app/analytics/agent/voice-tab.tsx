@@ -16,6 +16,7 @@ import dynamic from "next/dynamic";
 import { Microphone, PhoneCall } from "@phosphor-icons/react";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { VoiceAnalytics } from "@/lib/api-client";
+import { CompositionBar } from "@/components/analytics/composition-bar";
 import { DataQualityNote } from "@/components/analytics/data-quality-note";
 import { MetricGrid } from "@/components/analytics/metric-tile";
 import { MetricStory } from "@/components/analytics/metric-story";
@@ -37,6 +38,19 @@ export function VoiceTab({
   refreshKey: number;
 }) {
   const trend = useMemo(() => data.trend.map((t) => ({ ...t })), [data]);
+  // Caption: call momentum, halves of the range.
+  const callsInsight = useMemo(() => {
+    if (data.trend.length < 4) return null;
+    const half = Math.floor(data.trend.length / 2);
+    const sum = (rows: typeof data.trend) =>
+      rows.reduce((a, t) => a + Number(t.voiceCalls ?? 0), 0);
+    const first = sum(data.trend.slice(0, half));
+    const second = sum(data.trend.slice(half));
+    if (first === 0 && second === 0) return null;
+    if (first === 0) return `All ${second} calls started in the second half of the range.`;
+    const pct = Math.round(((second - first) / first) * 1000) / 10;
+    return `Calls ${pct >= 0 ? "rose" : "fell"} ${Math.abs(pct)}% from the first to the second half of the range.`;
+  }, [data]);
 
   return (
     <div className="space-y-4">
@@ -44,9 +58,19 @@ export function VoiceTab({
         columns={4}
         items={[
           { id: "textVsVoice", value: data.totals.textVsVoice },
-          { id: "voiceCalls", value: data.totals.voiceCalls },
+          {
+            id: "voiceCalls",
+            value: data.totals.voiceCalls,
+            sparkline: data.trend.map((t) => t.voiceCalls),
+          },
           { id: "voiceTurns", value: data.totals.voiceTurns },
-          { id: "voiceAvgDuration", value: data.totals.voiceAvgDurationSec },
+          // Per-day average duration is over the calls that ended that day;
+          // a day with no ended calls reports 0, which is a real value here.
+          {
+            id: "voiceAvgDuration",
+            value: data.totals.voiceAvgDurationSec,
+            sparkline: data.trend.map((t) => t.voiceAvgDurationSec),
+          },
           { id: "voiceMaxDuration", value: data.totals.voiceMaxDurationSec },
           {
             id: "voiceAbandonedCalls",
@@ -56,9 +80,23 @@ export function VoiceTab({
         ]}
       />
 
+      <CompositionBar
+        title="Text vs voice"
+        description="Share of agent sessions that included a call; the rest typed. A call is not a question — the visit is the only unit both modalities share."
+        metricLabel="Agent sessions"
+        rows={[
+          { label: "Voice", value: Number(data.totals.textVsVoice ?? 0) },
+          {
+            label: "Text only",
+            value: Math.max(0, 100 - Number(data.totals.textVsVoice ?? 0)),
+          },
+        ]}
+      />
+
       <TrendCard
         title="Calls and turns"
         description="Per day: calls started (solid) and visitor utterances in ended calls (dashed)."
+        insight={callsInsight ?? undefined}
       >
         <SeriesTrendChart
           data={trend}
@@ -91,8 +129,7 @@ export function VoiceTab({
       />
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <PhoneCall className="size-3.5" aria-hidden="true" />
-        Voice share is the fraction of agent sessions that included a call; the
-        rest typed. Silent calls connected but ended with zero visitor turns.
+        Silent calls connected but ended with zero visitor turns.
       </p>
       <DataQualityNote notes={data.freshness.notes} />
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">

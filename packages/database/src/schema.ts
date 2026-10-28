@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, integer, index, uniqueIndex, boolean, unique, numeric, date, primaryKey, smallint } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, integer, index, uniqueIndex, boolean, unique, numeric, date, primaryKey, smallint, check } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 /**
@@ -174,8 +174,28 @@ export const conversations = pgTable("conversations", {
    * it is the page they were reading, not what they asked.
    */
   path: text("path"),
+  /**
+   * Cookieless visit identity captured on the chat POST body (same hashes the
+   * tracker derives). Joins conversations to `sessions` for the Visitors
+   * metadata panel; null for older rows and the playground.
+   */
+  sessionHash: text("session_hash"),
+  visitorHash: text("visitor_hash"),
+  /**
+   * What produced this conversation: typed chat (default, "text") or a voice
+   * call transcript ("voice", persisted from the STT lines at call end).
+   * Voice lines are reconstructions, not verbatim — the marker lets every
+   * consumer (docket badge, sheet label, clustering later) govern fidelity.
+   */
+  channel: text("channel").default("text").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => [
+  check(
+    "conversations_channel_check",
+    sql`${t.channel} in ('text', 'voice')`
+  ),
+  index("conversations_company_channel_created_idx").on(t.companyId, t.channel, t.createdAt),
+]);
 
 export const messages = pgTable("messages", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -186,8 +206,215 @@ export const messages = pgTable("messages", {
   content: text("content").notNull(),
   evidence: jsonb("evidence"),
   visualSpec: jsonb("visual_spec"),
+  /**
+   * Derived per-message signals, written at persist time by the chat routes:
+   * { top_similarity, grounded, model, latency_ms, engine, extraction_ran,
+   *   competitors }. Shape lives in shared/conversation-signals.ts. Never
+   * referenced by the render path — additive metadata only.
+   */
+  meta: jsonb("meta"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const messageFeedback = pgTable(
+  "message_feedback",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    messageId: uuid("message_id")
+      .references(() => messages.id, { onDelete: "cascade" })
+      .notNull(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    conversationId: uuid("conversation_id")
+      .references(() => conversations.id, { onDelete: "cascade" })
+      .notNull(),
+    /** Thumbs: 1 = up, -1 = down. One rating per message. */
+    rating: smallint("rating").notNull(), // 1 | -1
+    comment: text("comment"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    unique("message_feedback_message_unique").on(t.messageId),
+    index("message_feedback_company_created_idx").on(t.companyId, t.createdAt),
+    index("message_feedback_conversation_idx").on(t.conversationId),
+  ]
+);
+
+export const leads = pgTable(
+  "leads",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    conversationId: uuid("conversation_id")
+      .references(() => conversations.id, { onDelete: "set null" }),
+    contactName: text("contact_name"),
+    email: text("email"),
+    phone: text("phone"),
+    /** BANT qualification cues the extractor observed: {budget, authority, need, timeline}. */
+    bant: jsonb("bant").default({}).notNull(),
+    /** Technical stack constraints mentioned naturally (e.g. "we're on Next.js"). */
+    techStack: jsonb("tech_stack").default([]).notNull(),
+    /** Additional extractor tags (competitor quotes, locales, …). */
+    extraTags: jsonb("extra_tags").default([]).notNull(),
+    status: text("status").default("NEW").notNull(), // 'NEW' | 'QUALIFIED' | 'CONTACTED' | 'DISMISSED'
+    /** Quote of the first message that surfaced the lead. */
+    firstMessage: text("first_message"),
+    /** Extractor self-reported confidence, 0..1. Null when not scored. */
+    confidence: numeric("confidence"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("leads_company_status_created_idx").on(t.companyId, t.status, t.createdAt),
+    index("leads_conversation_idx").on(t.conversationId),
+    check(
+      "leads_status_check",
+      sql`${t.status} in ('NEW', 'QUALIFIED', 'CONTACTED', 'DISMISSED')`
+    ),
+    // Zero-form dedupe: one open lead per company per email address. The
+    // enrich worker merges tags into an existing row instead of inserting.
+    uniqueIndex("leads_company_email_unique").on(t.companyId, sql`lower(${t.email})`),
+  ]
+);
+
+export const webhookEvents = pgTable(
+  "webhook_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    /** Domain event type — "lead.captured" first. */
+    eventType: text("event_type").notNull(),
+    /** Event-specific JSON (ids, qs, counts) — never visitor PII beyond what
+     *  the event is about (a lead capture carries the lead id, not details). */
+    payload: jsonb("payload"),
+    /**
+     * 'RECORDED' = logged only. The delivery engine (deferred) flips rows to
+     * QUEUED -> SENT/FAILED and reads them as webhook-ish CRUD entries.
+     */
+    status: text("status").default("RECORDED").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("webhook_events_company_created_idx").on(t.companyId, t.createdAt),
+    index("webhook_events_type_idx").on(t.eventType),
+  ]
+);
+
+/**
+ * Intelligence → Signals. One FAQ + JSON-LD patch drafted (on demand) from a
+ * blindspot cluster's question, grounded in what the company's knowledge base
+ * retrieved for it. `cluster_key` is the report's normalized question key, so
+ * a draft and its source cluster can never disagree about which questions it
+ * answers. Status is the human-approval gate: nothing is ever published by
+ * this table — approval is a state the CMS connector (Phase 2) will read.
+ */
+export const signalDrafts = pgTable(
+  "signal_drafts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    /** The Intent Radar cluster key this draft answers (normalized wording). */
+    clusterKey: text("cluster_key").notNull(),
+    /** The display question the draft was generated from. */
+    question: text("question").notNull(),
+    /** 'DRAFT' → 'APPROVED' | 'DISMISSED' (revertable to 'DRAFT'). */
+    status: text("status").default("DRAFT").notNull(),
+    /** { question, answer, sources: [{ title, url }] } — answer verbatim from retrieval. */
+    faq: jsonb("faq"),
+    /** The public FAQPage JSON-LD built from the FAQ (no internal metadata). */
+    jsonld: jsonb("jsonld"),
+    /** The model that produced the answer, for provenance. */
+    model: text("model"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    // One draft per cluster per company: regenerating returns the existing
+    // row instead of stacking near-duplicates for the reviewer.
+    uniqueIndex("signal_drafts_company_cluster_unique").on(t.companyId, t.clusterKey),
+    index("signal_drafts_company_status_idx").on(t.companyId, t.status, t.updatedAt),
+    check(
+      "signal_drafts_status_check",
+      sql`${t.status} in ('DRAFT', 'APPROVED', 'DISMISSED')`
+    ),
+  ]
+);
+
+export const intentClusterRuns = pgTable(
+  "intent_cluster_runs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    status: text("status").default("QUEUED").notNull(), // 'QUEUED' | 'EMBEDDING' | 'CLUSTERING' | 'LABELING' | 'READY' | 'FAILED'
+    periodStart: date("period_start"),
+    periodEnd: date("period_end"),
+    convoCount: integer("convo_count").default(0).notNull(),
+    clusterCount: integer("cluster_count").default(0).notNull(),
+    /** { embed_model, embed_dims, clustering, label_model, threshold } */
+    modelVersions: jsonb("model_versions"),
+    errorSample: jsonb("error_sample"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [index("intent_cluster_runs_company_created_idx").on(t.companyId, t.createdAt)]
+);
+
+export const intentClusters = pgTable(
+  "intent_clusters",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    runId: uuid("run_id")
+      .references(() => intentClusterRuns.id, { onDelete: "cascade" })
+      .notNull(),
+    companyId: uuid("company_id")
+      .references(() => companies.id, { onDelete: "cascade" })
+      .notNull(),
+    /** LLM-written or fallback label, e.g. "EU Data Residency". */
+    label: text("label").notNull(),
+    summary: text("summary"),
+    queryCount: integer("query_count").default(0).notNull(),
+    /** First answers without evidence inside this cluster. */
+    ungrounded: integer("ungrounded").default(0).notNull(),
+    sessionCount: integer("session_count").default(0).notNull(),
+    /** [{query, count, conversation_id}] most representative queries. */
+    topQueries: jsonb("top_queries").default([]).notNull(),
+    /** [{name, count, conversation_id}] competitor mentions in the cluster. */
+    competitorMentions: jsonb("competitor_mentions").default([]).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("intent_clusters_company_run_idx").on(t.companyId, t.runId),
+    index("intent_clusters_run_idx").on(t.runId),
+  ]
+);
+
+export const intentClusterMembers = pgTable(
+  "intent_cluster_members",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clusterId: uuid("cluster_id")
+      .references(() => intentClusters.id, { onDelete: "cascade" })
+      .notNull(),
+    conversationId: uuid("conversation_id")
+      .references(() => conversations.id, { onDelete: "cascade" })
+      .notNull(),
+    /** Cosine score to the cluster centroid (or seed query). */
+    score: numeric("score"),
+  },
+  (t) => [
+    unique("intent_cluster_members_unique").on(t.clusterId, t.conversationId),
+    index("intent_cluster_members_conversation_idx").on(t.conversationId),
+  ]
+);
 
 export const crawlJobs = pgTable(
   "crawl_jobs",

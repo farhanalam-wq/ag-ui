@@ -47,6 +47,9 @@ qdrant_storage/
 # Pre-migration pg_dump backups (see SETUP.md §2.4a) — contain real data
 backups/
 *.sql
+# ...except drizzle migrations (0000-0014 predate this rule; without the
+# negation db:generate output would silently never be committable).
+!packages/database/drizzle/*.sql
 
 # Test / coverage / debug
 coverage/

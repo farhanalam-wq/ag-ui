@@ -85,6 +85,9 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
   const [parseConcurrency, setParseConcurrency] = useState(5);
   const [embedConcurrency, setEmbedConcurrency] = useState(3);
   const [hostGapMs, setHostGapMs] = useState(150);
+  // Opt-in robots.txt compliance (TASKS.md #23): off by default, robots.txt
+  // is never fetched unless the user checks this.
+  const [useRobots, setUseRobots] = useState(false);
 
   // Indexed companies in knowledge base
   const [indexedCompanies, setIndexedCompanies] = useState<CompanySummary[]>([]);
@@ -121,7 +124,7 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
     setDiscoveryError(null);
 
     try {
-      const resp = await apiClient.crawler.discover(clean);
+      const resp = await apiClient.crawler.discover(clean, { useRobots });
       setDiscoveryData(resp);
 
       // Default selection: Top 20 pages
@@ -293,6 +296,7 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
           parseConcurrency,
           embedConcurrency,
           hostGapMs,
+          useRobots,
         },
         {
           onPhase: (p, msg) => {
@@ -327,6 +331,11 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
                 typeof next.totalSelected !== "number"
               ) {
                 next.totalSelected = p.totalSelected;
+              }
+              // The failure summary rides one final CRAWLING event; later
+              // terminal events must not drop it.
+              if (p?.failures && !next.failures) {
+                next.failures = p.failures;
               }
               return next as any;
             });
@@ -606,6 +615,24 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
                 >
                   Paste any public company site. No login needed.
                 </p>
+                <label
+                  htmlFor="ingest-use-robots"
+                  className="flex cursor-pointer items-start gap-2 text-xs text-muted-foreground"
+                >
+                  <input
+                    id="ingest-use-robots"
+                    type="checkbox"
+                    checked={useRobots}
+                    onChange={(e) => setUseRobots(e.target.checked)}
+                    className="mt-0.5 size-3.5 shrink-0 cursor-pointer rounded border-border accent-foreground"
+                  />
+                  <span>
+                    Respect robots.txt{" "}
+                    <span className="text-muted-foreground/70">
+                      (opt-in — skips flagged URLs before crawling; Crawl-delay is shown, never enforced)
+                    </span>
+                  </span>
+                </label>
               </form>
               )}
 
@@ -1004,6 +1031,18 @@ export function IngestionStudio({ onCompanyIndexed, onCancel }: IngestionStudioP
               {discoveryData.droppedCrossDomain} cross-domain{" "}
               {discoveryData.droppedCrossDomain === 1 ? "URL was" : "URLs were"}{" "}
               dropped — only pages on {discoveryData.domain} are kept.
+            </p>
+          )}
+          {(discoveryData.info.robotsSkipped ?? 0) > 0 && (
+            <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-[13px] text-muted-foreground">
+              Skipped {discoveryData.info.robotsSkipped}{" "}
+              {(discoveryData.info.robotsSkipped ?? 0) === 1 ? "URL" : "URLs"}{" "}
+              flagged in robots.txt — they will not be crawled.
+            </p>
+          )}
+          {discoveryData.info.robotsUnreachable && (
+            <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-[13px] text-muted-foreground">
+              robots.txt unreachable — crawling without it.
             </p>
           )}
           <DiscoveryTable

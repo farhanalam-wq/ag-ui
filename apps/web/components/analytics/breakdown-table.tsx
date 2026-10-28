@@ -43,6 +43,12 @@ export interface BreakdownColumn {
   format?: "count" | "percent1";
 }
 
+/**
+ * The maximum share any one row takes, so a 40-cell table still answers
+ * "how dominant is the leader" — the question a ranked list exists for.
+ */
+const barColor = "bg-[hsl(var(--chart-1))]";
+
 export function BreakdownTable<T extends { label: string }>({
   title,
   description,
@@ -51,6 +57,9 @@ export function BreakdownTable<T extends { label: string }>({
   labelHeader,
   empty = "No data in this range.",
   footer,
+  barKey,
+  insight,
+  onRowSelect,
   className,
 }: {
   title: string;
@@ -61,14 +70,43 @@ export function BreakdownTable<T extends { label: string }>({
   labelHeader?: string;
   empty?: string;
   footer?: React.ReactNode;
+  /**
+   * When set, each label carries a small bar proportional to that row's
+   * share of the column's max — a table that also shows the shape. Use for
+   * ranked lists (top pages, referrers, channels); skip for lookup tables.
+   */
+  barKey?: string;
+  /**
+   * The takeaway, one sentence — same contract as TrendCard's caption: a
+   * finding computed from the data by the tab, not a definition.
+   */
+  insight?: React.ReactNode;
+  /**
+   * When set, rows are interactive: click or Enter opens the row's detail
+   * (a Sheet, per the interaction contract). The table itself stays a table
+   * when this is absent — most breakdowns are lookup lists, not drills.
+   */
+  onRowSelect?: (row: T) => void;
   className?: string;
 }) {
+  const max = barKey
+    ? Math.max(1, ...rows.map((r) => Number((r as Record<string, unknown>)[barKey] ?? 0)))
+    : 0;
   return (
     <Card className={cn("min-w-0", className)}>
       <CardHeader className="pb-3">
         <CardTitle className="text-[15px] font-semibold">{title}</CardTitle>
         {description && (
           <CardDescription className="text-[13px]">{description}</CardDescription>
+        )}
+        {insight && (
+          <p className="mt-1 inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground">
+            <span
+              className="size-1.5 shrink-0 rounded-full bg-[hsl(var(--chart-1))]"
+              aria-hidden="true"
+            />
+            {insight}
+          </p>
         )}
       </CardHeader>
       <CardContent>
@@ -91,7 +129,26 @@ export function BreakdownTable<T extends { label: string }>({
             </TableHeader>
             <TableBody>
               {rows.map((row, i) => (
-                <TableRow key={`${row.label}-${i}`}>
+                <TableRow
+                  key={`${row.label}-${i}`}
+                  onClick={onRowSelect ? () => onRowSelect(row) : undefined}
+                  tabIndex={onRowSelect ? 0 : undefined}
+                  onKeyDown={
+                    onRowSelect
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            onRowSelect(row);
+                          }
+                        }
+                      : undefined
+                  }
+                  className={cn(
+                    onRowSelect &&
+                      "cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  )}
+                  aria-label={onRowSelect ? `Open details for ${row.label}` : undefined}
+                >
                   <TableCell
                     className={cn(
                       "max-w-[280px] truncate",
@@ -100,6 +157,23 @@ export function BreakdownTable<T extends { label: string }>({
                     title={row.label}
                   >
                     {row.label}
+                    {barKey && (
+                      <span className="mt-1 block h-1 w-full overflow-hidden rounded-full bg-muted">
+                        <span
+                          className={cn("block h-full rounded-full", barColor)}
+                          style={{
+                            width: `${Math.max(
+                              2,
+                              (Number(
+                                (row as Record<string, unknown>)[barKey] ?? 0
+                              ) /
+                                max) *
+                                100
+                            )}%`,
+                          }}
+                        />
+                      </span>
+                    )}
                   </TableCell>
                   {columns.map((c) => {
                     const value = (row as Record<string, unknown>)[c.key];

@@ -14,13 +14,28 @@
  */
 
 import { ListBullets } from "@phosphor-icons/react";
+import dynamic from "next/dynamic";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { ContentAnalytics } from "@/lib/api-client";
 import { BreakdownTable } from "@/components/analytics/breakdown-table";
 import { DataQualityNote } from "@/components/analytics/data-quality-note";
 import { MetricGrid } from "@/components/analytics/metric-tile";
 import { MetricStory } from "@/components/analytics/metric-story";
+import { TrendCard } from "@/components/analytics/trend-card";
+
+const ColumnChart = dynamic(
+  () =>
+    import("@/components/analytics/column-chart").then((m) => m.ColumnChart),
+  { ssr: false, loading: () => <Skeleton className="h-[220px] w-full" /> }
+);
 
 export function ContentTab({ data }: { data: ContentAnalytics }) {
+  const devices = data.breakdowns.device.map((row) => ({
+    label: String(row.label),
+    pageviews: Number(row.pageviews ?? 0),
+    sessions: Number(row.sessions ?? 0),
+  }));
+
   return (
     <div className="space-y-4">
       <MetricGrid
@@ -44,6 +59,7 @@ export function ContentTab({ data }: { data: ContentAnalytics }) {
             { key: "pageviews", label: "Views", mono: true },
             { key: "sessions", label: "Sessions" },
           ]}
+          barKey="pageviews"
         />
         <BreakdownTable
           title="Page titles"
@@ -54,6 +70,7 @@ export function ContentTab({ data }: { data: ContentAnalytics }) {
             { key: "pageviews", label: "Views" },
             { key: "sessions", label: "Sessions" },
           ]}
+          barKey="pageviews"
         />
         <BreakdownTable
           title="Channels"
@@ -63,17 +80,23 @@ export function ContentTab({ data }: { data: ContentAnalytics }) {
             { key: "pageviews", label: "Views" },
             { key: "sessions", label: "Sessions" },
           ]}
-        />
-        <BreakdownTable
-          title="Devices"
-          description="Desktop vs mobile readership."
-          rows={data.breakdowns.device}
-          columns={[
-            { key: "pageviews", label: "Views" },
-            { key: "sessions", label: "Sessions" },
-          ]}
+          barKey="pageviews"
         />
       </div>
+
+      <TrendCard
+        title="Devices"
+        description="Views (blue) vs sessions (grey) per device — what was read, by the hardware that read it."
+        footer="Desktop vs mobile readership, bucketed from viewport width."
+      >
+        <ColumnChart
+          data={devices}
+          series={[
+            { key: "pageviews", label: "Views", color: "hsl(var(--chart-1))" },
+            { key: "sessions", label: "Sessions", color: "hsl(var(--chart-7))" },
+          ]}
+        />
+      </TrendCard>
 
       <MetricStory
         metrics={["pageviews", "sessions", "scrolls", "downloads", "clicks"]}

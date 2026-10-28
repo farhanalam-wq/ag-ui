@@ -93,13 +93,16 @@ describe("route policy manifest", () => {
     }
   });
 
-  test("has exactly one dual-policy voice route", () => {
+  test("voice token + transcript are the exact dual-policy pair", () => {
     const dual = ROUTE_POLICIES.filter((rule) => rule.policy.kind === "voice-token");
-    expect(dual).toHaveLength(1);
-    expect(dual[0]).toMatchObject({
-      method: "POST",
-      path: "/api/voice/token",
-    });
+    expect(dual).toHaveLength(2);
+    // The token mints the call; the transcript saves what it produced. Both
+    // walk the same dual identity: widgetKey public (origin-gated in-handler)
+    // or companyId session.
+    expect(new Set(dual.map((r) => r.path))).toEqual(
+      new Set(["/api/voice/token", "/api/voice/transcript"])
+    );
+    for (const rule of dual) expect(rule.method).toBe("POST");
   });
 
   test("unknown routes fail closed", () => {

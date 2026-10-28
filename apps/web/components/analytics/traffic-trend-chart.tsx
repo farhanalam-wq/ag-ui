@@ -16,6 +16,7 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  ReferenceLine,
   XAxis,
   YAxis,
 } from "recharts";
@@ -37,15 +38,34 @@ export interface TrafficTrendPoint {
   sessions: number;
 }
 
+export interface TrendMarker {
+  day: string;
+  direction: "spike" | "dip";
+}
+
 export function TrafficTrendChart({
   data,
   refreshKey,
+  markers,
 }: {
   data: TrafficTrendPoint[];
   refreshKey: number;
+  /**
+   * Days worth a second look (anomalies), drawn as vertical rules on the day
+   * they happened — the reader should not have to join a separate card to
+   * this chart by hand. Amber for a spike, red for a dip; the why stays in
+   * the anomaly card, which owns the cause caveat.
+   */
+  markers?: TrendMarker[];
 }) {
   // The axis wants short labels; the tooltip gets the full series names.
   const rows = data.map((point) => ({ ...point, d: point.d.slice(5) }));
+  // Two metrics can flag the same day; one rule per day is enough here.
+  const days = new Map<string, TrendMarker["direction"]>();
+  for (const m of markers ?? []) {
+    const key = m.day.slice(5);
+    if (!days.has(key)) days.set(key, m.direction);
+  }
   return (
     <ChartContainer key={refreshKey} config={config} className="h-[280px] w-full">
       <AreaChart
@@ -82,6 +102,14 @@ export function TrafficTrendChart({
           allowDecimals={false}
         />
         <ChartTooltip content={<ChartTooltipContent />} />
+        {[...days.entries()].map(([day, direction]) => (
+          <ReferenceLine
+            key={day}
+            x={day}
+            stroke={direction === "dip" ? "hsl(var(--chart-6))" : "hsl(var(--chart-3))"}
+            strokeDasharray="2 3"
+          />
+        ))}
         <Area
           dataKey="pageviews"
           strokeWidth={2}

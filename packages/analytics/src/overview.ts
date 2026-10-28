@@ -29,7 +29,7 @@ import {
   asc,
   desc,
 } from "@ag-ui/database";
-import { detectQueryIntents } from "@ag-ui/shared";
+import { detectQueryIntents, INTENT_LABELS } from "@ag-ui/shared";
 import { reportFreshness } from "./registry";
 
 /**
@@ -38,14 +38,6 @@ import { reportFreshness } from "./registry";
  * else, so `range=90d` quietly answered a different question (F-04).
  */
 export type OverviewRangeDays = number;
-
-const INTENT_LABELS: Record<string, string> = {
-  pricing: "Pricing Evaluation",
-  code: "Product Research",
-  contact: "Contact Request",
-  location: "Location Inquiry",
-  social: "Social & Brand",
-};
 
 const MAX_MESSAGES = 20_000;
 

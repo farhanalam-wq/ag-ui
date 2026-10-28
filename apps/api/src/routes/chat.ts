@@ -9,7 +9,8 @@ import {
   desc,
   recordError,
 } from "@ag-ui/database";
-import { streamChatCompletionGenerator, buildAnswerSystemPrompt, logger } from "@ag-ui/shared";
+import { streamChatCompletionGenerator, buildAnswerSystemPrompt, logger, buildMessageMeta } from "@ag-ui/shared";
+import { chatEnrichQueue, type ConversationEnrichJobData } from "@ag-ui/queues";
 import { requireCompany, requireUser } from "../auth/plugin";
 
 export const chatRoutes = new Elysia()
@@ -50,6 +51,7 @@ export const chatRoutes = new Elysia()
           },
         };
 
+        const t0 = Date.now();
         const retrieved = await retrieveCompanyContext(companyId, userQuery);
 
         // Stream brand tokens so UI can theme itself immediately
@@ -133,9 +135,25 @@ export const chatRoutes = new Elysia()
             role: "assistant",
             content: finalFullText,
             evidence: retrieved.evidence,
+            meta: buildMessageMeta({
+              evidence: retrieved.evidence,
+              latencyMs: Date.now() - t0,
+            }),
             visualSpec: null,
           })
           .returning();
+
+        // Fire-and-forget derived pass. Studio chats never have a widget key.
+        try {
+          await chatEnrichQueue.add("chat-enrich", {
+            companyId,
+            conversationId: activeConvId,
+            widgetKeyId: null,
+            engine: "text",
+          } satisfies ConversationEnrichJobData);
+        } catch (enrichErr: any) {
+          logger.error(`[CHAT API] enrich enqueue failed: ${enrichErr?.message ?? enrichErr}`);
+        }
 
         // Stage 3: Done
         yield {

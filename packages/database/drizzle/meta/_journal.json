@@ -99,6 +99,34 @@
       "when": 1792772711636,
       "tag": "0013_company_ownership",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793000134102,
+      "tag": "0014_busy_talisman",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1793010684044,
+      "tag": "0015_voice_channel",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1793011605811,
+      "tag": "0016_webhook_events_and_lead_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1793116145871,
+      "tag": "0017_signal_drafts",
+      "breakpoints": true
     }
   ]
 }

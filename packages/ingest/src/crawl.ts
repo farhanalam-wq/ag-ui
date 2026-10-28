@@ -8,6 +8,7 @@ import type {
 } from "./types";
 import { AsyncBoundedQueue } from "./queue";
 import { fetchWithRetry, FetchTerminalError, shortErr, waitForHostGap } from "./fetch";
+import { isAllowed, type RobotsRules } from "@ag-ui/crawler";
 import { extractCleanContent } from "@ag-ui/crawler";
 import { sha256 } from "./utils";
 
@@ -70,6 +71,11 @@ export async function crawlPages(
   let retriedCount = 0;
   let fetchedCount = 0;
   let parsedCount = 0;
+  // Opt-in robots gate (TASKS.md #23): when the pipeline resolved rules,
+  // every fetch re-checks — mid-crawl-discovered links and client-selected
+  // URLs pass through here too.
+  const robotsRules: RobotsRules | null = opts.robotsRules ?? null;
+  let robotsSkipped = 0;
 
   const sameHost = (u: string) => {
     try {
@@ -137,6 +143,20 @@ export async function crawlPages(
           error: "cross-host skip (non-retryable)",
           attempts: 0,
         });
+        fetchedCount++;
+        notifyProgress("CRAWLING");
+        continue;
+      }
+
+      if (robotsRules && !isAllowed(robotsRules, p.url)) {
+        deadLetters.push({
+          url: p.url,
+          stage: "fetch",
+          status: null,
+          error: "disallowed by robots.txt (non-retryable)",
+          attempts: 0,
+        });
+        robotsSkipped++;
         fetchedCount++;
         notifyProgress("CRAWLING");
         continue;
@@ -337,7 +357,8 @@ export async function crawlPages(
   await closeBrowser();
 
   // Deterministic rank order for stable inserts.
-  docs.sort((a, b) => a.url.localeCompare(b.url));  return {
+  docs.sort((a, b) => a.url.localeCompare(b.url));
+  return {
     docs,
     rootHtml,
     stats: {
@@ -349,6 +370,7 @@ export async function crawlPages(
       httpCount,
       pwCount,
       skippedThin,
+      robotsSkipped,
       retries: retriedCount,
       ms: Date.now() - t0,
     },

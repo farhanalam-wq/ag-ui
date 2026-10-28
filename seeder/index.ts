@@ -221,7 +221,7 @@ async function main(): Promise<void> {
     console.log(`[SEED] ${company.name}: content (snapshots, docs, brand, keys, chats)…`);
     const result = await seedCompanyContent(company, user);
     console.log(
-      `[SEED] ${company.name}: ${result.messages.toLocaleString()} messages, ${result.errors} errors`
+      `[SEED] ${company.name}: ${result.messages.toLocaleString()} messages, ${result.errors} errors, ${result.drafts} example drafts`
     );
   }
   await seedGlobalErrors();

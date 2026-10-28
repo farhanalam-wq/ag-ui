@@ -2,6 +2,7 @@ import * as cheerio from "cheerio";
 import { gunzipSync } from "node:zlib";
 import { logger } from "@ag-ui/shared";
 import { validateSafeUrl } from "./ssrf";
+import { fetchRobotsTxt, isAllowed, type RobotsRules } from "./robots";
 
 const PRIORITY_KEYWORDS = [
   "pricing",
@@ -235,6 +236,14 @@ export interface DiscoveredPage {
 export interface DiscoveryOptions {
   maxSitemaps?: number;
   maxSitemapUrls?: number;
+  /**
+   * Opt-in robots.txt compliance (TASKS.md #23). Default **false** — when
+   * unset, robots.txt is never fetched and discovery is exactly the
+   * historical behavior. When true, the permission rules parsed from
+   * robots.txt filter every candidate (llms.txt, sitemap entries, homepage
+   * nav links, root); disallowed URLs are counted, never queued.
+   */
+  useRobots?: boolean;
 }
 
 export interface DiscoveryInfo {
@@ -249,6 +258,12 @@ export interface DiscoveryInfo {
   bySource: Record<string, number>;
   /** True when the page list was truncated to maxSitemapUrls (manual/sitemap path). */
   truncated?: boolean;
+  /** Robots gate telemetry — only meaningful when discovery ran with useRobots. */
+  robotsChecked?: boolean;
+  /** Candidates dropped because robots.txt disallowed them. */
+  robotsSkipped?: number;
+  /** Robots.txt was unreachable (5xx/net) — crawl proceeded no-robots. */
+  robotsUnreachable?: boolean;
 }
 
 const ASSET_EXT = /\.(xml|pdf|png|jpe?g|gif|svg|zip|mp4|webm|webp|css|js|woff2?|ttf|ico)(\?|#|$)/i;
@@ -313,14 +328,32 @@ async function fetchDiscoveryText(url: string, timeoutMs: number): Promise<{ tex
 export async function discoverPages(
   baseUrl: URL,
   opts?: DiscoveryOptions
-): Promise<{ pages: DiscoveredPage[]; info: DiscoveryInfo }> {
+): Promise<{ pages: DiscoveredPage[]; info: DiscoveryInfo; robots: RobotsRules | null }> {
   const { probeLlmsTxt } = await import("./llms-txt");
   const { inferCategory } = await import("./extractor");
 
   const t0 = Date.now();
   const maxSitemaps = opts?.maxSitemaps ?? 10;
   const maxSitemapUrls = opts?.maxSitemapUrls ?? 2000;
+  const useRobots = opts?.useRobots ?? false;
   const domain = baseUrl.hostname.replace(/^www\./, "");
+
+  // The robots gate: one fetch, both halves. Off by default — the fetch
+  // below does not happen unless the caller opted in, and `robots` stays
+  // null so every candidate is admitted untouched.
+  let robots: RobotsRules | null = null;
+  let robotsSkipped = 0;
+  let robotsUnreachable = false;
+  let robotsSitemaps: string[] = [];
+  if (useRobots) {
+    const fetched = await fetchRobotsTxt(baseUrl);
+    robots = fetched.rules;
+    robotsSitemaps = fetched.sitemaps;
+    robotsUnreachable = fetched.unreachable;
+    if (fetched.unreachable) {
+      logger.info(`[DISCOVERY] robots.txt unreachable (status ${fetched.status}) — proceeding without it`);
+    }
+  }
 
   const seen = new Map<string, DiscoveredPage>();
   // Repeat sightings across passes (sitemap + nav, llms.txt + sitemap) and
@@ -348,6 +381,12 @@ export async function discoverPages(
   ) => {
     if (!url) return;
     if (ASSET_EXT.test(url)) return;
+    // The gate applies to page candidates only (sitemaps themselves are
+    // .xml and already excluded); disallowed URLs are counted, not queued.
+    if (robots && !isAllowed(robots, url)) {
+      robotsSkipped++;
+      return;
+    }
     sightings.set(url, (sightings.get(url) ?? 0) + 1);
     if (sitemapPriority !== undefined) sitemapHints.set(url, sitemapPriority);
     if (seen.has(url)) return;
@@ -364,11 +403,9 @@ export async function discoverPages(
   const rootNorm = normalizeUrl(baseUrl.toString(), baseUrl);
   add(rootNorm, "root", 0);
 
-  // 2. Parallel: llms.txt probe + robots.txt sitemaps
-  const [llms, robotsSitemaps] = await Promise.all([
-    probeLlmsTxt(baseUrl).catch(() => ({ hasLlmsFull: false, hasLlmsTxt: false, extractedUrls: [] as string[] })),
-    discoverFromRobotsTxt(baseUrl).catch(() => [] as string[]),
-  ]);
+  // 2. llms.txt probe (robots.txt was already fetched above when enabled;
+  // when disabled its declared sitemaps are never consulted, by design).
+  const llms = await probeLlmsTxt(baseUrl).catch(() => ({ hasLlmsFull: false, hasLlmsTxt: false, extractedUrls: [] as string[] }));
 
   for (const u of (llms as any).extractedUrls ?? []) {
     add(normalizeUrl(u, baseUrl), "llms.txt", 1);
@@ -453,7 +490,11 @@ export async function discoverPages(
       sitemapsFollowed: followed,
       byCategory,
       bySource,
+      robotsChecked: useRobots,
+      robotsSkipped,
+      robotsUnreachable,
     },
+    robots,
   };
 }
 
@@ -698,6 +739,11 @@ export async function buildManualDiscovery(
       byCategory,
       bySource,
       truncated,
+      // The manual path is owner-curated by hand — the robots gate is for
+      // the autonomous discovery, not for explicitly supplied URLs.
+      robotsChecked: false,
+      robotsSkipped: 0,
+      robotsUnreachable: false,
     },
     droppedCrossDomain,
   };

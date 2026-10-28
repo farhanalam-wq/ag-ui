@@ -15,7 +15,6 @@ import { Globe } from "@phosphor-icons/react";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { WebsiteAnalytics } from "@/lib/api-client";
 import { AnomalyCard } from "@/components/analytics/anomaly-card";
-import { BarList } from "@/components/analytics/bar-list";
 import { BreakdownTable } from "@/components/analytics/breakdown-table";
 import { DataQualityNote } from "@/components/analytics/data-quality-note";
 import { MetricGrid } from "@/components/analytics/metric-tile";
@@ -29,6 +28,12 @@ const TrafficTrendChart = dynamic(
       (m) => m.TrafficTrendChart
     ),
   { ssr: false, loading: () => <Skeleton className="h-[280px] w-full" /> }
+);
+
+const ColumnChart = dynamic(
+  () =>
+    import("@/components/analytics/column-chart").then((m) => m.ColumnChart),
+  { ssr: false, loading: () => <Skeleton className="h-[220px] w-full" /> }
 );
 
 export function OverviewTab({
@@ -49,7 +54,70 @@ export function OverviewTab({
       })),
     [data]
   );
+  // Per-day series for the sparklines, derived the same way the totals are.
+  // A day with no sessions has no rate — a gap, not a zero.
+  const sparklines = useMemo(
+    () => ({
+      sessions: data.trend.map((t) => t.sessions),
+      pageviews: data.trend.map((t) => t.pageviews),
+      engagedSessions: data.trend.map((t) => t.engagedSessions),
+      engagementRate: data.trend.map((t) =>
+        t.sessions > 0 ? (t.engagedSessions / t.sessions) * 100 : null
+      ),
+      bounceRate: data.trend.map((t) =>
+        t.sessions > 0 ? 100 - (t.engagedSessions / t.sessions) * 100 : null
+      ),
+      pagesPerSession: data.trend.map((t) =>
+        t.sessions > 0 ? t.pageviews / t.sessions : null
+      ),
+    }),
+    [data]
+  );
   const uniquesMissing = data.totals.uniques === undefined;
+  // Caption for the traffic chart: momentum. Views in the second half of the
+  // range vs the first — the trend the daily bars only imply.
+  const trafficInsight = useMemo(() => {
+    if (data.trend.length < 4) return null;
+    const half = Math.floor(data.trend.length / 2);
+    const sum = (rows: typeof data.trend) =>
+      rows.reduce((a, t) => a + t.pageviews, 0);
+    const first = sum(data.trend.slice(0, half));
+    const second = sum(data.trend.slice(half));
+    if (first === 0) return null;
+    const pct = Math.round(((second - first) / first) * 1000) / 10;
+    return `Views ${pct >= 0 ? "rose" : "fell"} ${Math.abs(pct)}% from the first to the second half of the range.`;
+  }, [data]);
+  // Viewport labels are "WxH". Width is the axis that matters — sort by it,
+  // so the chart reads small → large instead of big → small.
+  const viewports = useMemo(
+    () =>
+      data.breakdowns.viewport
+        .map((v) => ({ label: v.label, pageviews: v.pageviews }))
+        .sort((a, b) => {
+          const wa = parseInt(a.label, 10);
+          const wb = parseInt(b.label, 10);
+          const na = Number.isFinite(wa) ? wa : Number.MAX_SAFE_INTEGER;
+          const nb = Number.isFinite(wb) ? wb : Number.MAX_SAFE_INTEGER;
+          return na - nb;
+        }),
+    [data]
+  );
+  // Caption for the width chart: which bucket holds the median view — the
+  // one number that tells the team what they are building for.
+  const viewportInsight = useMemo(() => {
+    const total = viewports.reduce((a, v) => a + v.pageviews, 0);
+    if (total === 0) return null;
+    let acc = 0;
+    for (const v of viewports) {
+      acc += v.pageviews;
+      if (acc >= total / 2) {
+        return Number.isFinite(parseInt(v.label, 10))
+          ? `Half of views are ${v.label}px wide or narrower.`
+          : `The median view has no reported width.`;
+      }
+    }
+    return null;
+  }, [viewports]);
 
   return (
     <div className="space-y-4">
@@ -63,26 +131,47 @@ export function OverviewTab({
       <MetricGrid
         columns={4}
         items={[
-          { id: "sessions", value: data.totals.sessions },
+          { id: "sessions", value: data.totals.sessions, sparkline: sparklines.sessions },
           {
             id: "uniques",
             value: data.totals.uniques,
             hint: uniquesMissing ? "Not computable for this range." : undefined,
           },
-          { id: "pageviews", value: data.totals.pageviews },
-          { id: "engagedSessions", value: data.totals.engagedSessions },
-          { id: "engagementRate", value: data.totals.engagementRate },
-          { id: "bounceRate", value: data.totals.bounceRate },
-          { id: "pagesPerSession", value: data.totals.pagesPerSession },
+          { id: "pageviews", value: data.totals.pageviews, sparkline: sparklines.pageviews },
+          {
+            id: "engagedSessions",
+            value: data.totals.engagedSessions,
+            sparkline: sparklines.engagedSessions,
+          },
+          {
+            id: "engagementRate",
+            value: data.totals.engagementRate,
+            sparkline: sparklines.engagementRate,
+          },
+          {
+            id: "bounceRate",
+            value: data.totals.bounceRate,
+            sparkline: sparklines.bounceRate,
+          },
+          {
+            id: "pagesPerSession",
+            value: data.totals.pagesPerSession,
+            sparkline: sparklines.pagesPerSession,
+          },
           { id: "avgEngagementTime", value: data.totals.avgEngagementTime },
         ]}
       />
 
       <TrendCard
         title="Traffic"
-        description="Pageviews (solid) vs sessions (dashed) per day."
+        description="Pageviews (solid) vs sessions (dashed) per day. Flagged days are the unusual days above — amber spikes, red dips."
+        insight={trafficInsight ?? undefined}
       >
-        <TrafficTrendChart data={trend} refreshKey={refreshKey} />
+        <TrafficTrendChart
+          data={trend}
+          refreshKey={refreshKey}
+          markers={data.anomalies}
+        />
       </TrendCard>
 
       <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
@@ -91,6 +180,7 @@ export function OverviewTab({
           labelHeader="Path"
           rows={data.breakdowns.path}
           columns={[{ key: "pageviews", label: "Views", mono: true }]}
+          barKey="pageviews"
           empty="No pageviews in this range."
         />
         <BreakdownTable
@@ -98,18 +188,29 @@ export function OverviewTab({
           labelHeader="Referrer"
           rows={data.breakdowns.referrer}
           columns={[{ key: "pageviews", label: "Views", mono: true }]}
+          barKey="pageviews"
           empty="No referrers in this range."
         />
       </div>
 
-      <BarList
+      <TrendCard
         title="Viewports"
-        description="Screen sizes behind the traffic — size the widget and pages for the leftmost bars."
-        rows={data.breakdowns.viewport.map((v) => ({
-          label: v.label,
-          value: v.pageviews,
-        }))}
-      />
+        description="Screen widths behind the traffic, small to large — size the widget and pages for the tall columns."
+        insight={viewportInsight ?? undefined}
+        footer="Widths as the tracker reported them; a viewport that did not parse sits at the right edge."
+      >
+        <ColumnChart
+          data={viewports}
+          series={[
+            {
+              key: "pageviews",
+              label: "Views",
+              color: "hsl(var(--chart-1))",
+            },
+          ]}
+          refreshKey={refreshKey}
+        />
+      </TrendCard>
 
       {data.freshness.dataQuality.includes("tracking-off") && (
         <p className="text-[13px] text-muted-foreground">

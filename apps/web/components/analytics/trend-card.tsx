@@ -20,12 +20,20 @@ import { cn } from "@/lib/utils";
 export function TrendCard({
   title,
   description,
+  insight,
   footer,
   children,
   className,
 }: {
   title: string;
   description?: string;
+  /**
+   * The takeaway, one sentence — what this chart says, computed from the
+   * data by the tab (DESIGN.md §1.2: charts carry insight captions). A
+   * caption is a finding, not a definition, so it renders brighter than the
+   * description above it.
+   */
+  insight?: React.ReactNode;
   footer?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
@@ -36,6 +44,15 @@ export function TrendCard({
         <CardTitle className="text-[15px] font-semibold">{title}</CardTitle>
         {description && (
           <CardDescription className="text-[13px]">{description}</CardDescription>
+        )}
+        {insight && (
+          <p className="mt-1 inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground">
+            <span
+              className="size-1.5 shrink-0 rounded-full bg-[hsl(var(--chart-1))]"
+              aria-hidden="true"
+            />
+            {insight}
+          </p>
         )}
       </CardHeader>
       <CardContent>

@@ -8,7 +8,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { sql } from "@ag-ui/database";
-import { deviceCaseSql, deviceCaseSqlText, localHourSql, timezoneOffsetMinutes } from "./dimensions";
+import { deviceCaseSql, deviceCaseSqlText, localHourSql, timezoneOffsetMinutes, viewportWidthBucketSql, VIEWPORT_WIDTH_BUCKETS, VIEWPORT_WIDTH_UNKNOWN } from "./dimensions";
 import { deviceFragment } from "./attribution";
 
 /** The SQL an expression compiles to, parameters included. */
@@ -56,6 +56,36 @@ describe("the device rule", () => {
 
   test("the re-exported fragment is the same rule", () => {
     expect(deviceFragment).toBe(deviceCaseSql);
+  });
+});
+
+describe("the viewport-width bucket rule", () => {
+  const bucket = (vp = sql`viewport`) =>
+    viewportWidthBucketSql(vp as never);
+
+  test("every bucket label appears, plus the unknown bucket", () => {
+    const text = sqlText(bucket());
+    for (const label of [...VIEWPORT_WIDTH_BUCKETS.map((b) => b.label), VIEWPORT_WIDTH_UNKNOWN]) {
+      expect(text).toContain(`'${label}'`);
+    }
+  });
+
+  test("the Mobile/Desktop edge is the device rule's own threshold", () => {
+    // The histogram explains the device split; a second boundary vocabulary
+    // would let the two disagree.
+    expect(sqlText(bucket())).toContain("< 768");
+  });
+
+  test("no bound parameters — SELECT and GROUP BY stay identical", () => {
+    // Same trap as the device rule: the fragment is inlined twice in one
+    // query, and a bound copy would make the GROUP BY a different expression.
+    expect(sqlText(bucket())).not.toMatch(/\$\d+/);
+  });
+
+  test("a viewport that does not parse is unknown, not a width", () => {
+    const text = sqlText(bucket());
+    const unknownArm = text.slice(text.indexOf("CASE"), text.indexOf("WHEN substring"));
+    expect(unknownArm).toContain("(unknown)");
   });
 });
 

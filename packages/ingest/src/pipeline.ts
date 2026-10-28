@@ -1,10 +1,11 @@
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import type { CliOptions, DiscoveredPage } from "./types";
-import { validateSafeUrl, inferCategory, calculatePriority } from "@ag-ui/crawler";
+import { validateSafeUrl, inferCategory, calculatePriority, fetchRobotsTxt } from "@ag-ui/crawler";
 import { discoverPages, printDiscovery } from "./discover";
 import { applyMaxPages, parseSelection } from "./select";
 import { crawlPages } from "./crawl";
+import { summarizeFailures, type FailureSummary } from "./summarize";
 import { populateDb } from "./populate";
 import {
   db,
@@ -138,6 +139,8 @@ export interface IngestPipelineResult {
   insertedDocs: number;
   chunkCount: number;
   factCount: number;
+  /** Crawl-failure summary (TASKS.md #24) — grouped reasons + top examples. */
+  failures?: FailureSummary;
   timings: {
     discoveryMs: number;
     crawlMs: number;
@@ -186,6 +189,8 @@ export async function runIngestPipeline(
     dryRun: false,
     noEmbedCache: false,
     withBrand: false,
+    useRobots: false,
+    robotsRules: null,
   };
 
   const opts: CliOptions = { ...defaultOpts, ...userOpts };
@@ -219,13 +224,38 @@ export async function runIngestPipeline(
       sitemapsFollowed: [],
       byCategory: {},
       bySource: {},
+      robotsChecked: false,
+      robotsSkipped: 0,
+      robotsUnreachable: false,
       ms: 0,
     };
+    // Pre-selected URLs skip discovery, but the opt-in fetch-phase gate
+    // still applies: fetch the rules so every fetch below re-checks.
+    if (opts.useRobots) {
+      const fetched = await fetchRobotsTxt(baseUrl as URL);
+      opts.robotsRules = fetched.rules;
+      info.robotsChecked = true;
+      info.robotsUnreachable = fetched.unreachable;
+      if (fetched.unreachable) {
+        console.log(`[INGEST] robots.txt unreachable — crawling without it (no-robots paradigm)`);
+      }
+    }
     console.log(`[INGEST] using ${pages.length} pre-selected URLs from client (skipping redundant discovery)`);
   } else {
     const res = await discoverPages(baseUrl as URL, opts);
     pages = res.pages;
     info = res.info;
+    // Hand the crawl phase the parsed rules so every fetch re-checks —
+    // nav links discovered mid-crawl and client-selected URLs both pass
+    // the gate, not just discovery-time candidates.
+    opts.robotsRules = res.robots;
+    if (opts.useRobots) {
+      if (info.robotsUnreachable) {
+        console.log(`[INGEST] robots.txt unreachable — crawling without it (no-robots paradigm)`);
+      } else if ((info.robotsSkipped ?? 0) > 0) {
+        console.log(`[INGEST] robots.txt: skipped ${info.robotsSkipped} flagged URL(s)`);
+      }
+    }
     if (pages.length === 0) {
       throw new Error("[DISCOVERY] no crawlable URLs found — aborting.");
     }
@@ -491,12 +521,35 @@ export async function runIngestPipeline(
   }
   const elapsedCrawl = ((stats.ms as number) / 1000).toFixed(1);
   const pps = (docs.length / Math.max(0.5, (stats.ms as number) / 1000)).toFixed(1);
-  console.log(`[CRAWL] done: docs=${docs.length} failed=${stats.failed} retries=${stats.retries} http=${stats.httpCount} playwright=${stats.pwCount} thin/dup=${stats.skippedThin} in ${elapsedCrawl}s (${pps} docs/s)`);
+  console.log(`[CRAWL] done: docs=${docs.length} failed=${stats.failed} retries=${stats.retries} http=${stats.httpCount} playwright=${stats.pwCount} thin/dup=${stats.skippedThin}${stats.robotsSkipped ? ` robots-skipped=${stats.robotsSkipped}` : ""} in ${elapsedCrawl}s (${pps} docs/s)`);
   if (stats.deadLetters && stats.deadLetters.length > 0) {
     console.log(`[CRAWL] dead-letter failures (${stats.failed} total, showing ${Math.min(10, stats.deadLetters.length)}):`);
     for (const f of stats.deadLetters.slice(0, 10)) {
       const st = f.status !== null && f.status !== undefined ? `HTTP ${f.status}` : "NET";
       console.log(`  - [${f.stage}] ${f.url} (${st}, attempts=${f.attempts}): ${f.error}`);
+    }
+  }
+  // One final progress event carrying the failure summary (TASKS.md #24):
+  // grouped reasons + top example URLs, emitted before any all-failed
+  // throw so the hard-failure UI also has real reasons to show.
+  const failureSummary = summarizeFailures(stats.deadLetters);
+  if (failureSummary.total > 0) {
+    try {
+      await opts.onProgress?.({
+        stage: "CRAWLING",
+        jobId: jobContext?.crawlJobId,
+        companyId: jobContext?.companyId,
+        snapshotId: jobContext?.snapshotId,
+        crawled: selected.length,
+        docs: docs.length,
+        failed: failureSummary.total,
+        skippedThin: stats.skippedThin,
+        totalSelected: selected.length,
+        failures: failureSummary,
+        message: `Crawl finished: ${docs.length} docs, ${failureSummary.total} failed`,
+      });
+    } catch {
+      // Non-blocking
     }
   }
   if (opts.dryRun || docs.length === 0) {
@@ -528,6 +581,7 @@ export async function runIngestPipeline(
       insertedDocs: docs.length,
       chunkCount: 0,
       factCount: 0,
+      failures: failureSummary,
       timings: { discoveryMs: info.ms, crawlMs: stats.ms as number, dbMs: 0, totalMs: Date.now() - tStart },
     };
   }
@@ -619,6 +673,7 @@ export async function runIngestPipeline(
     insertedDocs: res.insertedDocs,
     chunkCount: res.chunkCount,
     factCount: res.factCount,
+    failures: failureSummary,
     timings: {
       discoveryMs: info.ms,
       crawlMs: stats.ms as number,

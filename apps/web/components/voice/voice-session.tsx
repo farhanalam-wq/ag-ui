@@ -24,7 +24,7 @@ import {
   type RemoteAudioTrack,
   type TextStreamReader,
 } from "livekit-client";
-import { fetchVoiceToken, resolveLivekitUrl } from "@/lib/voice-client";
+import { fetchVoiceToken, resolveLivekitUrl, saveVoiceTranscript } from "@/lib/voice-client";
 import {
   coalesceVoiceLines,
   readSegmentId,
@@ -65,6 +65,14 @@ export interface VoiceSessionProps {
   widgetKey?: string;
   apiBase?: string;
   metadata?: { customer?: { name?: string } };
+  /** Host page the call started on (embed): stamped on the conversation. */
+  path?: string;
+  /**
+   * Cookieless visit identity (embed: the loader's sh/vh id pair) — stamped
+   * on the voice conversation at mint so the docket resolves visit context
+   * exactly like typed chat.
+   */
+  visitIdentity?: { sessionHash?: string; visitorHash?: string };
   /** Called once per ended call with finalized utterances (no live transcript UI v1). */
   onFinalLines?: (lines: VoiceLine[]) => void;
   /** Called when the room connects: the call is now real (and countable). */
@@ -88,6 +96,8 @@ export function VoiceSession({
   widgetKey,
   apiBase,
   metadata,
+  path,
+  visitIdentity,
   onFinalLines,
   onCallStart,
   onCallEnd,
@@ -115,6 +125,10 @@ export function VoiceSession({
   onCallEndRef.current = onCallEnd;
   /** When the room connected — the start of the billable/measurable call. */
   const connectedAtRef = useRef<number | null>(null);
+  /** The voice conversation the server created at token mint (transcript sink). */
+  const voiceConversationIdRef = useRef<string | null>(null);
+  const visitIdentityRef = useRef(visitIdentity);
+  visitIdentityRef.current = visitIdentity;
 
   useEffect(() => {
     setMounted(true);
@@ -154,7 +168,28 @@ export function VoiceSession({
     setError(null);
     setStatus("idle");
     if (lines.length > 0) onFinalLinesRef.current?.(lines);
-  }, []);
+    // Persist what the call produced. The server created the channel-marked
+    // voice conversation at token mint; this save is the only trace of a
+    // voice visit. The local copy above stays the instant-optics path — a
+    // failed save never surfaces as a visitor-facing error.
+    const conversationId = voiceConversationIdRef.current;
+    voiceConversationIdRef.current = null;
+    if (conversationId) {
+      const identity = visitIdentityRef.current;
+      void saveVoiceTranscript({
+        ...(widgetKey ? { widgetKey } : {}),
+        ...(companyId ? { companyId } : {}),
+        conversationId,
+        apiBase,
+        lines: lines.map((l) => ({
+          speaker: l.speaker === "agent" ? ("agent" as const) : ("user" as const),
+          text: l.text,
+        })),
+      }).catch(() => {
+        // Quiet: the docket simply won't show the call.
+      });
+    }
+  }, [widgetKey, companyId, apiBase]);
 
   // A call that ends because the panel goes away is still a call: report it
   // rather than losing the only record we would ever have of it. finalize is
@@ -211,12 +246,24 @@ export function VoiceSession({
     setError(null);
     setStatus("fetching");
 
-    fetchVoiceToken({ companyId, widgetKey, apiBase, metadata }, controller.signal)
+    fetchVoiceToken(
+      {
+        companyId,
+        widgetKey,
+        apiBase,
+        metadata,
+        path: path || undefined,
+        sessionHash: visitIdentity?.sessionHash,
+        visitorHash: visitIdentity?.visitorHash,
+      },
+      controller.signal
+    )
       .then((minted) => {
         if (controller.signal.aborted) return;
         const url = resolveLivekitUrl(minted);
         if (!url) throw new Error("Voice is not available right now");
         abortRef.current = null;
+        voiceConversationIdRef.current = minted.conversationId;
         setToken(minted.token);
         setServerUrl(url);
         setStatus("connecting");
@@ -227,7 +274,7 @@ export function VoiceSession({
         setError(err instanceof Error ? err.message : "Could not start the voice call");
         setStatus("error");
       });
-  }, [status, companyId, widgetKey, apiBase, metadata]);
+  }, [status, companyId, widgetKey, apiBase, metadata, path, visitIdentity]);
 
   const handleLevel = useCallback((next: number, speaking: boolean) => {
     setLevel((prev) => (Math.abs(prev - next) < 0.02 ? prev : next));

@@ -24,7 +24,7 @@ import {
   WarningCircle,
   Waveform,
 } from "@phosphor-icons/react";
-import { useCompanyChat } from "@/hooks/use-company-chat";
+import { useCompanyChat, type ChatMessage } from "@/hooks/use-company-chat";
 import { ChatMessageItem } from "@/components/chat-message";
 import { apiClient } from "@/lib/api-client";
 import {
@@ -213,6 +213,12 @@ function EmbedChatInner({
   // from the last /config theme so a light brand doesn't flash dark).
   const surfaceParam = searchParams.get("surface") || undefined;
   const textParam = searchParams.get("text") || undefined;
+  // Visit identity threaded by the loader (?sh=&vh=): random opaque ids.
+  // The conversation row stores them so the studio can later resolve the
+  // visit context (device, pages seen, conversion). Absent in the studio
+  // preview and on handcrafted URLs — chat still works without them.
+  const sessionHashParam = sanitizeIdentityParam(searchParams.get("sh"));
+  const visitorHashParam = sanitizeIdentityParam(searchParams.get("vh"));
 
   const [phase, setPhase] = useState<"loading" | "indexing" | "chat" | "error">("loading");
   const [config, setConfig] = useState<LoadedChatConfig | null>(null);
@@ -243,6 +249,7 @@ function EmbedChatInner({
     appendVoiceTranscript,
     openDrawerWithEvidence,
     activeBrand,
+    activeConversationId,
   } = useCompanyChat();
 
   const displayName = titleOverride || config?.name || "Assistant";
@@ -305,6 +312,14 @@ function EmbedChatInner({
     }
     return base;
   }, [config, colorOverride, surfaceParam, textParam, liveTheme, activeBrand]);
+
+  /** Identity params are random ids the loader minted; trim junk URLs down. */
+  function sanitizeIdentityParam(raw: string | null): string | undefined {
+    if (!raw) return undefined;
+    const v = raw.trim();
+    // Server caps at 64; anything shorter than 8 is not one of our ids.
+    return v.length >= 8 && v.length <= 64 ? v : undefined;
+  }
 
   function isHexParam(v: unknown): v is string {
     return typeof v === "string" && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v.trim());
@@ -529,12 +544,47 @@ function EmbedChatInner({
           apiBase,
           channel: "embed",
           path: hostPathRef.current ?? undefined,
+          sessionHash: sessionHashParam,
+          visitorHash: visitorHashParam,
         });
       } else {
         await sendMessage(text, sessionKey, { apiBase, channel: "chat" });
       }
     },
-    [sessionKey, identity.kind, isStreaming, phase, sendMessage, apiBase]
+    [sessionKey, identity.kind, isStreaming, phase, sendMessage, apiBase, sessionHashParam, visitorHashParam]
+  );
+
+  // Optimistic thumbs state, keyed by the client render id. The persisted
+  // rating keys on the server message id (`messageId`), resolved on submit.
+  const [ratings, setRatings] = useState<Record<string, 1 | -1>>({});
+
+  /**
+   * Persist a thumbs rating for one assistant message. The endpoint is
+   * key-scoped public: no credentials, the widget key in the path is the
+   * whole authority. Failures stay quiet in the UI (the network request is
+   * still logged by the browser console) and the optimistic state holds —
+   * a lost thumb is not worth an error banner in the visitor's chat.
+   */
+  const identityWidgetKey = identity.kind === "key" ? identity.widgetKey : null;
+
+  const handleRate = useCallback(
+    (msg: ChatMessage, rating: 1 | -1) => {
+      const widgetKey = identityWidgetKey;
+      const conversationId = activeConversationId;
+      const messageId = msg.messageId;
+      if (!widgetKey || !conversationId || !messageId) return;
+      setRatings((prev) => ({ ...prev, [msg.id]: rating }));
+      void apiClient.embed
+        .rateMessage(
+          widgetKey,
+          { conversation_id: conversationId, message_id: messageId, rating },
+          apiBase
+        )
+        .catch(() => {
+          // Quiet: the studio transcript simply won't show the rating.
+        });
+    },
+    [identityWidgetKey, activeConversationId, apiBase]
   );
 
   const handleOpenEvidence = useCallback(
@@ -747,6 +797,12 @@ function EmbedChatInner({
                 }}
                 onInspectEvidence={handleOpenEvidence}
                 hideEvidence={noCitations}
+                rating={ratings[msg.id] ?? null}
+                onRate={
+                  identity.kind === "key"
+                    ? (r) => handleRate(msg, r)
+                    : undefined
+                }
               />
             ))}
             <div ref={messagesEndRef} />
@@ -767,6 +823,12 @@ function EmbedChatInner({
               widgetKey={identity.kind === "key" ? identity.widgetKey : undefined}
               companyId={identity.kind === "company" ? identity.companyId : undefined}
               apiBase={apiBase}
+              path={hostPathRef.current ?? undefined}
+              visitIdentity={
+                identity.kind === "key"
+                  ? { sessionHash: sessionHashParam, visitorHash: visitorHashParam }
+                  : undefined
+              }
               onFinalLines={appendVoiceTranscript}
               onCallStart={() => postAgentEvent("voice_start")}
               onCallEnd={({ durationSec, turns }) =>
