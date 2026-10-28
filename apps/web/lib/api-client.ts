@@ -400,6 +400,12 @@ export interface IngestStreamCallbacks {
     chunks?: number;
     facts?: number;
     message?: string;
+    /** Crawl-failure summary (final CRAWLING event): grouped reasons + top examples. */
+    failures?: {
+      total: number;
+      groups: { reason: string; count: number }[];
+      items: { url: string; stage: string; status?: number | null; error: string; attempts: number }[];
+    };
   }) => void;
   onDone?: (result: any) => void;
   onError?: (error: { message: string }) => void;

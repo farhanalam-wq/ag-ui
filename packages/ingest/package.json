@@ -6,7 +6,8 @@
   "types": "./src/index.ts",
   "scripts": {
     "build": "tsc --noEmit",
-    "lint": "echo 'ingest: lint ok'"
+    "lint": "echo 'ingest: lint ok'",
+    "test": "bun test src"
   },
   "dependencies": {
     "@ag-ui/crawler": "workspace:*",
