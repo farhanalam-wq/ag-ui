@@ -59,6 +59,20 @@ export function formatDelta(
   return `${sign}${Math.round(pct * 10) / 10}% vs previous period`;
 }
 
+/**
+ * The same delta as a signed number, for callers that render it themselves
+ * (a metric tile's pill, where the tile decides the colour from whether a
+ * rise is good). Null under the same honesty rule as `formatDelta`.
+ */
+export function deltaPct(
+  current: number | null | undefined,
+  previous: number | null | undefined
+): number | null {
+  if (previous === null || previous === undefined || previous <= 0) return null;
+  if (current === null || current === undefined) return null;
+  return Math.round(((current - previous) / previous) * 1000) / 10;
+}
+
 /** The number a breakdown cell shows: counts as counts, nothing invented. */
 export function formatCount(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {

@@ -10,16 +10,16 @@
  * Exempt by design:
  * - `/api/embed/*` — no cookies; the key + allowed-origin gate is the control.
  * - `/api/voice/tool/*` — server-to-server bearer secret, no cookies.
- * - `/api/voice/token` — dual route: the widget-key path is cookie-free and
- *   origin-gated, while the company path is protected by SameSite=Lax (a
- *   cross-site POST does not carry the session cookie).
+ * - `/api/voice/token`, `/api/voice/transcript` — dual routes: the widget-key
+ *   path is cookie-free and origin-gated, while the company path is protected
+ *   by SameSite=Lax (a cross-site POST does not carry the session cookie).
  */
 import { Elysia, status } from "elysia";
 import { authConfig } from "./auth/config";
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const EXEMPT_PREFIXES = ["/api/embed/", "/api/voice/tool/"];
-const EXEMPT_EXACT = new Set(["/api/voice/token"]);
+const EXEMPT_EXACT = new Set(["/api/voice/token", "/api/voice/transcript"]);
 
 export type CsrfFailure = "origin" | "fetch-site";
 

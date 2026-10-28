@@ -13,6 +13,7 @@ export const QUEUE_NAMES = {
   EMBEDDING: "embedding-queue",
   VOICE: "voice-queue",
   ENRICH: "enrich-queue",
+  CHAT_ENRICH: "chat-enrich-queue",
   BRAND: "brand-queue",
   ANALYTICS: "analytics-queue",
 } as const;
@@ -26,10 +27,6 @@ export const processingQueue = new Queue(QUEUE_NAMES.PROCESSING, {
 });
 
 export const embeddingQueue = new Queue(QUEUE_NAMES.EMBEDDING, {
-  connection: redisConnection,
-});
-
-export const enrichQueue = new Queue(QUEUE_NAMES.ENRICH, {
   connection: redisConnection,
 });
 
@@ -90,5 +87,29 @@ export interface BrandJobData {
   snapshotId: string | null;
   origin: string;
 }
+
+/**
+ * Post-chat derived-data pass: lead extraction (spec §9.2) + competitor
+ * mention tagging, over one conversation. Fire-and-forget from the chat
+ * routes — never awaited in the SSE stream.
+ */
+export interface ConversationEnrichJobData {
+  companyId: string;
+  conversationId: string;
+  /** Widget key row that hosted the chat, null for studio/playground chats. */
+  widgetKeyId: string | null;
+  engine: "text" | "voice";
+}
+
+export const enrichQueue = new Queue(QUEUE_NAMES.ENRICH, {
+  connection: redisConnection,
+});
+
+export const chatEnrichQueue = new Queue(QUEUE_NAMES.CHAT_ENRICH, {
+  connection: redisConnection,
+  // Extraction is retryable (transient LLM/network failures), but three
+  // attempts is the ceiling — poison transcripts just fail loud in the ledger.
+  defaultJobOptions: { attempts: 3, backoff: { type: "exponential", delay: 2000 } },
+});
 
 export { Queue, Worker };

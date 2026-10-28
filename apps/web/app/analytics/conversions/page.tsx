@@ -18,6 +18,8 @@ import { apiClient } from "@/lib/api-client";
 import { useCompanyReport, type Range } from "@/lib/analytics";
 import { DataQualityNote } from "@/components/analytics/data-quality-note";
 import { FreshnessBadge } from "@/components/analytics/freshness-badge";
+import { FunnelChart } from "@/components/analytics/funnel-chart";
+import { Sparkline } from "@/components/analytics/sparkline";
 
 const ConversionsTrendChart = dynamic(
   () => import("@/app/overview/overview-charts").then((m) => m.ConversionsChart),
@@ -114,10 +116,15 @@ export default function ConversionsPage() {
         <div className="mt-6 min-w-0 space-y-4">
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             {[
-              { label: "Conversions", value: t!.conversions.toLocaleString() },
+              {
+                label: "Conversions",
+                value: t!.conversions.toLocaleString(),
+                sparkline: data!.daily.map((d) => d.conversions),
+              },
               {
                 label: "Revenue",
                 value: `$${t!.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+                sparkline: data!.daily.map((d) => d.revenue),
               },
               {
                 label: "Chat-assisted",
@@ -131,6 +138,11 @@ export default function ConversionsPage() {
                   <p className="mt-1 font-sans text-xl font-semibold tabular-nums tracking-tight">
                     {k.value}
                   </p>
+                  {k.sparkline && (
+                    <div className="mt-2">
+                      <Sparkline values={k.sparkline} ariaLabel={`${k.label} per day`} />
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ))}
@@ -157,36 +169,11 @@ export default function ConversionsPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-[15px] font-semibold">Funnel</CardTitle>
-              <CardDescription className="text-[13px]">
-                Session → open → conversation → conversion. Assisted means the
-                session also chatted (approximate, same-session match).
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ol className="space-y-2">
-                {data.funnel.map((s, i) => (
-                  <li
-                    key={s.stage}
-                    className="flex items-center gap-3 rounded-lg border px-3 py-2 text-sm"
-                  >
-                    <span className="font-sans text-[11px] tabular-nums text-muted-foreground">
-                      {i + 1}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate font-medium">
-                      {s.stage}
-                    </span>
-                    <span className="tabular-nums">{s.count.toLocaleString()}</span>
-                    <span className="w-16 text-right tabular-nums text-muted-foreground">
-                      {s.pctOfTop}%
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </CardContent>
-          </Card>
+          <FunnelChart
+            title="Funnel"
+            description="Session → open → conversation → conversion, with each step's survival of the previous one. Assisted means the session also chatted (approximate, same-session match)."
+            stages={data.funnel}
+          />
 
           <DataQualityNote notes={data.freshness.notes} />
 

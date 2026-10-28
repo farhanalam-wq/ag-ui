@@ -32,5 +32,8 @@
   "packageManager": "bun@1.4.2",
   "overrides": {
     "zod": "3.25.76"
+  },
+  "dependencies": {
+    "zod": "^3.25.76"
   }
 }

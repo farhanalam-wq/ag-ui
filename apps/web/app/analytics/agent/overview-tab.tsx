@@ -42,6 +42,21 @@ export function AgentOverviewTab({
     () => data.trend.map((t) => ({ ...t })),
     [data]
   );
+  // Caption for the trend card: demand momentum — questions in the second
+  // half of the range vs the first. Opens are also per day; questions are
+  // the demand the tab watches.
+  const demandInsight = useMemo(() => {
+    if (data.trend.length < 4) return null;
+    const half = Math.floor(data.trend.length / 2);
+    const sum = (rows: typeof data.trend) =>
+      rows.reduce((a, t) => a + Number(t.chatQuestions ?? 0), 0);
+    const first = sum(data.trend.slice(0, half));
+    const second = sum(data.trend.slice(half));
+    if (first === 0 && second === 0) return null;
+    if (first === 0) return `All ${second} questions arrived in the second half of the range.`;
+    const pct = Math.round(((second - first) / first) * 1000) / 10;
+    return `Questions ${pct >= 0 ? "rose" : "fell"} ${Math.abs(pct)}% from the first to the second half of the range.`;
+  }, [data]);
 
   return (
     <div className="space-y-4">
@@ -49,9 +64,20 @@ export function AgentOverviewTab({
         columns={3}
         items={[
           { id: "agentSessions", value: data.totals.agentSessions },
-          { id: "chatOpens", value: data.totals.chatOpens },
+          {
+            id: "chatOpens",
+            value: data.totals.chatOpens,
+            sparkline: data.trend.map((t) => t.chatOpens),
+          },
+          // No sparkline on the two ratios: their denominators are not per
+          // day in this payload, and a series that cannot be derived is a
+          // series the tile must not draw.
           { id: "chatOpenRate", value: data.totals.chatOpenRate },
-          { id: "messages", value: data.totals.messages },
+          {
+            id: "messages",
+            value: data.totals.messages,
+            sparkline: data.trend.map((t) => t.chatQuestions),
+          },
           {
             id: "questionsPerSession",
             value: data.totals.questionsPerSession,
@@ -62,6 +88,7 @@ export function AgentOverviewTab({
       <TrendCard
         title="Questions and widget opens"
         description="Per day: questions asked (solid) and widget opens (dashed)."
+        insight={demandInsight ?? undefined}
       >
         <SeriesTrendChart
           data={trend}

@@ -31,3 +31,4 @@ export * from "./widget-keys";
 export * from "./widget-key-domains";
 export * from "./tenancy";
 export * from "./rate-limit";
+export * from "./visitors";

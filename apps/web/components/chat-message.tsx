@@ -21,6 +21,8 @@ import {
   Copy,
   Check,
   Stack,
+  ThumbsDown,
+  ThumbsUp,
   WarningCircle,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
@@ -54,6 +56,13 @@ interface ChatMessageProps {
   onInspectEvidence: (item?: EvidenceItem) => void;
   /** Answer-only surfaces: hide the citation affordance, keep the copy action. */
   hideEvidence?: boolean;
+  /** Current stored rating for this message (thumbs surfaces only). */
+  rating?: 1 | -1 | null;
+  /**
+   * Present only on embed surfaces: persists a thumbs rating for this
+   * message. When absent (studio, playground) no rating UI renders.
+   */
+  onRate?: (rating: 1 | -1) => void;
 }
 
 function extractTextWithoutOpenUI(content: string): string {
@@ -127,6 +136,8 @@ export function ChatMessageItem({
   theme,
   onInspectEvidence,
   hideEvidence = false,
+  rating,
+  onRate,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
@@ -182,6 +193,11 @@ export function ChatMessageItem({
   const isRetrieving = message.stage === "retrieving";
   const isSynthesizing = message.stage === "synthesizing";
   const isError = message.stage === "error";
+  const isDone = message.stage === "done";
+  // Thumbs only appear on surfaces that supply `onRate` (embed) and only on
+  // finished answers — a streaming or failed response is not rateable.
+  const canRate = Boolean(onRate) && isDone && !isError;
+  const hasEvidence = Boolean(message.evidence && message.evidence.length > 0);
 
   const textContentWithoutOpenUI = repairListBreaks(extractTextWithoutOpenUI(message.content));
 
@@ -301,15 +317,16 @@ export function ChatMessageItem({
             </div>
           )}
 
-          {/* Footer: citations + copy. Answer-only surfaces (hideEvidence)
-              keep the copy action but render no citation affordance. */}
-          {message.evidence && message.evidence.length > 0 && (
+          {/* Footer: citations + copy + (embed-only) thumbs. Answer-only
+              surfaces (hideEvidence) keep the copy action but render no
+              citation affordance; ratings ride on `onRate`. */}
+          {(hasEvidence || canRate) && (
             <div
               className={`flex items-center gap-2 border-t border-border pt-3 ${
-                hideEvidence ? "justify-end" : "justify-between"
+                hasEvidence && !hideEvidence ? "justify-between" : "justify-end"
               }`}
             >
-              {!hideEvidence && (
+              {hasEvidence && !hideEvidence && (
                 <Button
                   type="button"
                   variant="ghost"
@@ -319,17 +336,43 @@ export function ChatMessageItem({
                 >
                   <Stack data-icon="inline-start" />
                   <span className="tabular-nums">
-                    Sources ({message.evidence.length})
+                    Sources ({message.evidence?.length})
                   </span>
                 </Button>
               )}
-              <MessageAction
-                tooltip="Copy response"
-                label="Copy response"
-                onClick={handleCopy}
-              >
-                {copied ? <Check /> : <Copy />}
-              </MessageAction>
+              <div className="flex items-center gap-1">
+                {canRate && (
+                  <>
+                    <MessageAction
+                      tooltip="Helpful"
+                      label="Helpful"
+                      onClick={() => onRate?.(1)}
+                    >
+                      <ThumbsUp
+                        weight={rating === 1 ? "fill" : undefined}
+                        className={rating === 1 ? "text-green-600" : undefined}
+                      />
+                    </MessageAction>
+                    <MessageAction
+                      tooltip="Not helpful"
+                      label="Not helpful"
+                      onClick={() => onRate?.(-1)}
+                    >
+                      <ThumbsDown
+                        weight={rating === -1 ? "fill" : undefined}
+                        className={rating === -1 ? "text-destructive" : undefined}
+                      />
+                    </MessageAction>
+                  </>
+                )}
+                <MessageAction
+                  tooltip="Copy response"
+                  label="Copy response"
+                  onClick={handleCopy}
+                >
+                  {copied ? <Check /> : <Copy />}
+                </MessageAction>
+              </div>
             </div>
           )}
         </MessageContent>

@@ -27,6 +27,19 @@ export const INTENT_FACT_PREDICATES: Record<string, string[]> = {
   location: ["office_location"],
 };
 
+/**
+ * The display names for the intent vocabulary, one map for every surface that
+ * prints an intent label (Overview, Intelligence → Intent Radar). Kept beside
+ * INTENT_KEYWORDS so a keyword can never gain a label the reports don't share.
+ */
+export const INTENT_LABELS: Record<string, string> = {
+  pricing: "Pricing Evaluation",
+  code: "Product Research",
+  contact: "Contact Request",
+  location: "Location Inquiry",
+  social: "Social & Brand",
+};
+
 /** Chunk categories boosted per intent during MMR input ordering. Never excludes. */
 export const INTENT_CATEGORY_BOOST: Record<string, string[]> = {
   pricing: ["pricing"],

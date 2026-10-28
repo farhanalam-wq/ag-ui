@@ -19,6 +19,8 @@ import {
   type AcquisitionReport,
   type BreakdownRow,
   type Channel,
+  type TrendPoint,
+  CHANNELS,
 } from "./registry";
 import { visitAttrCTEs } from "./attribution";
 import { sessionIslands } from "./sessions";
@@ -131,9 +133,14 @@ export async function getAcquisitionReport(
   if (uniques === null) dataQuality.push("uniques-unavailable");
 
   let previousTotals: Record<string, number> | undefined;
+  let previousTrend: TrendPoint[] | undefined;
   if (compare) {
     const pr = await db
-      .select({ pv: sql<number>`COALESCE(SUM(${metricsDaily.pageviews}), 0)::int`.as("pv"), se: sql<number>`COALESCE(SUM(${metricsDaily.sessions}), 0)::int`.as("se") })
+      .select({
+        day: sql<string>`${metricsDaily.day}::text`.as("day"),
+        pv: sql<number>`COALESCE(SUM(${metricsDaily.pageviews}), 0)::int`.as("pv"),
+        se: sql<number>`COALESCE(SUM(${metricsDaily.sessions}), 0)::int`.as("se"),
+      })
       .from(metricsDaily)
       .where(
         and(
@@ -141,8 +148,22 @@ export async function getAcquisitionReport(
           gte(metricsDaily.day, prevFrom.toISOString().slice(0, 10)),
           lt(metricsDaily.day, fromDay)
         )
-      );
-    previousTotals = { sessions: Number(pr[0]?.se ?? 0), pageviews: Number(pr[0]?.pv ?? 0) };
+      )
+      .groupBy(metricsDaily.day)
+      .orderBy(metricsDaily.day);
+    const prevByDay = new Map(pr.map((r) => [String(r.day).slice(0, 10), r]));
+    // The same day-list the current trend uses, so the two lines align
+    // day-for-day on the chart's x-axis.
+    const prevPoints: { d: string; pageviews: number; sessions: number }[] =
+      days.map((d) => {
+        const r = prevByDay.get(d);
+        return { d, pageviews: Number(r?.pv ?? 0), sessions: Number(r?.se ?? 0) };
+      });
+    previousTrend = prevPoints;
+    previousTotals = {
+      sessions: prevPoints.reduce((a, t) => a + t.sessions, 0),
+      pageviews: prevPoints.reduce((a, t) => a + t.pageviews, 0),
+    };
     const prevU = await mergeUniques(redis, companyId, dayList(fromDay, rangeDays));
     if (prevU !== null) previousTotals.uniques = prevU;
   }
@@ -150,6 +171,40 @@ export async function getAcquisitionReport(
   const byChannel = await breakdown(companyId, from, to, channels, (a2) => sql<string>`${a2.channel}`);
   const bySourceMedium = await breakdown(companyId, from, to, channels, (a2) => sql<string>`${a2.source} || ' / ' || ${a2.medium}`);
   const byCampaign = await breakdown(companyId, from, to, channels, (a2) => sql<string>`${a2.campaign}`);
+
+  // The mix over time: sessions per channel per day from the same attr scan
+  // the Channels table reads, so the chart and the table cannot disagree.
+  // Per-channel sessions counts a visit in each channel it touched (F-13) —
+  // the same definition the table uses, which is why the stacked columns can
+  // sum above the daily rollup total on multi-channel days.
+  const { v1: ctv1, v2: ctv2 } = visitAttrCTEs(companyId, from, to);
+  const ctDay = sql<string>`to_char(${ctv2.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`;
+  const ctRows = await db
+    .with(ctv1, ctv2)
+    .select({
+      d: sql<string>`${ctDay}`.as("d"),
+      channel: sql<string>`${ctv2.channel}`.as("channel"),
+      sessions: sql<number>`COUNT(DISTINCT ${ctv2.visitKey}) FILTER (WHERE ${ctv2.type} = 'pageview')::int`.as("sessions"),
+    })
+    .from(ctv2)
+    .where(channels.length > 0 ? or(...channels.map((c) => eq(ctv2.channel, c))) : undefined)
+    .groupBy(sql`${ctDay}`, sql`${ctv2.channel}`)
+    .orderBy(sql`${ctDay}`);
+  const byDayChannel = new Map<string, Map<string, number>>();
+  for (const r of ctRows) {
+    const d = String(r.d).slice(0, 10);
+    const into = byDayChannel.get(d) ?? new Map();
+    into.set(String(r.channel ?? ""), Number(r.sessions ?? 0));
+    byDayChannel.set(d, into);
+  }
+  // Every day in the window appears with every channel, zero-filled: a day
+  // the scan saw nothing had no traffic, not a hole in the chart.
+  const channelTrend: TrendPoint[] = days.map((d) => {
+    const m = byDayChannel.get(d);
+    const point: TrendPoint = { d };
+    for (const c of CHANNELS) point[c] = m?.get(c) ?? 0;
+    return point;
+  });
 
   // Landing pages: entry path per visit via ordered array_agg (builder + one aggregate fragment).
   const isl = sessionIslands(companyId, from, to);
@@ -193,12 +248,14 @@ export async function getAcquisitionReport(
     compare: compare ? "previous-period" : "off",
     totals: { ...outTotals, ...(outUniques !== null ? { uniques: outUniques } : {}) },
     ...(previousTotals ? { previousTotals } : {}),
+    ...(previousTrend ? { previousTrend } : {}),
     trend,
     breakdowns: {
       channel: byChannel,
       sourceMedium: bySourceMedium,
       campaign: byCampaign,
       landingPage: byLandingPage,
+      channelTrend,
     },
     freshness: await reportFreshness(false, dataQuality),
   };

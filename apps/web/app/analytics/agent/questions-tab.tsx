@@ -9,6 +9,7 @@
  * Intent Radar, which is still a placeholder.
  */
 
+import { useMemo } from "react";
 import { ChatCircleText } from "@phosphor-icons/react";
 import type { AgentQuestionsAnalytics } from "@/lib/api-client";
 import { BreakdownTable } from "@/components/analytics/breakdown-table";
@@ -21,6 +22,23 @@ export function AgentQuestionsTab({
 }: {
   data: AgentQuestionsAnalytics;
 }) {
+  // Caption: how often an open becomes a question, over the pages shown.
+  const insight = useMemo(() => {
+    const rows = data.breakdowns.path;
+    const q = rows.reduce((a, r) => a + Number(r.chatQuestions ?? 0), 0);
+    const o = rows.reduce((a, r) => a + Number(r.chatOpens ?? 0), 0);
+    const lead = rows.find((r) => Number(r.chatQuestions ?? 0) > 0);
+    if (q <= 0 || !lead) return null;
+    // No share-of-total: the rows are a bounded top-10 scan, so a percentage
+    // would claim coverage it does not have.
+    const parts = [`${lead.label} draws the most questions (${Number(lead.chatQuestions)}).`];
+    if (o > 0) {
+      const perOpen = Math.round((q / o) * 100) / 100;
+      parts.push(`Across these pages, each open leads to ${perOpen} questions on average.`);
+    }
+    return parts.join(" ");
+  }, [data]);
+
   return (
     <div className="space-y-4">
       <MetricGrid
@@ -39,12 +57,14 @@ export function AgentQuestionsTab({
       <BreakdownTable
         title="Questions by page"
         description="The host pages where visitors ask — the answer to “what makes people open the panel”."
+        insight={insight ?? undefined}
         labelHeader="Path"
         rows={data.breakdowns.path}
         columns={[
           { key: "chatQuestions", label: "Questions" },
           { key: "chatOpens", label: "Opens" },
         ]}
+        barKey="chatQuestions"
         empty="No agent activity in this range."
       />
 

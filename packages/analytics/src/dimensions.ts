@@ -77,6 +77,60 @@ export function localHourSqlText(startedAt: string, tzOffset: string): string {
 }
 
 /**
+ * The viewport-width distribution rule: a "WxH" viewport string → one bucket
+ * of the screen-size histogram. One definition, like every dimension rule in
+ * this file — the Audience tab's width chart and its GROUP BY read the same
+ * fragment, so the buckets cannot disagree with themselves.
+ *
+ * The boundaries are the common screen classes, and the Mobile/Desktop edge
+ * is the device rule's own threshold (a visit below 768 *is* Mobile), so the
+ * histogram explains the device split instead of introducing a second
+ * vocabulary for screen size.
+ *
+ * A viewport that does not parse ("", "unknown", "1024") is not a width, and
+ * gets its own bucket — the same honesty the device rule applies.
+ */
+export interface ViewportWidthBucket {
+  /** Exclusive upper bound, or null for the open-ended top bucket. */
+  max: number | null;
+  label: string;
+}
+
+export const VIEWPORT_WIDTH_BUCKETS: ViewportWidthBucket[] = [
+  { max: 421, label: "≤ 420" },
+  { max: DEVICE_MOBILE_MAX_WIDTH, label: "421–767" },
+  { max: 1024, label: "768–1023" },
+  { max: 1440, label: "1024–1439" },
+  { max: 1920, label: "1440–1919" },
+  { max: null, label: "≥ 1920" },
+];
+
+/** The label a viewport that does not parse gets. Not "other" — "unknown". */
+export const VIEWPORT_WIDTH_UNKNOWN = "(unknown)";
+
+/**
+ * The rule as SQL. Each arm re-inlines the same `w` fragment and inlines the
+ * labels and bounds as raw text on purpose: the SELECT and the GROUP BY must
+ * carry *identical* expressions, and two bound copies of the same label are
+ * two different expressions to Postgres — the same trap `deviceCaseSql`
+ * documents. The labels are fixed constants in this file, so raw text carries
+ * no injection risk.
+ */
+export function viewportWidthBucketSql(vp: SQLWrapper): SQL<string> {
+  const w = sql<number>`substring(${vp} from '^([0-9]{1,4})x')::int`;
+  const arms = VIEWPORT_WIDTH_BUCKETS
+    .filter((b) => b.max !== null)
+    .map((b) =>
+      sql`WHEN ${w} < ${sql.raw(String(b.max))} THEN ${sql.raw(`'${b.label}'`)} `
+    );
+  const top = VIEWPORT_WIDTH_BUCKETS[VIEWPORT_WIDTH_BUCKETS.length - 1];
+  return sql<string>`CASE
+    WHEN ${vp} !~ '^[0-9]{1,4}x' THEN ${sql.raw(`'${VIEWPORT_WIDTH_UNKNOWN}'`)}
+    ${sql.join(arms, sql``)}
+    ELSE ${sql.raw(`'${top.label}'`)} END`;
+}
+
+/**
  * Minutes east of UTC for an IANA timezone at a given instant.
  *
  * The snippet reports `Intl.DateTimeFormat().resolvedOptions().timeZone` —

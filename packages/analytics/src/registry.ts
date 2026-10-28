@@ -27,6 +27,19 @@ export * from "./catalogue";
 
 export type Channel = "Direct" | "Organic Social" | "Campaign" | "Email" | "Referral";
 
+/**
+ * The taxonomy itself, in display order — the one list every channel split
+ * reads, so a report and its filter can never disagree about what the
+ * channels are.
+ */
+export const CHANNELS: Channel[] = [
+  "Direct",
+  "Organic Social",
+  "Campaign",
+  "Email",
+  "Referral",
+];
+
 export const SOCIAL_HOSTS = [
   "facebook.com", "instagram.com", "x.com", "twitter.com", "linkedin.com",
   "youtube.com", "youtu.be", "tiktok.com", "pinterest.com", "reddit.com",
@@ -301,12 +314,25 @@ export interface AcquisitionReport {
   compare: "previous-period" | "off";
   totals: Record<string, number>;
   previousTotals?: Record<string, number>;
+  /**
+   * The previous period's daily totals, same day count, only when compare is
+   * on — the ghost line behind the current range. The totals above are the
+   * sum of these, so the chart and the delta pills cannot disagree.
+   */
+  previousTrend?: TrendPoint[];
   trend: TrendPoint[];
   breakdowns: {
     channel: BreakdownRow[];
     sourceMedium: BreakdownRow[];
     campaign: BreakdownRow[];
     landingPage: BreakdownRow[];
+    /**
+     * Sessions per channel per day, one point per day with a key per
+     * channel — the mix the Channels table ranks, drawn over time. Zeros
+     * are filled for days the scan saw nothing, because a missing day is no
+     * traffic, not a hole in the chart.
+     */
+    channelTrend: TrendPoint[];
   };
   freshness: Freshness;
 }
@@ -336,6 +362,13 @@ export interface AudienceReport {
     browser: BreakdownRow[];
     os: BreakdownRow[];
     hour: BreakdownRow[];
+    /**
+     * Pageviews bucketed by viewport width (`dimensions.ts` bucket rule),
+     * in bucket order — the distribution behind the device split. Pageview
+     * grain, stated on the tab: the visit table keeps only the device
+     * bucket, not the width.
+     */
+    viewportWidth: BreakdownRow[];
   };
   /** The share of visits that reported a timezone (0-100). */
   timezoneCoverage: number;
@@ -397,6 +430,69 @@ export interface AgentQuestionsReport {
   breakdowns: {
     path: BreakdownRow[];
   };
+  freshness: Freshness;
+}
+
+/**
+ * Intelligence → Intent Radar. Where the agent reports are counts and refuse
+ * to read question text, this is the surface where the questions come back —
+ * normalized into clusters, tagged with the shared intent vocabulary, and
+ * paired with whether the answer that followed had evidence behind it.
+ *
+ * Clusters and competitor mentions come from a bounded message scan, so they
+ * carry no share-of-total claim; the totals above them are the full count.
+ * `avgSimilarity` is null when none of a cluster's answers reported a
+ * retrieval score — absence, not zero.
+ */
+export interface IntelCluster {
+  /** Normalized question text — the grouping key, stable across reports. */
+  key: string;
+  /** The most recent original wording in the cluster, for display. */
+  question: string;
+  volume: number;
+  conversations: number;
+  /** Detected intent labels, first-seen order. Empty means unclassified. */
+  intents: string[];
+  answered: number;
+  grounded: number;
+  /** Answered but the reply carried no evidence — the blindspot count. */
+  blindspot: number;
+  /** No assistant reply followed the question. */
+  unanswered: number;
+  /** Mean retrieval confidence of the paired replies. Null when none reported one. */
+  avgSimilarity: number | null;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+export interface IntelCompetitor {
+  name: string;
+  mentions: number;
+  /** Up to three verbatim snippets from the conversations that mentioned it. */
+  quotes: string[];
+}
+
+export interface IntelIntentSlice {
+  /** Display intent label, or "Unclassified" when no keyword matched. */
+  intent: string;
+  questions: number;
+}
+
+export interface IntelRadarReport {
+  kind: "intel-radar";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  trend: TrendPoint[];
+  /**
+   * Intent mix over every scanned question — the full set, not a top slice,
+   * so the shares are legitimate. "Unclassified" is the General bucket.
+   */
+  intentBreakdown: IntelIntentSlice[];
+  clusters: IntelCluster[];
+  competitors: IntelCompetitor[];
+  /** True when the message scan hit its cap; the figures are the most recent slice. */
+  scanCapped: boolean;
   freshness: Freshness;
 }
 

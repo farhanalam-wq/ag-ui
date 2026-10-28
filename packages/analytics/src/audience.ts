@@ -23,9 +23,9 @@
  * worse than no breakdown.
  */
 
-import { db, sessions as sessionsTable, sql, eq, and, gte, lt } from "@ag-ui/database";
+import { db, sessions as sessionsTable, pageViews, sql, eq, and, gte, lt } from "@ag-ui/database";
 import { reportFreshness, type AudienceReport, type BreakdownRow } from "./registry";
-import { localHourSql } from "./dimensions";
+import { localHourSql, viewportWidthBucketSql, VIEWPORT_WIDTH_BUCKETS, VIEWPORT_WIDTH_UNKNOWN } from "./dimensions";
 
 /** The label a missing dimension gets. "Unknown" is not "other". */
 function label(value: string | null | undefined): string {
@@ -111,6 +111,45 @@ export async function getAudienceReport(
   const timezoneCoverage =
     totals.sessions > 0 ? Math.round((withTimezone / totals.sessions) * 1000) / 10 : 0;
 
+  // The viewport-width distribution behind the device split: the same scan
+  // the Website overview uses for its top viewports, grouped by the bucket
+  // rule instead of the raw string, so the shape survives sparse widths.
+  // Pageview grain — the visit table keeps the device bucket, not the width
+  // — and the tab says so. The same fragment object inlines into SELECT and
+  // GROUP BY, so Postgres sees one expression, not two.
+  const widthBucket = viewportWidthBucketSql(pageViews.viewport);
+  const widthRows = await db
+    .select({
+      label: sql<string>`${widthBucket}`.as("label"),
+      pageviews: sql<number>`COUNT(*)::int`.as("pageviews"),
+    })
+    .from(pageViews)
+    .where(
+      and(
+        eq(pageViews.companyId, companyId),
+        eq(pageViews.type, "pageview"),
+        eq(pageViews.isBot, false),
+        gte(pageViews.createdAt, windowStart),
+        lt(pageViews.createdAt, now)
+      )
+    )
+    .groupBy(sql`${widthBucket}`);
+  const widthIndex = new Map(
+    [...VIEWPORT_WIDTH_BUCKETS.map((b) => b.label), VIEWPORT_WIDTH_UNKNOWN].map(
+      (label, i) => [label, i]
+    )
+  );
+  const byViewportWidth: BreakdownRow[] = widthRows
+    .map((r) => ({
+      label: String(r.label ?? VIEWPORT_WIDTH_UNKNOWN),
+      pageviews: Number(r.pageviews ?? 0),
+    }))
+    .sort(
+      (a, b) =>
+        (widthIndex.get(a.label) ?? widthIndex.size) -
+        (widthIndex.get(b.label) ?? widthIndex.size)
+    );
+
   if (totals.sessions === 0 && totals.pageviews === 0) dataQuality.push("tracking-off");
   // Visits with no timezone are bucketed in UTC — say so rather than mixing
   // two clocks silently.
@@ -133,6 +172,7 @@ export async function getAudienceReport(
       hour: [...hours.entries()]
         .map(([label, v]) => ({ label, sessions: v.sessions, pageviews: v.pageviews }))
         .sort((a, b) => String(a.label).localeCompare(String(b.label))),
+      viewportWidth: byViewportWidth,
     },
     timezoneCoverage,
     freshness: await reportFreshness(false, dataQuality),

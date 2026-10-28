@@ -146,6 +146,8 @@ export interface AudienceAnalytics {
     browser: BreakdownRow[];
     os: BreakdownRow[];
     hour: BreakdownRow[];
+    /** Pageviews by viewport-width bucket, in bucket order (≤420 → ≥1920, unknown last). */
+    viewportWidth: BreakdownRow[];
   };
   /** Share of visits that reported a timezone (0-100). */
   timezoneCoverage: number;
@@ -200,6 +202,86 @@ export interface VoiceAnalytics {
   freshness: Freshness;
 }
 
+/* ------------------------------------------------------------------ */
+/* Intelligence — Intent Radar + Signals (spec §8).                     */
+/* ------------------------------------------------------------------ */
+
+export interface IntelCluster {
+  /** Normalized question text — the grouping key, stable across reports. */
+  key: string;
+  /** The most recent original wording in the cluster, for display. */
+  question: string;
+  volume: number;
+  conversations: number;
+  /** Detected intent labels; empty means unclassified. */
+  intents: string[];
+  answered: number;
+  grounded: number;
+  /** Answered but the reply carried no evidence — the blindspot count. */
+  blindspot: number;
+  /** No assistant reply followed the question. */
+  unanswered: number;
+  /** Mean retrieval confidence of the paired replies. Null when none reported one. */
+  avgSimilarity: number | null;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+export interface IntelCompetitor {
+  name: string;
+  mentions: number;
+  /** Up to three verbatim snippets from the conversations that mentioned it. */
+  quotes: string[];
+}
+
+export interface IntelRadarAnalytics {
+  kind: "intel-radar";
+  companyId: string;
+  rangeDays: number;
+  totals: Record<string, number>;
+  /** Daily counts — questions, highIntent, blindspot, unanswered. */
+  trend: { d: string; questions: number; highIntent: number; blindspot: number; unanswered: number }[];
+  /** Intent mix over every scanned question; "Unclassified" is the General bucket. */
+  intentBreakdown: { intent: string; questions: number }[];
+  clusters: IntelCluster[];
+  competitors: IntelCompetitor[];
+  /** True when the message scan hit its cap; figures are the most recent slice. */
+  scanCapped: boolean;
+  freshness: Freshness;
+}
+
+export type SignalDraftStatus = "DRAFT" | "APPROVED" | "DISMISSED";
+
+export interface SignalDraftRow {
+  id: string;
+  companyId: string;
+  clusterKey: string;
+  question: string;
+  status: SignalDraftStatus;
+  /** The drafted FAQ; null until generated. */
+  faq: { question: string; answer: string; sources: { title: string; url: string }[] } | null;
+  /** The public FAQPage JSON-LD, ready for a page's <head> or a CMS field. */
+  jsonld: unknown | null;
+  /** The model that produced the answer, for provenance. */
+  model: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface SignalDraftList {
+  drafts: SignalDraftRow[];
+}
+
+export interface SignalDraftGenerateResult {
+  existing: boolean;
+  draft: SignalDraftRow;
+}
+
+export interface SignalDraftRefusal {
+  error: "no-source" | "insufficient-source";
+  message: string;
+}
+
 export interface ConversionAnalytics {
   companyId: string;
   rangeDays: number;
@@ -237,12 +319,16 @@ export interface AcquisitionAnalytics {
   compare: "previous-period" | "off";
   totals: Record<string, number>;
   previousTotals?: Record<string, number>;
+  /** Previous period's daily totals, same length as `trend`, only when compare is on. */
+  previousTrend?: { d: string; pageviews: number; sessions: number }[];
   trend: { d: string; pageviews: number; sessions: number }[];
   breakdowns: {
     channel: BreakdownRow[];
     sourceMedium: BreakdownRow[];
     campaign: BreakdownRow[];
     landingPage: BreakdownRow[];
+    /** Sessions per channel per day — one point per day, a key per channel, zero-filled. */
+    channelTrend?: { d: string } & Record<string, string | number>[];
   };
   freshness: Freshness;
 }
@@ -281,6 +367,12 @@ export interface DiscoveryResponse {  success: boolean;
     bySource: Record<string, number>;
     /** True when the page list was truncated to maxSitemapUrls. */
     truncated?: boolean;
+    /** Robots gate telemetry — only meaningful when discovery ran with useRobots. */
+    robotsChecked?: boolean;
+    /** Candidates dropped because robots.txt disallowed them. */
+    robotsSkipped?: number;
+    /** Robots.txt was unreachable (5xx/net) — crawl proceeds no-robots. */
+    robotsUnreachable?: boolean;
   };
 }
 
@@ -378,6 +470,14 @@ export interface ChatStreamPayload {
   conversationId?: string;
   /** Host page path (embed only), so the conversation knows where it started. */
   path?: string;
+  /**
+   * Cookieless visit identity (embed only, threaded from the loader query
+   * params): random per-tab session id and persisting visitor id. The server
+   * stores them on the conversation row so the studio can resolve visit
+   * context — nothing fingerprintable travels.
+   */
+  session_hash?: string;
+  visitor_hash?: string;
 }
 
 export interface ChatStreamEvent {
@@ -563,6 +663,130 @@ export interface ErrorListResult {
   offset: number;
 }
 
+export interface VisitorConversationRow {
+  id: string;
+  title: string;
+  path: string | null;
+  /** How the conversation was produced: "text" chat or "voice" call transcript. */
+  channel?: string | null;
+  createdAt: string;
+  messageCount: number;
+  lastMessageAt: string | null;
+  ratingUp: number;
+  ratingDown: number;
+  device: string | null;
+  browser: string | null;
+  os: string | null;
+}
+
+export interface VisitorConversationFilters {
+  companyId: string;
+  /** ISO date/datetime. */
+  since?: string;
+  until?: string;
+  path?: string;
+  search?: string;
+  rating?: 1 | -1;
+  limit?: number;
+  offset?: number;
+}
+
+export interface VisitorConversationListResult {
+  total: number;
+  conversations: VisitorConversationRow[];
+}
+
+export interface VisitorTranscriptMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+  evidence: Array<{
+    sourceId?: string;
+    url?: string;
+    pageTitle?: string;
+    snippet?: string;
+    type?: string;
+    score?: number | null;
+  }> | null;
+  meta: Record<string, unknown> | null;
+  rating: number | null;
+}
+
+export interface VisitorTranscriptBundle {
+  company: { id: string; name: string };
+  conversation: {
+    id: string;
+    title: string;
+    path: string | null;
+    /** "text" | "voice" — voice transcripts render without evidence chips. */
+    channel: "text" | "voice";
+    createdAt: string;
+    sessionHash: string | null;
+    visitorHash: string | null;
+  };
+  session: {
+    startedAt: string | null;
+    endedAt: string | null;
+    pageviewCount: number | null;
+    device: string | null;
+    browser: string | null;
+    os: string | null;
+    tzOffset: number | null;
+    converted: boolean | null;
+    revenue: string | null;
+  } | null;
+  messages: VisitorTranscriptMessage[];
+}
+
+/** One docket row (spec §9.2). Confidence 0..1 from the extractor. */
+export interface VisitorLeadRow {
+  id: string;
+  contactName: string | null;
+  email: string | null;
+  phone: string | null;
+  /** BANT cues: {budget, authority, need, timeline} — verbatim quotes, nullable per key. */
+  bant: Record<string, string | null>;
+  techStack: string[];
+  extraTags: string[];
+  status: "NEW" | "QUALIFIED" | "CONTACTED" | "DISMISSED";
+  confidence: number | null;
+  firstMessage: string | null;
+  conversationId: string | null;
+  /** Title of the originating conversation (join in the list query). */
+  conversationTitle: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface VisitorLeadFilters {
+  companyId: string;
+  status?: VisitorLeadRow["status"];
+  /** ILIKE over contact name/email/phone/first message. */
+  search?: string;
+  /** Matches a value in tech_stack or extra_tags. */
+  tag?: string;
+  /** ISO date/datetime. */
+  since?: string;
+  until?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface VisitorLeadListResult {
+  total: number;
+  leads: VisitorLeadRow[];
+}
+
+export interface VisitorLeadDetail extends VisitorLeadRow {
+  conversation: { id: string; title: string; path: string | null } | null;
+}
+
+export interface VisitorLeadDetailResult {
+  company: { id: string; name: string };
+  lead: VisitorLeadDetail;
+}
+
 export interface ErrorFilters {
   companyId: string;
   source?: ErrorSource;
@@ -676,6 +900,37 @@ class ApiClient {
       );
     }
     return (await res.json()) as T;
+  }
+
+  /**
+   * Intelligence read/write: same error surface as analyticsRequest, plus a
+   * method/body, plus refusal bodies (`no-source`, `insufficient-source`)
+   * carried as the ApiError message — a refusal is an answer the UI shows,
+   * not a stack trace.
+   */
+  private async intelligenceRequest<T>(path: string, init?: RequestInit): Promise<T> {
+    const res = await authedFetch(`${this.baseUrl}${path}`, init);
+    if (res.ok) return (await res.json()) as T;
+    let body: { error?: string; message?: string; details?: unknown } | null = null;
+    try {
+      body = await res.json();
+    } catch {
+      /* not JSON */
+    }
+    const retryAfter = Number(res.headers.get("retry-after"));
+    throw new ApiError(
+      res.status,
+      res.status === 422
+        ? "invalid"
+        : res.status === 404
+          ? "not-found"
+          : res.status === 429
+            ? "rate-limited"
+            : "upstream",
+      body?.message ?? body?.error ?? `Intelligence request failed: HTTP ${res.status}`,
+      body?.details,
+      Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined
+    );
   }
 
   /**
@@ -949,6 +1204,83 @@ class ApiClient {
       this.analyticsRequest(
         `/api/analytics/audience?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
       ),
+  };
+
+  /**
+   * Intelligence endpoints (spec §8): the Intent Radar read + the Signals
+   * draft lifecycle. Draft generation is an on-demand, human-triggered LLM
+   * call; refusals (no-source / insufficient-source) arrive as ApiErrors
+   * whose message is display-ready.
+   */
+  intelligence = {
+    radar: (companyId: string, range = "14d"): Promise<IntelRadarAnalytics> =>
+      this.analyticsRequest(
+        `/api/analytics/intel/radar?companyId=${encodeURIComponent(companyId)}&range=${encodeURIComponent(range)}`
+      ),
+
+    drafts: (companyId: string): Promise<SignalDraftList> =>
+      this.analyticsRequest(`/api/analytics/intel/drafts?companyId=${encodeURIComponent(companyId)}`),
+
+    generateDraft: async (
+      companyId: string,
+      clusterKey: string,
+      question: string
+    ): Promise<SignalDraftGenerateResult> =>
+      this.intelligenceRequest(`/api/analytics/intel/drafts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId, clusterKey, question }),
+      }),
+
+    setDraftStatus: async (
+      companyId: string,
+      draftId: string,
+      status: SignalDraftStatus
+    ): Promise<{ draft: SignalDraftRow }> =>
+      this.intelligenceRequest(
+        `/api/analytics/intel/drafts/${encodeURIComponent(draftId)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ companyId, status }),
+        }
+      ),
+  };
+
+  /**
+   * Visitors reads: conversation index + transcript bundles (spec §9.1),
+   * lead docket + status pipeline (spec §9.2). Illegal status moves are a
+   * 422 from the API — surfaced as a thrown, display-ready error.
+   */
+  visitors = {
+    conversations: async (filters: VisitorConversationFilters): Promise<VisitorConversationListResult> => {
+      const qs = toQuery({ ...filters });
+      return this.request(`/api/visitors/conversations${qs ? `?${qs}` : ""}`);
+    },
+
+    conversation: async (conversationId: string): Promise<VisitorTranscriptBundle> => {
+      return this.request(`/api/visitors/conversations/${encodeURIComponent(conversationId)}`);
+    },
+
+    leads: async (filters: VisitorLeadFilters): Promise<VisitorLeadListResult> => {
+      const qs = toQuery({ ...filters });
+      return this.request(`/api/visitors/leads${qs ? `?${qs}` : ""}`);
+    },
+
+    lead: async (leadId: string): Promise<VisitorLeadDetailResult> => {
+      return this.request(`/api/visitors/leads/${encodeURIComponent(leadId)}`);
+    },
+
+    updateLead: async (
+      leadId: string,
+      status: VisitorLeadRow["status"]
+    ): Promise<{ lead: VisitorLeadRow }> => {
+      return this.request(`/api/visitors/leads/${encodeURIComponent(leadId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+    },
   };
 
   /**
@@ -1394,6 +1726,28 @@ class ApiClient {
         }
       }
     },
+
+    /**
+     * Thumbs rating intake (POST /api/embed/:key/rate). Key-scoped: the
+     * server resolves the company from the key row, so the visitor surface
+     * needs no credentials. No credentials here either — the payload rides
+     * on the opaque key in the URL.
+     */
+    rateMessage: async (
+      widgetKey: string,
+      payload: { conversation_id: string; message_id: string; rating: 1 | -1 },
+      customBase?: string
+    ): Promise<void> => {
+      const base = this.embed.baseFor(customBase);
+      const res = await authedFetch(`${base}/api/embed/${encodeURIComponent(widgetKey)}/rate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        throw new Error(`Rate request failed (HTTP ${res.status})`);
+      }
+    },
   };
 
   /**
@@ -1446,7 +1800,12 @@ class ApiClient {
   crawler = {
     discover: async (
       url: string,
-      options?: { maxSitemaps?: number; maxSitemapUrls?: number }
+      options?: {
+        maxSitemaps?: number;
+        maxSitemapUrls?: number;
+        /** Opt-in robots.txt compliance: filter discovered candidates by robots.txt rules. */
+        useRobots?: boolean;
+      }
     ): Promise<DiscoveryResponse> => {
       const res = await authedFetch(`${this.baseUrl}/api/crawler/discover`, {
         method: "POST",
@@ -1541,6 +1900,8 @@ class ApiClient {
         parseConcurrency?: number;
         embedConcurrency?: number;
         hostGapMs?: number;
+        /** Opt-in robots.txt compliance: gate discovery and every crawl fetch. */
+        useRobots?: boolean;
       },
       callbacks: IngestStreamCallbacks,
       signal?: AbortSignal

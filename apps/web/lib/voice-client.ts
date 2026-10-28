@@ -15,6 +15,14 @@ export interface VoiceTokenRequest {
   // company is injected server-side at mint; client must never spoof it.
   // The optional field below exists only for forward-compat typing.
   metadata?: { customer?: { name?: string }; company?: { id?: string } };
+  /**
+   * Cookieless visit identity + host page (embed): stamped on the voice
+   * conversation the server creates at mint, so the docket resolves the
+   * visit context the same way it does for typed chat.
+   */
+  sessionHash?: string;
+  visitorHash?: string;
+  path?: string;
 }
 
 export interface VoiceTokenResponse {
@@ -22,6 +30,8 @@ export interface VoiceTokenResponse {
   roomName: string | null;
   agentDispatch: unknown;
   livekitUrl: string | null;
+  /** Voice conversation created at mint; null when persistence degraded. */
+  conversationId: string | null;
 }
 
 export const VOICE_LIVEKIT_URL_FALLBACK =
@@ -60,6 +70,9 @@ export async function fetchVoiceToken(
         ...(req.companyId ? { companyId: req.companyId } : {}),
         ...(req.widgetKey ? { widgetKey: req.widgetKey } : {}),
         ...(req.metadata ? { metadata: req.metadata } : {}),
+        ...(req.path ? { path: req.path } : {}),
+        ...(req.sessionHash ? { session_hash: req.sessionHash } : {}),
+        ...(req.visitorHash ? { visitor_hash: req.visitorHash } : {}),
       }),
       signal,
     });
@@ -76,6 +89,7 @@ export async function fetchVoiceToken(
       roomName: data.roomName ?? null,
       agentDispatch: data.agentDispatch ?? null,
       livekitUrl: data.livekitUrl ?? null,
+      conversationId: typeof data.conversationId === "string" ? data.conversationId : null,
     };
   }
 
@@ -96,4 +110,38 @@ export async function fetchVoiceToken(
   throw new Error(
     detail && detail.length < 200 ? `Voice service error: ${detail}` : "Voice service error — try again"
   );
+}
+
+/**
+ * Persist finalized voice utterances onto the conversation the token mint
+ * created (`POST /api/voice/transcript`). Same dual identity as the mint:
+ * exactly one of widgetKey / companyId. Fire-and-forget from the caller's
+ * point of view — a lost transcript is unfortunate, an error banner in the
+ * visitor's chat over a phone-call artifact is not.
+ */
+export async function saveVoiceTranscript(
+  req: {
+    companyId?: string;
+    widgetKey?: string;
+    conversationId: string;
+    lines: Array<{ speaker: "user" | "agent"; text: string }>;
+    apiBase?: string;
+  },
+  signal?: AbortSignal
+): Promise<void> {
+  const base = baseFor(req.apiBase);
+  const res = await fetch(`${base}/api/voice/transcript`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...(req.companyId ? { companyId: req.companyId } : {}),
+      ...(req.widgetKey ? { widgetKey: req.widgetKey } : {}),
+      conversation_id: req.conversationId,
+      lines: req.lines.slice(0, 200),
+    }),
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`Voice transcript save failed (HTTP ${res.status})`);
+  }
 }
