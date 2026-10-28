@@ -9,6 +9,7 @@ import {
   calculatePriority,
   type DiscoveredUrl,
 } from "./discovery";
+import { fetchRobotsTxt, isAllowed, type RobotsRules } from "./robots";
 import { fetchPage } from "./fetcher";
 import { extractCleanContent, type ExtractedPageContent } from "./extractor";
 import { extractBrandIntelligence, type ExtractedBrandData } from "./brand";
@@ -19,11 +20,17 @@ export * from "./discovery";
 export * from "./fetcher";
 export * from "./extractor";
 export * from "./brand";
+export * from "./robots";
 
 export interface CrawlOptions {
   maxPages?: number;
   maxDepth?: number;
   forcePlaywright?: boolean;
+  /**
+   * Opt-in robots.txt compliance (TASKS.md #23). Default false — the
+   * legacy path is preserved byte-for-byte unless the caller opts in.
+   */
+  useRobots?: boolean;
 }
 
 export interface CrawledDocument extends ExtractedPageContent {
@@ -61,6 +68,25 @@ export class CompanyCrawler {
     const domain = baseUrl.hostname.replace(/^www\./, "");
     logger.info(`[CRAWLER] Starting ingestion for: ${baseUrl.origin} (maxPages: ${maxPages})`);
 
+    // Opt-in robots gate (TASKS.md #23): rules parsed once, applied to the
+    // queue seeds and to every fetch below. Default off — no robots.txt
+    // request, legacy behavior untouched.
+    let robotsRules: RobotsRules | null = null;
+    let robotsSitemaps: string[] = [];
+    let robotsSkipped = 0;
+    const admits = (url: string): boolean => {
+      if (robotsRules && !isAllowed(robotsRules, url)) {
+        robotsSkipped++;
+        return false;
+      }
+      return true;
+    };
+    if (options?.useRobots) {
+      const fetched = await fetchRobotsTxt(baseUrl);
+      robotsRules = fetched.rules;
+      robotsSitemaps = fetched.sitemaps;
+    }
+
     const documents: CrawledDocument[] = [];
     const visitedUrls: Set<string> = new Set();
     const queue: DiscoveredUrl[] = [];
@@ -92,11 +118,16 @@ export class CompanyCrawler {
 
     // Seed priority URLs from /llms.txt
     for (const url of llmsResult.extractedUrls) {
+      if (!admits(url)) continue;
       queue.push({ url, depth: 1, priority: 200 }); // Highest priority
     }
 
-    // 3. Probe sitemaps
-    const sitemaps = await discoverFromRobotsTxt(baseUrl);
+    // 3. Probe sitemaps (when the gate is on, robots.txt was already
+    // fetched for its rules — one fetch returned both halves; the legacy
+    // path keeps its own call).
+    const sitemaps = options?.useRobots
+      ? robotsSitemaps
+      : await discoverFromRobotsTxt(baseUrl);
     const defaultSitemap = new URL("/sitemap.xml", baseUrl).toString();
     if (!sitemaps.includes(defaultSitemap)) {
       sitemaps.push(defaultSitemap);
@@ -105,6 +136,7 @@ export class CompanyCrawler {
     for (const sitemapUrl of sitemaps.slice(0, 2)) {
       const sitemapUrls = await discoverFromSitemap(sitemapUrl, baseUrl, maxPages);
       for (const url of sitemapUrls) {
+        if (!admits(url)) continue;
         if (!visitedUrls.has(url) && !queue.some((q) => q.url === url)) {
           queue.push({
             url,
@@ -117,7 +149,7 @@ export class CompanyCrawler {
 
     // Ensure root URL is in queue with high priority
     const rootNormalized = normalizeUrl(baseUrl.toString(), baseUrl) || baseUrl.toString();
-    if (!queue.some((q) => q.url === rootNormalized)) {
+    if (admits(rootNormalized) && !queue.some((q) => q.url === rootNormalized)) {
       queue.unshift({ url: rootNormalized, depth: 0, priority: 150 });
     }
 
@@ -129,6 +161,7 @@ export class CompanyCrawler {
 
       if (visitedUrls.has(current.url)) continue;
       if (current.depth > maxDepth) continue;
+      if (!admits(current.url)) continue;
 
       visitedUrls.add(current.url);
       logger.info(`[CRAWLER] [${documents.length + 1}/${maxPages}] Fetching: ${current.url}`);
@@ -178,7 +211,7 @@ export class CompanyCrawler {
     }
 
     logger.info(
-      `[CRAWLER] Finished ingestion for ${domain}. Total documents: ${documents.length}, Pages crawled: ${visitedUrls.size}`
+      `[CRAWLER] Finished ingestion for ${domain}. Total documents: ${documents.length}, Pages crawled: ${visitedUrls.size}${robotsSkipped > 0 ? `, Robots skipped: ${robotsSkipped}` : ""}`
     );
 
     return {

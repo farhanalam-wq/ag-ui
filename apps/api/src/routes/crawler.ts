@@ -64,7 +64,7 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
   .post(
     "/discover",
     async ({ body, set }) => {
-      const { url: rawUrl, maxSitemaps, maxSitemapUrls } = body;
+      const { url: rawUrl, maxSitemaps, maxSitemapUrls, useRobots } = body;
 
       let parsedUrl: URL;
       try {
@@ -99,6 +99,7 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
         const { pages, info } = await discoverPages(safeBaseUrl, {
           maxSitemaps: maxSitemaps || 10,
           maxSitemapUrls: maxSitemapUrls || 2000,
+          useRobots: useRobots === true,
         });
 
         logger.info(
@@ -126,11 +127,12 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
         url: t.String(),
         maxSitemaps: t.Optional(t.Number({ minimum: 1, maximum: 50 })),
         maxSitemapUrls: t.Optional(t.Number({ minimum: 10, maximum: 5000 })),
+        useRobots: t.Optional(t.Boolean()),
       }),
       detail: {
         summary: "Discover crawlable URLs",
         description:
-          "Fast autonomous discovery probing robots.txt, recursive sitemaps, and llms.txt with category inference.",
+          "Fast autonomous discovery probing robots.txt, recursive sitemaps, and llms.txt with category inference. Set useRobots to filter candidates by robots.txt permission rules (opt-in; default crawls without consulting robots.txt).",
       },
     }
   )
@@ -502,6 +504,7 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
         hostGapMs,
         maxPages,
         maxConcurrentJobs,
+        useRobots,
       } = body;
 
       let clean = rawUrl.trim();
@@ -536,6 +539,7 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
         hostGapMs: hostGapMs || 150,
         maxPages: maxPages || 1000,
         maxConcurrentJobs: maxConcurrentJobs || 1,
+        useRobots: useRobots === true,
         yes: true,
         onProgress: async (evt: PipelineProgressEvent) => {
           eventQueue.push({
@@ -620,6 +624,7 @@ export const crawlerRoutes = new Elysia({ prefix: "/api/crawler" })
         hostGapMs: t.Optional(t.Number({ minimum: 50, maximum: 1000 })),
         maxPages: t.Optional(t.Number({ minimum: 1, maximum: 5000 })),
         maxConcurrentJobs: t.Optional(t.Number({ minimum: 1, maximum: 2 })),
+        useRobots: t.Optional(t.Boolean()),
       }),
       detail: {
         summary: "Stream Ingestion Pipeline",

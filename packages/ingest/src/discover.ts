@@ -5,22 +5,31 @@ import {
   discoverPages as discoverCanonical,
   type DiscoveredPage,
   type DiscoveryInfo,
+  type RobotsRules,
 } from "@ag-ui/crawler";
 
 export interface PipelineDiscoveryOptions {
   maxSitemaps?: number;
   maxSitemapUrls?: number;
+  /** Opt-in robots.txt compliance; false (default) never fetches robots.txt. */
+  useRobots?: boolean;
 }
 
 export async function discoverPages(
   baseUrl: URL,
   opts: PipelineDiscoveryOptions
-): Promise<{ pages: DiscoveredPage[]; info: DiscoveryInfo & { ms: number } }> {
-  const { pages, info } = await discoverCanonical(baseUrl, {
+): Promise<{
+  pages: DiscoveredPage[];
+  info: DiscoveryInfo & { ms: number };
+  /** Rules to hand the crawl phase so it re-checks each fetch. */
+  robots: RobotsRules | null;
+}> {
+  const { pages, info, robots } = await discoverCanonical(baseUrl, {
     maxSitemaps: opts.maxSitemaps,
     maxSitemapUrls: opts.maxSitemapUrls,
+    useRobots: opts.useRobots,
   });
-  return { pages, info: { ...info, ms: info.durationMs } };
+  return { pages, info: { ...info, ms: info.durationMs }, robots };
 }
 export function printDiscovery(pages: DiscoveredPage[], info: Record<string, any>, domain: string) {
   console.log(`\n[DISCOVERY] ${domain}: ${pages.length} crawlable URLs (${info.ms}ms)`);

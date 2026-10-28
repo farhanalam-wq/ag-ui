@@ -1,7 +1,7 @@
 
 // ---------------------------------------------------------------- types ---
 
-import type { DiscoveredPage } from "@ag-ui/crawler";
+import type { DiscoveredPage, RobotsRules } from "@ag-ui/crawler";
 
 export type { DiscoveredPage };
 
@@ -42,6 +42,14 @@ export interface CliOptions {
   dryRun: boolean;
   noEmbedCache: boolean;
   withBrand: boolean;
+  /**
+   * Opt-in robots.txt compliance (TASKS.md #23). When true, discovery
+   * consults robots.txt and `robotsRules` (resolved by the pipeline) gate
+   * every crawl fetch. Default false: robots.txt is never read.
+   */
+  useRobots?: boolean;
+  /** Set by the pipeline from the discovery result; the crawl phase re-checks. */
+  robotsRules?: RobotsRules | null;
   onProgress?: (event: PipelineProgressEvent) => void | Promise<void>;
 }
 

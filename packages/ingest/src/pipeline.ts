@@ -1,7 +1,7 @@
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import type { CliOptions, DiscoveredPage } from "./types";
-import { validateSafeUrl, inferCategory, calculatePriority } from "@ag-ui/crawler";
+import { validateSafeUrl, inferCategory, calculatePriority, fetchRobotsTxt } from "@ag-ui/crawler";
 import { discoverPages, printDiscovery } from "./discover";
 import { applyMaxPages, parseSelection } from "./select";
 import { crawlPages } from "./crawl";
@@ -186,6 +186,8 @@ export async function runIngestPipeline(
     dryRun: false,
     noEmbedCache: false,
     withBrand: false,
+    useRobots: false,
+    robotsRules: null,
   };
 
   const opts: CliOptions = { ...defaultOpts, ...userOpts };
@@ -219,13 +221,38 @@ export async function runIngestPipeline(
       sitemapsFollowed: [],
       byCategory: {},
       bySource: {},
+      robotsChecked: false,
+      robotsSkipped: 0,
+      robotsUnreachable: false,
       ms: 0,
     };
+    // Pre-selected URLs skip discovery, but the opt-in fetch-phase gate
+    // still applies: fetch the rules so every fetch below re-checks.
+    if (opts.useRobots) {
+      const fetched = await fetchRobotsTxt(baseUrl as URL);
+      opts.robotsRules = fetched.rules;
+      info.robotsChecked = true;
+      info.robotsUnreachable = fetched.unreachable;
+      if (fetched.unreachable) {
+        console.log(`[INGEST] robots.txt unreachable — crawling without it (no-robots paradigm)`);
+      }
+    }
     console.log(`[INGEST] using ${pages.length} pre-selected URLs from client (skipping redundant discovery)`);
   } else {
     const res = await discoverPages(baseUrl as URL, opts);
     pages = res.pages;
     info = res.info;
+    // Hand the crawl phase the parsed rules so every fetch re-checks —
+    // nav links discovered mid-crawl and client-selected URLs both pass
+    // the gate, not just discovery-time candidates.
+    opts.robotsRules = res.robots;
+    if (opts.useRobots) {
+      if (info.robotsUnreachable) {
+        console.log(`[INGEST] robots.txt unreachable — crawling without it (no-robots paradigm)`);
+      } else if ((info.robotsSkipped ?? 0) > 0) {
+        console.log(`[INGEST] robots.txt: skipped ${info.robotsSkipped} flagged URL(s)`);
+      }
+    }
     if (pages.length === 0) {
       throw new Error("[DISCOVERY] no crawlable URLs found — aborting.");
     }
@@ -491,7 +518,7 @@ export async function runIngestPipeline(
   }
   const elapsedCrawl = ((stats.ms as number) / 1000).toFixed(1);
   const pps = (docs.length / Math.max(0.5, (stats.ms as number) / 1000)).toFixed(1);
-  console.log(`[CRAWL] done: docs=${docs.length} failed=${stats.failed} retries=${stats.retries} http=${stats.httpCount} playwright=${stats.pwCount} thin/dup=${stats.skippedThin} in ${elapsedCrawl}s (${pps} docs/s)`);
+  console.log(`[CRAWL] done: docs=${docs.length} failed=${stats.failed} retries=${stats.retries} http=${stats.httpCount} playwright=${stats.pwCount} thin/dup=${stats.skippedThin}${stats.robotsSkipped ? ` robots-skipped=${stats.robotsSkipped}` : ""} in ${elapsedCrawl}s (${pps} docs/s)`);
   if (stats.deadLetters && stats.deadLetters.length > 0) {
     console.log(`[CRAWL] dead-letter failures (${stats.failed} total, showing ${Math.min(10, stats.deadLetters.length)}):`);
     for (const f of stats.deadLetters.slice(0, 10)) {

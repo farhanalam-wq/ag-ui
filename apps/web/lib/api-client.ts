@@ -367,6 +367,12 @@ export interface DiscoveryResponse {  success: boolean;
     bySource: Record<string, number>;
     /** True when the page list was truncated to maxSitemapUrls. */
     truncated?: boolean;
+    /** Robots gate telemetry — only meaningful when discovery ran with useRobots. */
+    robotsChecked?: boolean;
+    /** Candidates dropped because robots.txt disallowed them. */
+    robotsSkipped?: number;
+    /** Robots.txt was unreachable (5xx/net) — crawl proceeds no-robots. */
+    robotsUnreachable?: boolean;
   };
 }
 
@@ -1794,7 +1800,12 @@ class ApiClient {
   crawler = {
     discover: async (
       url: string,
-      options?: { maxSitemaps?: number; maxSitemapUrls?: number }
+      options?: {
+        maxSitemaps?: number;
+        maxSitemapUrls?: number;
+        /** Opt-in robots.txt compliance: filter discovered candidates by robots.txt rules. */
+        useRobots?: boolean;
+      }
     ): Promise<DiscoveryResponse> => {
       const res = await authedFetch(`${this.baseUrl}/api/crawler/discover`, {
         method: "POST",
@@ -1889,6 +1900,8 @@ class ApiClient {
         parseConcurrency?: number;
         embedConcurrency?: number;
         hostGapMs?: number;
+        /** Opt-in robots.txt compliance: gate discovery and every crawl fetch. */
+        useRobots?: boolean;
       },
       callbacks: IngestStreamCallbacks,
       signal?: AbortSignal
