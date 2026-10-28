@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { logger } from "./logger";
+import { redisConnectionOptions } from "./redis-config";
 
 export const EMBED_CACHE_VERSION = "v1";
 export const EMBED_CACHE_TTL_SECONDS = 30 * 24 * 3600;
@@ -43,8 +44,7 @@ export class EmbedCache {
           const mod = await import("ioredis");
           const Redis = (mod as any).default ?? mod.Redis ?? mod;
           const r = new Redis({
-            host: process.env.REDIS_HOST || "127.0.0.1",
-            port: parseInt(process.env.REDIS_PORT || "6379", 10),
+            ...redisConnectionOptions(),
             connectTimeout: 2000,
             maxRetriesPerRequest: 1,
             // enableReadyCheck stays true (default) so the ping below waits for

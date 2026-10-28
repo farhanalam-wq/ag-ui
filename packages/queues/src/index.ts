@@ -1,11 +1,11 @@
 import { Queue, Worker, type ConnectionOptions } from "bullmq";
 import Redis from "ioredis";
+import { redisConnectionOptions } from "@ag-ui/shared";
 
 export const redisConnection: ConnectionOptions = {
-  host: process.env.REDIS_HOST || "127.0.0.1",
-  port: parseInt(process.env.REDIS_PORT || "6379", 10),
+  ...redisConnectionOptions(),
   maxRetriesPerRequest: null,
-};
+} as ConnectionOptions;
 
 export const QUEUE_NAMES = {
   CRAWL: "crawl-queue",

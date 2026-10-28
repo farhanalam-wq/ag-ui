@@ -26,14 +26,13 @@ import {
   DEDUPE_TTL_SECONDS,
   startRollupTick,
 } from "@ag-ui/analytics";
-import { logger } from "@ag-ui/shared";
+import { logger, redisConnectionOptions } from "@ag-ui/shared";
 
 const FLUSH_SIZE = 500;
 const FLUSH_INTERVAL_MS = 2000;
 
 const redis = new Redis({
-  host: process.env.REDIS_HOST || "127.0.0.1",
-  port: parseInt(process.env.REDIS_PORT || "6379", 10),
+  ...redisConnectionOptions(),
   maxRetriesPerRequest: 1,
   retryStrategy: () => null,
 });
