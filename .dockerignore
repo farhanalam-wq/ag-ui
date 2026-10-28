@@ -1,0 +1,42 @@
+# Keep the Docker build context small — `COPY . .` in the Dockerfile relies
+# on this. The bun.lock and tsconfig files MUST stay (frozen install + paths).
+
+# VCS / local noise
+.git
+.gitignore
+.github
+.idea
+.vscode
+
+# Dependencies and build outputs (rebuilt inside the image)
+node_modules
+**/node_modules
+.next
+**/.next
+dist
+**/dist
+.turbo
+**/.turbo
+
+# Secrets — never bake runtime env into images
+.env
+.env.*
+!.env.example
+
+# Runtime data
+storage
+**/storage
+backups
+
+# Docs / audits / dev-only artifacts (keep README + SETUP)
+AUDIT_LOG.md
+WIDGET_THEME_PLAN.md
+TASKS.md
+docs
+sitemap-tests
+skills-lock.json
+
+# Docker files themselves are not needed inside the context
+Dockerfile
+docker-compose.yml
+.dockerignore

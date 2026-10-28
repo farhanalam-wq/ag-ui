@@ -35,7 +35,8 @@ Shared code in `packages/*`:
 | `extract` | fact extraction |
 | `genui` | generative-UI helpers |
 
-Infra (Postgres + pgvector, Redis, Qdrant) runs in Docker.
+Infra (Postgres + pgvector) runs in Docker; Redis and Qdrant come from
+external servers via `REDIS_URL` / `QDRANT_URL`.
 
 The CLI `ingest-cli.ts` is a thin wrapper, not the implementation — but it is the
 fastest way to drive ingestion locally.
@@ -50,7 +51,7 @@ fastest way to drive ingestion locally.
 | Need | Version | Check | Notes |
 |---|---|---|---|
 | Bun | **1.4.2** (pinned in root `packageManager`) | `bun --version` | Plain `bun install` activates the pinned toolchain. Do not use npm/pnpm here. |
-| Docker + Compose | any recent | `docker compose version` | Provides Postgres, Redis, Qdrant. No local installs of these needed. |
+| Docker + Compose | any recent | `docker compose version` | Provides Postgres+pgvector, and builds the api/web/worker images. No local installs of these needed. |
 | Git | any recent | `git --version` | |
 | OpenAI API key | — | — | Mandatory: embeddings + chat. Everything else boots without it, ingestion does not run. |
 | Playwright browsers | only if `--playwright` | n/a | JS-shell fallback is OFF by default. If you enable it: `bunx playwright install chromium` inside `packages/crawler` scope. |
@@ -108,7 +109,7 @@ Then fill in:
 | `DATABASE_URL` | **yes** | Default `postgresql://postgres:password@localhost:5432/ag_ui` works with §2.3 as-is |
 | `OPENAI_API_KEY` | **yes** (for ingest/chat) | Your key. Without it the stack boots but embeddings/chat fail. |
 | `QDRANT_URL` | **yes** | `http://localhost:6333` with §2.3 |
-| `REDIS_HOST` / `REDIS_PORT` | **yes** | `127.0.0.1` / `6379` with §2.3 |
+| `REDIS_URL` | **yes** | `redis://127.0.0.1:6379` with §2.3 (auth/TLS supported) |
 | `PORT` / `WEB_PORT` | no (defaults 3001/3000) | Change only on port conflicts |
 | `NEXT_PUBLIC_API_URL` / `NEXT_PUBLIC_BACKEND_URL` | yes, keep `http://localhost:3001` | Web talks to the API through these. If the API moves, both must move. |
 | `QDRANT_DUAL_WRITE` | no, keep `false` | Cutover is done; never re-enable without reading `docs/parity-check.md` |
@@ -139,15 +140,30 @@ precision). `REDIS_CACHE_OFF=1` bypasses the cache layer — diagnostics only.
 ### 2.3 Infrastructure
 
 ```bash
-docker compose up -d
-docker compose ps   # all three Up (qdrant + redis report healthy)
+docker compose up -d postgres
+docker compose ps   # postgres Up (healthy)
 ```
 
 | Service | Container | Ports | Data lives in |
 |---|---|---|---|
 | Postgres 16 (pgvector image — the extension is **not** used) | `ag-ui-postgres` | 5432 | `pgdata` volume |
-| Redis 7 | `ag-ui-redis` | 6379 | `redisdata` volume |
-| Qdrant v1.12.1 | `ag-ui-qdrant` | 6333/6334 | `qdrant_storage` volume |
+
+**Redis and Qdrant are not bundled.** Point `REDIS_URL` and `QDRANT_URL`
+(+ `QDRANT_API_KEY`) in `.env` at your servers — every Redis client
+(queues, embed cache, analytics worker) parses `REDIS_URL`, including
+auth and TLS (`rediss://…`); `REDIS_HOST`/`REDIS_PORT` remain the legacy
+fallback when `REDIS_URL` is unset.
+
+**Full-stack containers** (single-VM deploy; see `docker-compose.yml`):
+
+```bash
+docker compose up -d --build   # builds api/web/worker images, runs migrate, starts all
+```
+
+This also brings up a one-shot `migrate` service (drizzle-kit against the
+bundled Postgres) that must complete before api/worker start. `web`'s
+`NEXT_PUBLIC_*` values are inlined at build time — rebuild the web image
+after changing them.
 
 Volumes are local-only (gitignored). A fresh machine starts with an **empty
 knowledge base** — companies/snapshots do not transfer; plan one ingest per

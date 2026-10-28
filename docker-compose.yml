@@ -1,3 +1,19 @@
+# ag-ui deployment (single VM, docker compose).
+#
+# What ships here:
+#   postgres — PostgreSQL 16 + pgvector (the only bundled data service)
+#   migrate  — one-shot drizzle-kit migrate (schema before api/worker start)
+#   api      — Elysia API on Bun, port 3001
+#   worker   — BullMQ crawl/enrich worker (Playwright Chromium included)
+#   web      — Next.js app, port 3000 (NEXT_PUBLIC_* inlined at build time)
+#
+# Redis and Qdrant are NOT bundled — point REDIS_URL and QDRANT_URL
+# (plus QDRANT_API_KEY) at your managed servers in .env.
+#
+# NEXT_PUBLIC_* for the web image must be present at `docker compose build`
+# time: compose substitutes them from your shell environment or an .env at
+# the compose file's level — same file, so set them there.
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -11,38 +27,90 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-
-  redis:
-    image: redis:7-alpine
-    container_name: ag-ui-redis
-    restart: unless-stopped
-    command: redis-server --appendonly yes
-    ports:
-      - "6379:6379"
-    volumes:
-      - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ag_ui"]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 5
 
-  qdrant:
-    image: qdrant/qdrant:v1.12.1
-    container_name: ag-ui-qdrant
+  migrate:
+    build:
+      context: .
+      target: base
+    container_name: ag-ui-migrate
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Same credentials the postgres service is seeded with above.
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/ag_ui
+    command: bun --filter @ag-ui/database db:migrate
+
+  api:
+    build:
+      context: .
+      target: api
+    container_name: ag-ui-api
     restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Deployment hostnames/ports are decided here, not by .env defaults.
+      RUNTIME_ENV: production
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/ag_ui
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "3001:3001"
     volumes:
-      - qdrant_storage:/qdrant/storage
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333 && printf \"GET /readyz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3 && cat <&3 | grep -q \"200 OK\"'"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
+      - appstorage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build:
+      context: .
+      target: worker
+    container_name: ag-ui-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      RUNTIME_ENV: production
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/ag_ui
+    volumes:
+      - appstorage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: .
+      target: web
+      args:
+        NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:3001}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
+        NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL:-}
+    container_name: ag-ui-web
+    restart: unless-stopped
+    # No env_file: NEXT_PUBLIC_* are inlined at build time (build.args above)
+    # and the web app reads nothing else at runtime — passing .env here would
+    # only leak API keys into this container.
+    environment:
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
 
 volumes:
   pgdata:
-  redisdata:
-  qdrant_storage:
+  appstorage:

@@ -1,5 +1,6 @@
 export * from "./logger";
 export * from "./env";
+export * from "./redis-config";
 export * from "./storage";
 export * from "./chunker";
 export * from "./embed-cache";
