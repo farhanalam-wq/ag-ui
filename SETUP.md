@@ -18,6 +18,8 @@ Bun workspaces + Turborepo. Three runtimes:
 * `apps/api` (Elysia :3001),
 * `workers/worker` (BullMQ — ingestion **and** analytics rollups).
 
+The separate `apps/demo` showcase defaults to :3002 so it does not occupy the API port.
+
 Shared code in `packages/*`:
 
 | Package | Role |
