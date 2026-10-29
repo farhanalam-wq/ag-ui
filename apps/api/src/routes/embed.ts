@@ -409,17 +409,10 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
     "/:key/track",
     async ({ params, body, set, request }) => {
       // Anonymous endpoint (the only credential is the widget key in the URL;
-      // no cookies or sessions exist), so echoing the caller origin is safe
-      // and works for credentialed and plain requests alike. A hardcoded "*"
-      // breaks browsers that send credentials (track POSTs were stored
-      // server-side while the page logged ERR_FAILED).
-      const origin = request.headers.get("origin");
-      if (origin) {
-        set.headers["access-control-allow-origin"] = origin;
-        set.headers["vary"] = "Origin";
-      } else {
-        set.headers["access-control-allow-origin"] = "*";
-      }
+      // no cookies or sessions exist). ACAO is emitted by the global CORS
+      // plugin for the embed surface — a hardcoded "*" here breaks browsers
+      // that fetch with credentials, and a route-level echo duplicates the
+      // plugin's value (comma-joined, invalid). Leave origin headers to it.
 
       const resolved = await resolveActiveKey(params.key);
       if (resolved.error === "not_found") {
@@ -616,7 +609,10 @@ export const embedRoutes = new Elysia({ prefix: "/api/embed" })
       set.headers["content-type"] = "text/event-stream";
       set.headers["cache-control"] = "no-cache";
       set.headers["connection"] = "keep-alive";
-      set.headers["access-control-allow-origin"] = "*";
+      // ACAO is owned by the global CORS plugin (apps/api/src/cors.ts), which
+      // reflects the request origin for the embed surface. Setting it here as
+      // well merges two values into one comma-joined header and browsers
+      // reject the response ("Failed to fetch") — keep this route header-free.
 
       const resolved = await resolveActiveKey(params.key);
       if (resolved.error === "not_found") {
