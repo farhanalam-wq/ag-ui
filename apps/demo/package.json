@@ -7,7 +7,7 @@
     "build": "bun scripts/generate-site-files.ts && next build",
     "start": "next start -p 3002",
     "lint": "tsc --noEmit",
-    "test": "bun test"
+    "test": "echo 'demo: no test files yet'"
   },
   "dependencies": {
     "next": "16.4.2",

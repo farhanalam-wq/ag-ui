@@ -9,3 +9,4 @@ export * from "./summarize";
 export * from "./populate";
 export * from "./pipeline";
 export * from "./query";
+export * from "./orphan-sweep";

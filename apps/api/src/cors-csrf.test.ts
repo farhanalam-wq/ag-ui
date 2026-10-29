@@ -73,6 +73,70 @@ describe("CORS policy", () => {
     expect(missing.allowOrigin).toBeNull();
   });
 
+  test("embed key-management is dashboard for APP_URL and embed otherwise", () => {
+    // Session-cookie issuance from the dashboard needs Allow-Credentials —
+    // the missing header produced a CORS "Failed to fetch" on key issue.
+    const dashboard = corsPolicyFor("POST", "/api/embed/keys", APP_URL, APP_URL);
+    expect(dashboard).toEqual({
+      surface: "dashboard",
+      allowOrigin: APP_URL,
+      credentials: true,
+    });
+
+    const list = corsPolicyFor("GET", "/api/embed/keys", APP_URL, APP_URL);
+    expect(list.credentials).toBe(true);
+    const revoke = corsPolicyFor(
+      "POST",
+      "/api/embed/keys/k_123/revoke",
+      APP_URL,
+      APP_URL
+    );
+    expect(revoke.credentials).toBe(true);
+    const domains = corsPolicyFor(
+      "GET",
+      "/api/embed/keys/k_123/domains",
+      APP_URL,
+      APP_URL
+    );
+    expect(domains.credentials).toBe(true);
+
+    // Foreign origin on a management path: embed reflection, no credentials
+    // (the handler then 401s for the missing session — no new exposure).
+    const foreign = corsPolicyFor("POST", "/api/embed/keys", FOREIGN, APP_URL);
+    expect(foreign).toEqual({
+      surface: "embed",
+      allowOrigin: FOREIGN,
+      credentials: false,
+    });
+  });
+
+  test("embed widget paths never get dashboard credentials, even from APP_URL", () => {
+    // A key-holding page served from the APP_URL origin must not receive
+    // credential semantics — the widget surface is cookie-free by contract.
+    const widget = corsPolicyFor(
+      "POST",
+      "/api/embed/abc123/chat",
+      APP_URL,
+      APP_URL
+    );
+    expect(widget).toEqual({
+      surface: "embed",
+      allowOrigin: APP_URL,
+      credentials: false,
+    });
+
+    // "keys"/"domains" as the FIRST segment are management; a widget key
+    // named like them cannot collide (keys are opaque and not "keys").
+    const config = corsPolicyFor(
+      "GET",
+      "/api/embed/abc123/config",
+      "https://customer.example",
+      APP_URL
+    );
+    expect(config.surface).toBe("embed");
+    expect(config.credentials).toBe(false);
+  });
+
   test("voice token is dashboard for APP_URL and embed otherwise", () => {
     const dashboard = corsPolicyFor(
       "POST",
@@ -117,6 +181,34 @@ describe("CORS policy", () => {
     expect(embed["Access-Control-Allow-Credentials"]).toBeUndefined();
     expect(embed["Access-Control-Allow-Methods"]).toContain("POST");
     expect(embed["Access-Control-Allow-Headers"]).toBe("x-test");
+  });
+
+  test("embed key-management preflight carries credentials from APP_URL", () => {
+    const managed = corsHeaders(
+      corsPolicyFor("OPTIONS", "/api/embed/keys", APP_URL, APP_URL),
+      req("/api/embed/keys", {
+        method: "OPTIONS",
+        headers: {
+          origin: APP_URL,
+          "access-control-request-headers": "content-type",
+        },
+      })
+    );
+    expect(managed["Access-Control-Allow-Origin"]).toBe(APP_URL);
+    expect(managed["Access-Control-Allow-Credentials"]).toBe("true");
+
+    // Same preflight from a foreign origin stays cookie-free embed.
+    const foreign = corsHeaders(
+      corsPolicyFor("OPTIONS", "/api/embed/keys", FOREIGN, APP_URL),
+      req("/api/embed/keys", {
+        method: "OPTIONS",
+        headers: {
+          origin: FOREIGN,
+          "access-control-request-headers": "content-type",
+        },
+      })
+    );
+    expect(foreign["Access-Control-Allow-Credentials"]).toBeUndefined();
   });
 });
 

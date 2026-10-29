@@ -19,6 +19,7 @@ import { authRoutes } from "./routes/auth";
 import { visitorsRoutes } from "./routes/visitors";
 import { intelligenceRoutes } from "./routes/intelligence";
 import { authPlugin } from "./auth/plugin";
+import { sweepOrphanedCrawlJobs } from "@ag-ui/ingest";
 
 const PORT = parseInt(process.env.PORT || "3001", 10);
 
@@ -101,6 +102,9 @@ if (process.env.NODE_ENV !== "test" && process.env.AG_UI_NO_LISTEN !== "1") {
   app.listen(PORT);
   logger.info(`ag-ui Elysia API running at http://localhost:${PORT}`);
   logger.info(`Swagger docs available at http://localhost:${PORT}/swagger`);
+  // In-process pipelines die with the API process, so any live crawl job at
+  // boot is a zombie holding the max_concurrent_jobs cap. Reap before traffic.
+  void sweepOrphanedCrawlJobs();
 }
 
 export type App = typeof app;

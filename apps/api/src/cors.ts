@@ -24,6 +24,11 @@ export interface CorsPolicy {
 }
 
 const EMBED_PREFIX = "/api/embed/";
+// Session-authenticated key-management routes that live under the embed
+// prefix but are only ever called from the dashboard (issue/list keys,
+// revoke, allowed-domains). The public widget surface is /api/embed/:key/…
+// (first segment after the prefix is a raw key, never "keys"/"domains").
+const EMBED_MANAGEMENT_PREFIXES = ["/api/embed/keys", "/api/embed/domains/"];
 // Dual routes: dashboard company path vs public widget-key path. Treated as
 // the embed surface for any non-dashboard origin (the handler's origin gate
 // then decides whether the key may serve that page).
@@ -57,6 +62,21 @@ export function corsPolicyFor(
   }
 
   if (pathname.startsWith(EMBED_PREFIX)) {
+    // Key-management routes are session-cookie calls from the dashboard
+    // (credentials: "include"). Without dashboard semantics for the APP_URL
+    // origin, the browser rejects the response for the missing
+    // Access-Control-Allow-Credentials header — seen as "Failed to fetch"
+    // on widget-key issuance (TASKS: CORS fix). Widget paths (/api/embed/
+    // :key/…) keep the embed surface for every origin.
+    const dashboardManaged =
+      requestOrigin !== null &&
+      requestOrigin === appOrigin &&
+      EMBED_MANAGEMENT_PREFIXES.some(
+        (p) => pathname === p || pathname.startsWith(p + "/")
+      );
+    if (dashboardManaged) {
+      return { surface: "dashboard", allowOrigin: appOrigin, credentials: true };
+    }
     return {
       surface: "embed",
       allowOrigin: requestOrigin,

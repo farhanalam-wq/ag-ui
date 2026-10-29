@@ -17,6 +17,18 @@ async function authedFetch(url: string, init?: RequestInit): Promise<Response> {
   return fetch(url, { credentials: "include", ...init });
 }
 
+/** Public widget-key surface (`/api/embed/:key/…`) — the API's embed CORS
+ * policy reflects any origin but never allows credentials, so fetching with
+ * `credentials: "include"` is rejected by the browser ("must be 'true' when
+ * the request's credentials mode is 'include'"). The real widget (embed.js)
+ * fetches these cookie-free and the route is gated by the opaque key plus the
+ * allowed-domains check, so a plain omit-credentials fetch is both correct
+ * and required for the dashboard's live preview.
+ */
+async function publicFetch(url: string, init?: RequestInit): Promise<Response> {
+  return fetch(url, { ...init, credentials: "omit" });
+}
+
 /** Current signed-in user shape (`/api/auth/me` and friends). */
 export interface AuthUser {
   id: string;
@@ -1527,7 +1539,7 @@ class ApiClient {
 
     getConfig: async (widgetKey: string, customBase?: string): Promise<EmbedConfig> => {
       const base = this.embed.baseFor(customBase);
-      const res = await authedFetch(`${base}/api/embed/${encodeURIComponent(widgetKey)}/config`);
+      const res = await publicFetch(`${base}/api/embed/${encodeURIComponent(widgetKey)}/config`);
       if (res.status === 404) throw new Error("Assistant offline - widget key not found");
       if (res.status === 410) throw new Error("This assistant was disabled");
       if (!res.ok) {
@@ -1649,7 +1661,7 @@ class ApiClient {
       customBase?: string
     ): Promise<void> => {
       const base = this.embed.baseFor(customBase);
-      const res = await authedFetch(`${base}/api/embed/${encodeURIComponent(widgetKey)}/chat`, {
+      const res = await publicFetch(`${base}/api/embed/${encodeURIComponent(widgetKey)}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1745,7 +1757,7 @@ class ApiClient {
       customBase?: string
     ): Promise<void> => {
       const base = this.embed.baseFor(customBase);
-      const res = await authedFetch(`${base}/api/embed/${encodeURIComponent(widgetKey)}/rate`, {
+      const res = await publicFetch(`${base}/api/embed/${encodeURIComponent(widgetKey)}/rate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

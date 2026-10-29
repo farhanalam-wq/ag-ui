@@ -15,21 +15,6 @@
         "typescript": "^5.7.3",
       },
     },
-    "apps/alderwick-advisory": {
-      "name": "@ag-ui/alderwick-advisory",
-      "version": "0.0.1",
-      "dependencies": {
-        "next": "16.4.2",
-        "react": "^19.3.0",
-        "react-dom": "^19.3.0",
-      },
-      "devDependencies": {
-        "@types/node": "^22.13.4",
-        "@types/react": "^19.3.0",
-        "@types/react-dom": "^19.3.0",
-        "typescript": "^5.7.3",
-      },
-    },
     "apps/api": {
       "name": "@ag-ui/api",
       "version": "0.0.1",
@@ -50,6 +35,21 @@
       },
       "devDependencies": {
         "@types/bun": "latest",
+        "typescript": "^5.7.3",
+      },
+    },
+    "apps/demo": {
+      "name": "@ag-ui/alderwick-advisory",
+      "version": "0.0.1",
+      "dependencies": {
+        "next": "16.4.2",
+        "react": "^19.3.0",
+        "react-dom": "^19.3.0",
+      },
+      "devDependencies": {
+        "@types/node": "^22.13.4",
+        "@types/react": "^19.3.0",
+        "@types/react-dom": "^19.3.0",
         "typescript": "^5.7.3",
       },
     },
@@ -273,7 +273,7 @@
     "zod": "3.25.76",
   },
   "packages": {
-    "@ag-ui/alderwick-advisory": ["@ag-ui/alderwick-advisory@workspace:apps/alderwick-advisory"],
+    "@ag-ui/alderwick-advisory": ["@ag-ui/alderwick-advisory@workspace:apps/demo"],
 
     "@ag-ui/analytics": ["@ag-ui/analytics@workspace:packages/analytics"],
 
